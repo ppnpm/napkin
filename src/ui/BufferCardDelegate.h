@@ -45,7 +45,8 @@ public:
     static constexpr int kRadius   = 6;
     static constexpr int kSectionH = 36;
 
-    static constexpr int kThumbSize = 52;
+    static constexpr int kThumbSize = 52;       // a lone image
+    static constexpr int kThumbSizeMulti = 38;  // several in a row
 
 private:
     QFont timestampFont(const QFont& base) const;

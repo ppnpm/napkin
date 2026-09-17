@@ -254,7 +254,7 @@ private slots:
         f.trigger("newBufferAction");
         QCOMPARE(f.buffers.countLive(), 0);
 
-        f.view()->expandRow(0, QString());
+        f.view()->expandRow(0, {});
         QMetaObject::invokeMethod(f.view(), "imagePasted", Qt::DirectConnection,
                                   Q_ARG(QByteArray, makePng(64, 64)),
                                   Q_ARG(QString, QStringLiteral("image/png")));

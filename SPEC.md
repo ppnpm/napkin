@@ -366,9 +366,30 @@ v1 specified a card stack and separately specified "focus moves to an editor,"
 and never connected them. **Decision: cards expand in place.**
 
 ```
-Enter / click  →  card expands into an editable region, list position frozen
-Esc            →  collapses, list re-sorts
+click                →  selects only
+double-click / Enter →  expands into an editable region, list position frozen
+Esc                  →  collapses, list re-sorts
 ```
+
+> **Selection and opening are separate gestures.** An earlier build opened a
+> buffer on a single click, which made a card impossible to merely *select* —
+> so pinning, keeping or deleting one with the mouse meant opening it first and
+> closing it after. Opening is the deliberate second gesture.
+
+### The expanded card shows every item
+
+A buffer is a screenshot *and* a command *and* a URL kept together; an editor
+that shows only a text box makes that concept a lie. Expanding renders the
+buffer's items in order:
+
+- **text items** as editable regions, each autosaved independently;
+- **image items** as a thumbnail with name, dimensions, size and an *animated*
+  marker, double-clicked for the lightbox, with a remove control;
+- a **trailing composer** — always somewhere to type at the end, costing nothing
+  until it has content (invariant 5).
+
+A collapsed card shows up to three thumbnails and an overflow count, so a buffer
+holding several images does not pretend to hold one.
 
 No modal, no second pane, no navigation model to learn. This matches the "pieces
 of paper on a desk" metaphor better than master-detail, and it means there is

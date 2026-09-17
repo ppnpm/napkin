@@ -26,6 +26,8 @@ public:
         ThumbHashRole,
         ThumbMimeRole,
         ThumbAnimatedRole,
+        ThumbCountRole,
+        ImageCountRole,
         ModifiedAtRole,
         PinnedRole,
         KeptRole,
@@ -81,6 +83,13 @@ signals:
 
 private:
     BufferPreview previewFor(BufferId id) const;
+
+public:
+    // The delegate needs the whole thumbnail row, which does not fit a QVariant
+    // role cleanly.
+    std::vector<ImageRef> thumbsAt(int row) const;
+
+private:
     void emitAllChanged();
 
     BufferRepository& buffers_;

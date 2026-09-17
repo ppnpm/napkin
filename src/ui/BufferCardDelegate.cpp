@@ -2,6 +2,7 @@
 #include "BufferListModel.h"
 #include "Icons.h"
 #include "../media/Thumbnailer.h"
+#include "../domain/Preview.h"
 #include "../domain/Clock.h"
 #include "../domain/TimeFormat.h"
 
@@ -151,56 +152,82 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
         glyphRight = card.right() - kPadding - x + g;
     }
 
-    // --- thumbnail -------------------------------------------------------------
+    // --- thumbnails ------------------------------------------------------------
+    // Up to three, so a buffer holding several images does not pretend to hold
+    // one. Beyond that the row carries an overflow count.
     QRect content = contentRect(option.rect, index).adjusted(0, 0, -glyphRight, 0);
-    const QString thumbHash = index.data(BufferListModel::ThumbHashRole).toString();
-    if (thumbnailer_ && !thumbHash.isEmpty()) {
-        const QRect box(content.left(), content.top(), kThumbSize, kThumbSize);
-        const bool live = index.row() == animatedRow_ && !animatedFrame_.isNull();
-        const QPixmap pixmap = live
-            ? animatedFrame_
-            : thumbnailer_->forBlob(thumbHash,
-                                    index.data(BufferListModel::ThumbMimeRole).toString(),
-                                    kThumbSize * 2);
+    std::vector<ImageRef> thumbs;
+    if (const auto* m = qobject_cast<const BufferListModel*>(index.model()))
+        thumbs = m->thumbsAt(index.row());
 
-        if (pixmap.isNull()) {
-            // The blob is gone. Say so visibly rather than drawing nothing —
-            // silently blank content is indistinguishable from empty content.
-            QColor c = dimmed(pal, 60);
-            p->fillRect(box, c);
-            p->setPen(dimmed(pal, 140));
-            p->drawText(box, Qt::AlignCenter, QStringLiteral("?"));
-        } else {
-            QPixmap scaled = pixmap.scaled(box.size(), Qt::KeepAspectRatioByExpanding,
-                                           Qt::SmoothTransformation);
+    if (thumbnailer_ && !thumbs.empty()) {
+        const int count = int(thumbs.size());
+        const int size = count == 1 ? kThumbSize : kThumbSizeMulti;
+        const int gap = 5;
+        const bool live = index.row() == animatedRow_ && !animatedFrame_.isNull();
+        const int imageCount = index.data(BufferListModel::ImageCountRole).toInt();
+
+        int x = content.left();
+        for (int i = 0; i < count; ++i) {
+            const QRect box(x, content.top(), size, size);
+            const QPixmap pixmap = (live && i == 0)
+                ? animatedFrame_
+                : thumbnailer_->forBlob(thumbs[size_t(i)].hash, thumbs[size_t(i)].mime,
+                                        size * 2);
+
             QPainterPath clip;
             clip.addRoundedRect(QRectF(box), 4, 4);
-            p->save();
-            p->setClipPath(clip);
-            p->drawPixmap(box, scaled, QRect(QPoint((scaled.width() - box.width()) / 2,
-                                                    (scaled.height() - box.height()) / 2),
-                                             box.size()));
-            p->restore();
-        }
-        // An animation that is only showing its first frame says so, rather
-        // than looking like a still that happens not to move.
-        if (index.data(BufferListModel::ThumbAnimatedRole).toBool() && !live) {
-            QFont badge = option.font;
-            badge.setPointSizeF(std::max(6.5, option.font.pointSizeF() - 3.0));
-            badge.setBold(true);
-            p->setFont(badge);
-            const QFontMetrics bfm(badge);
-            const QString text = QStringLiteral("GIF");
-            const QRect pill(box.left() + 4, box.bottom() - bfm.height() - 3,
-                             bfm.horizontalAdvance(text) + 8, bfm.height() + 2);
-            QPainterPath pillPath;
-            pillPath.addRoundedRect(QRectF(pill), 3, 3);
-            p->fillPath(pillPath, QColor(0, 0, 0, 150));
-            p->setPen(Qt::white);
-            p->drawText(pill, Qt::AlignCenter, text);
+            if (pixmap.isNull()) {
+                // The blob is gone. Say so visibly rather than drawing nothing —
+                // silently blank content is indistinguishable from empty content.
+                p->fillPath(clip, dimmed(pal, 50));
+                p->setPen(dimmed(pal, 150));
+                p->drawText(box, Qt::AlignCenter, QStringLiteral("?"));
+            } else {
+                const QPixmap scaled = pixmap.scaled(box.size(), Qt::KeepAspectRatioByExpanding,
+                                                     Qt::SmoothTransformation);
+                p->save();
+                p->setClipPath(clip);
+                p->drawPixmap(box, scaled,
+                              QRect(QPoint((scaled.width() - box.width()) / 2,
+                                           (scaled.height() - box.height()) / 2),
+                                    box.size()));
+                p->restore();
+            }
+
+            // An animation showing only its first frame says so, rather than
+            // looking like a still that happens not to move.
+            if (thumbs[size_t(i)].animated && !(live && i == 0)) {
+                QFont badge = option.font;
+                badge.setPointSizeF(std::max(6.0, option.font.pointSizeF() - 3.5));
+                badge.setBold(true);
+                p->setFont(badge);
+                const QFontMetrics bfm(badge);
+                const QString text = QStringLiteral("GIF");
+                const QRect pill(box.left() + 3, box.bottom() - bfm.height() - 2,
+                                 bfm.horizontalAdvance(text) + 7, bfm.height() + 1);
+                QPainterPath pillPath;
+                pillPath.addRoundedRect(QRectF(pill), 3, 3);
+                p->fillPath(pillPath, QColor(0, 0, 0, 160));
+                p->setPen(Qt::white);
+                p->drawText(pill, Qt::AlignCenter, text);
+            }
+
+            x = box.right() + gap;
         }
 
-        content.setLeft(box.right() + 12);
+        if (imageCount > count) {
+            const QRect more(x, content.top(), size, size);
+            QPainterPath clip;
+            clip.addRoundedRect(QRectF(more), 4, 4);
+            p->fillPath(clip, dimmed(pal, 32));
+            p->setFont(option.font);
+            p->setPen(dimmed(pal, 170));
+            p->drawText(more, Qt::AlignCenter, QStringLiteral("+%1").arg(imageCount - count));
+            x = more.right() + gap;
+        }
+
+        content.setLeft(x + 7);
     }
 
     // --- content ---------------------------------------------------------------

@@ -2,7 +2,7 @@
 #include "Autosave.h"
 #include "BufferListModel.h"
 #include "BufferListView.h"
-#include "InlineEditor.h"
+#include "BufferEditor.h"
 #include "Lightbox.h"
 #include "UndoToast.h"
 
@@ -47,10 +47,8 @@ MainWindow::MainWindow(Database& db, BufferRepository& buffers, ItemRepository& 
 void MainWindow::buildUi()
 {
     model_ = new BufferListModel(buffers_, items_, this);
-    view_  = new BufferListView;
+    view_  = new BufferListView(thumbs_, blobs_);
     view_->setModel(model_);
-    view_->setThumbnailer(&thumbs_);
-    view_->setBlobStore(&blobs_);
 
     // --- empty state (SPEC.md §7) -------------------------------------------
     auto* empty = new QWidget;
@@ -111,10 +109,13 @@ void MainWindow::buildUi()
         if (editingBuffer_ == kNoBuffer) {
             // Keep the draft card honest before it has ever been written.
             Draft d;
-            d.setText(view_->editorText());
-            model_->setDraftPreview(derivePreview(d.items(), int(d.items().size())));
+            for (const auto& dirty : view_->editor()->dirtyText()) d.setText(dirty.text);
+            model_->setDraftPreview(derivePreview(d.items(), int(d.items().size()),
+                                                  0 /* images */));
         }
     });
+    connect(view_, &BufferListView::imageItemActivated, this, &MainWindow::openImageItem);
+    connect(view_, &BufferListView::itemRemoveRequested, this, &MainWindow::removeItemFromBuffer);
     connect(model_, &BufferListModel::countChanged, this, [this] { updateEmptyState(); });
     connect(view_, &BufferListView::imagePasted, this,
             [this](const QByteArray& bytes, const QString& mime) {
@@ -146,7 +147,6 @@ void MainWindow::buildUi()
     connect(addImageAction, &QAction::triggered, this, &MainWindow::addImageFromFile);
     addAction(addImageAction);
 
-    connect(view_, &BufferListView::imageActivated, this, &MainWindow::openImage);
     connect(view_, &BufferListView::pinToggleRequested,  this, &MainWindow::togglePin);
     connect(view_, &BufferListView::keepToggleRequested, this, &MainWindow::toggleKeep);
     connect(view_, &BufferListView::trashRequested,      this, &MainWindow::trashRow);
@@ -415,27 +415,6 @@ void MainWindow::addImageFromFile()
     addImageToCurrent(file.readAll(), QString(), QFileInfo(path).fileName());
 }
 
-void MainWindow::openImage(int row)
-{
-    const BufferId id = model_->idAt(row);
-    if (id == kNoBuffer) return;
-
-    for (const auto& item : items_.listForBuffer(id)) {
-        if (item.type != ItemType::Image) continue;
-
-        const QString path = blobs_.pathFor(item.blobHash, item.mime);
-        if (!QFile::exists(path)) {
-            reportProblem(tr("The image is missing"),
-                          tr("Napkin can no longer find the file for this image. "
-                             "The rest of the buffer is unchanged."));
-            return;
-        }
-        Lightbox box(path, item.animated, item.sourceName, this);
-        box.exec();
-        return;
-    }
-}
-
 void MainWindow::emptyTrash()
 {
     const int count = buffers_.countTrash();
@@ -476,7 +455,7 @@ void MainWindow::newDraft()
     const int row = model_->insertDraftRow();
     editingBuffer_ = kNoBuffer;
     editingItem_   = kNoItem;
-    view_->expandRow(row, QString());
+    view_->expandRow(row, {});
 }
 
 void MainWindow::openRow(int row)
@@ -487,21 +466,8 @@ void MainWindow::openRow(int row)
     }
 
     const BufferId id = model_->idAt(row);
-    if (id == kNoBuffer) {  // re-opening an uncommitted draft
-        editingBuffer_ = kNoBuffer;
-        editingItem_   = kNoItem;
-        view_->expandRow(row, QString());
-        return;
-    }
-
-    // Phase 2 edits the buffer's first text item; image items are untouched.
-    QString text;
-    editingItem_ = kNoItem;
-    for (const auto& item : items_.listForBuffer(id)) {
-        if (item.type == ItemType::Text) { text = item.text; editingItem_ = item.id; break; }
-    }
     editingBuffer_ = id;
-    view_->expandRow(row, text);
+    view_->expandRow(row, id == kNoBuffer ? std::vector<Item>{} : items_.listForBuffer(id));
 }
 
 void MainWindow::collapseEditor()
@@ -510,8 +476,7 @@ void MainWindow::collapseEditor()
     autosave_->flushNow();
 
     // An abandoned draft evaporates because it was never written (invariant 5).
-    if (editingBuffer_ == kNoBuffer && view_->editorText().trimmed().isEmpty())
-        model_->removeDraftRow();
+    if (editingBuffer_ == kNoBuffer) model_->removeDraftRow();
 
     view_->collapse();
     editingBuffer_ = kNoBuffer;
@@ -522,32 +487,75 @@ void MainWindow::collapseEditor()
 void MainWindow::flushEditor()
 {
     if (!view_->isEditing()) return;
-    const QString text = view_->editorText();
+    auto* editor = view_->editor();
+    const auto dirty = editor->dirtyText();
+    if (dirty.empty()) return;
+
+    // Whitespace is not content: a draft of blank text still writes no row.
+    bool hasContent = false;
+    for (const auto& d : dirty) if (!d.text.trimmed().isEmpty()) hasContent = true;
 
     try {
         if (editingBuffer_ == kNoBuffer) {
-            if (text.trimmed().isEmpty()) return;  // invariant 5: no row yet
+            if (!hasContent) return;                 // invariant 5
 
             Draft draft;
-            draft.setText(text);
+            for (const auto& d : dirty)
+                if (!d.text.trimmed().isEmpty()) draft.add(Item::makeText(d.text));
             editingBuffer_ = service_.commitDraft(draft);
             if (editingBuffer_ == kNoBuffer) return;
 
-            const auto head = items_.previewHead(editingBuffer_, 1);
-            if (!head.empty()) editingItem_ = head.front().id;
             model_->promoteDraft(editingBuffer_);
-        } else if (editingItem_ == kNoItem) {
-            if (text.trimmed().isEmpty()) return;
-            editingItem_ = service_.appendTo(editingBuffer_, Item::makeText(text));
+            // Rebind ids rather than rebuilding: the user may still be typing,
+            // and recreating the widgets would move the caret to the start.
+            if (!editor->rebindTextIds(items_.listForBuffer(editingBuffer_)))
+                editor->setItems(items_.listForBuffer(editingBuffer_));
         } else {
-            service_.updateTextItem(editingBuffer_, editingItem_, text);
+            for (const auto& d : dirty) {
+                if (d.id != kNoItem) {
+                    service_.updateTextItem(editingBuffer_, d.id, d.text);
+                } else if (!d.text.trimmed().isEmpty()) {
+                    service_.appendTo(editingBuffer_, Item::makeText(d.text));
+                    if (!editor->rebindTextIds(items_.listForBuffer(editingBuffer_)))
+                        editor->setItems(items_.listForBuffer(editingBuffer_));
+                    break;   // ids shifted; the rest of this pass is stale
+                }
+            }
         }
+        editor->markClean();
         model_->invalidatePreview(editingBuffer_);
     } catch (const std::exception&) {
         // SPEC.md §14: never silently discard content. The text stays in the
-        // editor, and the next flush will try again.
-        autosave_->noteChange();
+        // editor and the next flush tries again.
     }
+}
+
+void MainWindow::openImageItem(ItemId id)
+{
+    const auto item = items_.find(id);
+    if (!item || item->type != ItemType::Image) return;
+
+    const QString path = blobs_.pathFor(item->blobHash, item->mime);
+    if (!QFile::exists(path)) {
+        reportProblem(tr("The image is missing"),
+                      tr("Napkin can no longer find the file for this image. "
+                         "The rest of the buffer is unchanged."));
+        return;
+    }
+    Lightbox box(path, item->animated, item->sourceName, this);
+    box.exec();
+}
+
+void MainWindow::removeItemFromBuffer(ItemId id)
+{
+    if (editingBuffer_ == kNoBuffer) return;
+    const auto item = items_.find(id);
+    if (!item) return;
+
+    service_.removeItem(editingBuffer_, id);
+    reconcileBlobs(items_, blobs_);   // the blob may now have no references left
+    view_->editor()->setItems(items_.listForBuffer(editingBuffer_));
+    model_->invalidatePreview(editingBuffer_);
 }
 
 bool MainWindow::event(QEvent* e)

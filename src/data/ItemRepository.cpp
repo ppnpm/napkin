@@ -99,6 +99,16 @@ int ItemRepository::countForBuffer(BufferId bufferId)
     return s.step() ? s.columnInt(0) : 0;
 }
 
+ItemRepository::Counts ItemRepository::countsForBuffer(BufferId bufferId)
+{
+    Statement s(db_, "SELECT COUNT(*), COALESCE(SUM(type = 'image'), 0)"
+                     " FROM items WHERE buffer_id = ?");
+    s.bind(1, bufferId);
+    Counts c;
+    if (s.step()) { c.total = s.columnInt(0); c.images = s.columnInt(1); }
+    return c;
+}
+
 void ItemRepository::updateText(ItemId id, const QString& text)
 {
     Statement s(db_, "UPDATE items SET text = ? WHERE id = ? AND type = 'text'");

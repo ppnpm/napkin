@@ -42,7 +42,9 @@ public slots:
     void emptyTrash();
     void pasteFromClipboard();
     void addImageFromFile();
-    void openImage(int row);
+    void openImageItem(ItemId id);
+    void openRow(int row);
+    void removeItemFromBuffer(ItemId id);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -52,7 +54,6 @@ protected:
 private:
     void buildUi();
     QWidget* buildHeaderWidget();
-    void openRow(int row);
     void flushEditor();
     void updateEmptyState();
     void showContextMenu(int row, const QPoint& globalPos);

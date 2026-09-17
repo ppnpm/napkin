@@ -1,5 +1,7 @@
 #pragma once
+#include "../domain/Item.h"
 #include "../domain/Types.h"
+#include <vector>
 #include <QListView>
 
 class QMovie;
@@ -9,7 +11,7 @@ namespace napkin {
 class BufferCardDelegate;
 class BlobStore;
 class Thumbnailer;
-class InlineEditor;
+class BufferEditor;
 
 // The buffer stack. Virtualized by QListView; the one expanded row gets a real
 // editor positioned over its content area, so editing happens in place rather
@@ -17,15 +19,16 @@ class InlineEditor;
 class BufferListView : public QListView {
     Q_OBJECT
 public:
-    explicit BufferListView(QWidget* parent = nullptr);
+    BufferListView(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent = nullptr);
 
-    void setThumbnailer(Thumbnailer* thumbnailer);
-    void setBlobStore(BlobStore* blobs) { blobs_ = blobs; }
-    void expandRow(int row, const QString& initialText);
+    BufferEditor* editor() const { return editor_; }
+
+
+    void expandRow(int row, const std::vector<Item>& items);
     void collapse();
 
     int      expandedRow() const { return expandedRow_; }
-    QString  editorText() const;
+
     bool     isEditing() const { return expandedRow_ >= 0; }
 
 signals:
@@ -39,14 +42,16 @@ signals:
     void keepToggleRequested(int row);
     void trashRequested(int row);
     void contextMenuRequested(int row, const QPoint& globalPos);
-    void imageActivated(int row);
     void imagePasted(const QByteArray& bytes, const QString& mime);
+    void imageItemActivated(ItemId id);
+    void itemRemoveRequested(ItemId id);
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
     void leaveEvent(QEvent* e) override;
 
 private:
@@ -60,7 +65,7 @@ private:
     BlobStore*          blobs_    = nullptr;
     QMovie*             hoverMovie_ = nullptr;
     int                 hoverRow_ = -1;
-    InlineEditor*       editor_   = nullptr;
+    BufferEditor*       editor_   = nullptr;
     int                 expandedRow_ = -1;
 };
 

@@ -64,7 +64,8 @@ BufferPreview BufferListModel::previewFor(BufferId id) const
 {
     if (const auto it = previewCache_.constFind(id); it != previewCache_.constEnd())
         return *it;
-    const auto preview = derivePreview(items_.previewHead(id), items_.countForBuffer(id));
+    const auto counts = items_.countsForBuffer(id);
+    const auto preview = derivePreview(items_.previewHead(id), counts.total, counts.images);
     previewCache_.insert(id, preview);
     return preview;
 }
@@ -82,10 +83,15 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     case PrimaryRole:    return p.primary;
     case SecondaryRole:  return p.secondary;
     case ItemCountRole:  return p.itemCount;
-    case HasImageRole:   return p.hasImage;
-    case ThumbHashRole:  return p.thumbHash;
-    case ThumbMimeRole:  return p.thumbMime;
-    case ThumbAnimatedRole: return p.thumbAnimated;
+    case HasImageRole:   return p.hasImage();
+    case ImageCountRole: return p.imageCount;
+    case ThumbHashRole:  return p.thumbs.empty() ? QString() : p.thumbs.front().hash;
+    case ThumbMimeRole:  return p.thumbs.empty() ? QString() : p.thumbs.front().mime;
+    case ThumbAnimatedRole: {
+        for (const auto& t : p.thumbs) if (t.animated) return true;
+        return false;
+    }
+    case ThumbCountRole: return int(p.thumbs.size());
     case ModifiedAtRole: return QVariant::fromValue(b.modifiedAt);
     case PinnedRole:     return b.pinned;
     case KeptRole:       return b.kept;
@@ -181,6 +187,13 @@ void BufferListModel::removeDraftRow()
     endRemoveRows();
     if (expandedRow_ == row) expandedRow_ = -1;
     emit countChanged(int(rows_.size()));
+}
+
+std::vector<ImageRef> BufferListModel::thumbsAt(int row) const
+{
+    if (row < 0 || row >= int(rows_.size())) return {};
+    const Buffer& b = rows_[size_t(row)];
+    return b.id == kNoBuffer ? draftPreview_.thumbs : previewFor(b.id).thumbs;
 }
 
 void BufferListModel::refreshRow(BufferId id)

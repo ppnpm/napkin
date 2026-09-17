@@ -1,4 +1,5 @@
 #include "Preview.h"
+#include <QObject>
 #include <QStringList>
 
 namespace napkin {
@@ -39,17 +40,16 @@ QString formatBytes(qint64 bytes)
     return QStringLiteral("%1 B").arg(bytes);
 }
 
-BufferPreview derivePreview(const std::vector<Item>& head, int totalCount)
+BufferPreview derivePreview(const std::vector<Item>& head, int totalCount, int imageCount)
 {
     BufferPreview p;
     p.itemCount = totalCount;
+    p.imageCount = imageCount;
+
     for (const auto& i : head) {
         if (i.type != ItemType::Image) continue;
-        p.hasImage  = true;
-        p.thumbHash = i.blobHash;
-        p.thumbMime = i.mime;
-        p.thumbAnimated = i.animated;
-        break;
+        if (int(p.thumbs.size()) >= kMaxCardThumbs) break;
+        p.thumbs.push_back({i.blobHash, i.mime, i.animated});
     }
 
     if (head.empty()) return p;
@@ -60,18 +60,26 @@ BufferPreview derivePreview(const std::vector<Item>& head, int totalCount)
         if (!lines.isEmpty()) p.primary = lines.first();
         if (lines.size() > 1)  p.secondary = lines.at(1);
     } else {
-        p.primary = imageLabel(first);
+        // Several unnamed images lead with the count; one leads with its name.
+        p.primary = (first.sourceName.isEmpty() && imageCount > 1)
+            ? QObject::tr("%1 images").arg(imageCount)
+            : imageLabel(first);
         if (first.width > 0 && first.height > 0)
             p.secondary = QStringLiteral("%1 × %2").arg(first.width).arg(first.height);
     }
 
     // A multi-item buffer says so, in place of whatever detail the first item
-    // offered — the count is the more useful fact.
-    if (totalCount > 1)
-        p.secondary = QStringLiteral("%1 items").arg(totalCount);
+    // offered — the count is the more useful fact. Unless the buffer is nothing
+    // but images, in which case "5 items" merely repeats "5 images".
+    const bool allImages = imageCount == totalCount;
+    if (totalCount > 1 && !allImages)
+        p.secondary = QObject::tr("%1 items").arg(totalCount);
 
-    // A buffer holding only an untitled image still needs a primary line.
-    if (p.primary.isEmpty() && p.hasImage) p.primary = QStringLiteral("Screenshot");
+    // A buffer holding only untitled images still needs a primary line.
+    if (p.primary.isEmpty() && p.hasImage()) {
+        p.primary = imageCount == 1 ? QObject::tr("Screenshot")
+                                    : QObject::tr("%1 images").arg(imageCount);
+    }
 
     return p;
 }

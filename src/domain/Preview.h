@@ -7,25 +7,34 @@ namespace napkin {
 
 // Derived display, never user-entered metadata (SPEC.md §1, §3). Napkin has no
 // title field; a card's label is computed from what the buffer already holds.
+// A card shows up to this many thumbnails; beyond that it shows an overflow
+// count. Three fits the card width without crowding the text.
+inline constexpr int kMaxCardThumbs = 3;
+
+struct ImageRef {
+    QString hash;
+    QString mime;
+    bool    animated = false;
+};
+
 struct BufferPreview {
     QString primary;     // the line the card leads with
     QString secondary;   // quiet detail line; may be empty
-    int     itemCount = 0;
-    bool    hasImage  = false;
-    QString thumbHash;   // first image item in the buffer, if any
-    QString thumbMime;
-    bool    thumbAnimated = false;
+    int     itemCount  = 0;
+    int     imageCount = 0;
+    std::vector<ImageRef> thumbs;   // first kMaxCardThumbs images, in order
 
-    bool isEmpty() const { return primary.isEmpty() && secondary.isEmpty(); }
+    bool hasImage() const { return imageCount > 0; }
+    bool isEmpty() const { return primary.isEmpty() && secondary.isEmpty() && thumbs.empty(); }
 };
 
 // `head` is the first few items of the buffer in position order; `totalCount`
 // is how many it actually has. Only the head is loaded so a list of 5000
 // buffers never reads every item (§12).
-BufferPreview derivePreview(const std::vector<Item>& head, int totalCount);
+BufferPreview derivePreview(const std::vector<Item>& head, int totalCount, int imageCount);
 
 // How many items the preview needs: enough to find an image a line or two down.
-inline constexpr int kPreviewHeadSize = 4;
+inline constexpr int kPreviewHeadSize = 8;
 
 // First non-blank line of a block of text, whitespace-trimmed.
 QString firstLine(const QString& text);

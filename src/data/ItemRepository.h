@@ -23,6 +23,11 @@ public:
     std::vector<Item> previewHead(BufferId bufferId, int limit = kPreviewHeadSize);
     int countForBuffer(BufferId bufferId);
 
+    struct Counts { int total = 0; int images = 0; };
+    // Both counts in one statement: a card needs the item count for its detail
+    // line and the image count for its thumbnail row.
+    Counts countsForBuffer(BufferId bufferId);
+
     void updateText(ItemId id, const QString& text);
     void remove(ItemId id);
 

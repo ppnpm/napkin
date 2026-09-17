@@ -1,0 +1,227 @@
+#include "GuiFixture.h"
+#include "../src/ui/BufferEditor.h"
+#include "../src/ui/ItemWidgets.h"
+
+#include <QBuffer>
+#include <QtTest>
+
+using namespace napkin;
+
+namespace {
+QByteArray png(int w, int h, QColor c)
+{
+    QImage image(w, h, QImage::Format_RGB32);
+    image.fill(c);
+    QByteArray out;
+    QBuffer buffer(&out);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+    return out;
+}
+}  // namespace
+
+// The three problems the user reported: a buffer with several images showed
+// only the first; a single click opened the editor so cards could not be
+// selected and acted on; and the expanded editor showed a text box only, with
+// no sign of the images the buffer actually held.
+class TestMultiItem : public QObject {
+    Q_OBJECT
+private:
+    BufferId seedMixed(GuiFixture& f, int images)
+    {
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("Investigate this bug")));
+        for (int i = 0; i < images; ++i) {
+            const auto stored = f.blobs.store(png(60 + i, 40 + i, QColor::fromHsv(i * 40, 200, 220)));
+            Q_ASSERT(stored.ok);
+            f.service.appendTo(id, Item::makeImage(stored.hash, stored.size.width(),
+                                                   stored.size.height(), stored.byteSize,
+                                                   QStringLiteral("shot%1.png").arg(i),
+                                                   stored.mime));
+        }
+        f.model()->reload();
+        return id;
+    }
+
+private slots:
+    // --- (a) several images are all visible ----------------------------------
+    void aCardShowsSeveralThumbnailsNotJustTheFirst()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 4);
+        const int row = f.model()->rowForId(id);
+
+        QCOMPARE(f.model()->index(row, 0).data(BufferListModel::ImageCountRole).toInt(), 4);
+        QCOMPARE(f.model()->index(row, 0).data(BufferListModel::ThumbCountRole).toInt(),
+                 kMaxCardThumbs);
+        QCOMPARE(int(f.model()->thumbsAt(row).size()), kMaxCardThumbs);
+
+        // Distinct images, not the same one three times.
+        const auto thumbs = f.model()->thumbsAt(row);
+        QVERIFY(thumbs[0].hash != thumbs[1].hash);
+        QVERIFY(thumbs[1].hash != thumbs[2].hash);
+    }
+
+    void aSingleImageStillGetsOneThumbnail()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        const int row = f.model()->rowForId(id);
+        QCOMPARE(f.model()->index(row, 0).data(BufferListModel::ThumbCountRole).toInt(), 1);
+        QCOMPARE(f.model()->index(row, 0).data(BufferListModel::ImageCountRole).toInt(), 1);
+    }
+
+    // --- (b) selecting a card no longer opens it -----------------------------
+    void clickingSelectsWithoutOpening()
+    {
+        GuiFixture f;
+        const auto id = f.seed("selectable");
+        const int row = f.model()->rowForId(id);
+
+        const QRect rect = f.view()->visualRect(f.model()->index(row, 0));
+        QTest::mouseClick(f.view()->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+
+        QCOMPARE(f.view()->currentIndex().row(), row);   // selected...
+        QVERIFY(!f.view()->isEditing());                 // ...but not opened
+    }
+
+    void aSelectedCardCanBeActedOnWithTheMouseAlone()
+    {
+        GuiFixture f;
+        const auto id = f.seed("act on me");
+        const int row = f.model()->rowForId(id);
+
+        const QRect rect = f.view()->visualRect(f.model()->index(row, 0));
+        QTest::mouseClick(f.view()->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+
+        // This is the workflow that was impossible: click, then pin/keep/delete.
+        f.window.togglePin(f.view()->currentIndex().row());
+        QVERIFY(f.buffers.find(id)->pinned);
+        f.window.toggleKeep(f.model()->rowForId(id));
+        QVERIFY(f.buffers.find(id)->kept);
+    }
+
+    void doubleClickOpensTheBuffer()
+    {
+        GuiFixture f;
+        const auto id = f.seed("open me");
+        const int row = f.model()->rowForId(id);
+
+        const QRect rect = f.view()->visualRect(f.model()->index(row, 0));
+        QTest::mouseDClick(f.view()->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+
+        QVERIFY(f.view()->isEditing());
+        QCOMPARE(f.view()->expandedRow(), row);
+    }
+
+    void enterStillOpensTheSelectedBuffer()
+    {
+        GuiFixture f;
+        const auto id = f.seed("keyboard");
+        f.view()->setCurrentIndex(f.model()->index(f.model()->rowForId(id), 0));
+        QTest::keyClick(f.view(), Qt::Key_Return);
+        QVERIFY(f.view()->isEditing());
+    }
+
+    // --- (c) the expanded editor shows every item ----------------------------
+    void theExpandedEditorRendersEveryItem()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 3);   // 1 text + 3 images
+        f.window.openRow(f.model()->rowForId(id));
+
+        auto* editor = f.view()->editor();
+        QVERIFY(editor);
+        const auto images = editor->findChildren<ImageItemWidget*>();
+        const auto texts = editor->findChildren<TextItemWidget*>();
+
+        QCOMPARE(images.size(), 3);          // all three, not just the first
+        QCOMPARE(texts.size(), 2);           // the existing one, plus a composer
+        QCOMPARE(texts[0]->text(), QStringLiteral("Investigate this bug"));
+        QVERIFY(texts[1]->text().isEmpty());
+    }
+
+    void anImageCanBeRemovedFromInsideTheBuffer()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 2);
+        f.window.openRow(f.model()->rowForId(id));
+
+        const auto before = f.items.listForBuffer(id);
+        QCOMPARE(int(before.size()), 3);
+        const ItemId imageId = before[1].id;
+
+        f.window.removeItemFromBuffer(imageId);
+
+        const auto after = f.items.listForBuffer(id);
+        QCOMPARE(int(after.size()), 2);
+        for (const auto& item : after) QVERIFY(item.id != imageId);
+        // And the editor redrew without it.
+        QCOMPARE(f.view()->editor()->findChildren<ImageItemWidget*>().size(), 1);
+    }
+
+    void removingTheLastReferenceReclaimsTheBlob()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        f.window.openRow(f.model()->rowForId(id));
+
+        const auto item = f.items.listForBuffer(id)[1];
+        QVERIFY(f.blobs.exists(item.blobHash, item.mime));
+
+        f.window.removeItemFromBuffer(item.id);
+        QVERIFY(!f.blobs.exists(item.blobHash, item.mime));
+    }
+
+    void typingIntoTheTrailingComposerAppendsANewTextItem()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        f.window.openRow(f.model()->rowForId(id));
+
+        const auto texts = f.view()->editor()->findChildren<TextItemWidget*>();
+        QCOMPARE(texts.size(), 2);
+        QTest::keyClicks(texts[1]->findChild<QPlainTextEdit*>(), "a second thought");
+        QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == 3, 2000);
+
+        const auto items = f.items.listForBuffer(id);
+        QCOMPARE(items.back().type, ItemType::Text);
+        QCOMPARE(items.back().text, QStringLiteral("a second thought"));
+    }
+
+    void editingAnExistingTextItemDoesNotCreateADuplicate()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 0);
+        f.window.openRow(f.model()->rowForId(id));
+
+        auto* edit = f.view()->editor()->findChildren<TextItemWidget*>()[0]
+                         ->findChild<QPlainTextEdit*>();
+        QTest::keyClicks(edit, " - amended");
+        QTest::qWait(600);
+
+        QCOMPARE(f.items.countForBuffer(id), 1);   // updated in place
+        QVERIFY(f.items.listForBuffer(id)[0].text.endsWith(QStringLiteral(" - amended")));
+    }
+
+    void continuedTypingAfterADraftCommitsLandsAtTheCaretNotTheStart()
+    {
+        // Regression: rebuilding the editor widgets after the first write reset
+        // the caret to position 0, so the next keystrokes were prepended.
+        GuiFixture f;
+        f.trigger("newBufferAction");
+        auto* edit = f.editor();
+        QTest::keyClicks(edit, "first");
+        QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
+
+        QTest::keyClicks(edit, " and second");
+        QTest::qWait(600);
+
+        const auto id = f.buffers.listLive(10).front().id;
+        QCOMPARE(f.items.listForBuffer(id).front().text, QStringLiteral("first and second"));
+        QCOMPARE(f.items.countForBuffer(id), 1);
+    }
+};
+
+QTEST_MAIN(TestMultiItem)
+#include "test_multiitem.moc"

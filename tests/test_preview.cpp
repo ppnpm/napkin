@@ -11,21 +11,21 @@ class TestPreview : public QObject {
 private slots:
     void emptyBufferHasNoPreview()
     {
-        const auto p = derivePreview({}, 0);
+        const auto p = derivePreview({}, 0, 0);
         QVERIFY(p.isEmpty());
         QCOMPARE(p.itemCount, 0);
     }
 
     void singleTextUsesItsFirstLine()
     {
-        const auto p = derivePreview({Item::makeText("systemctl restart nginx")}, 1);
+        const auto p = derivePreview({Item::makeText("systemctl restart nginx")}, 1, 0);
         QCOMPARE(p.primary, QStringLiteral("systemctl restart nginx"));
         QVERIFY(p.secondary.isEmpty());
     }
 
     void leadingBlankLinesAreSkipped()
     {
-        const auto p = derivePreview({Item::makeText("\n\n   \nreal content\nmore")}, 1);
+        const auto p = derivePreview({Item::makeText("\n\n   \nreal content\nmore")}, 1, 0);
         QCOMPARE(p.primary, QStringLiteral("real content"));
         QCOMPARE(p.secondary, QStringLiteral("more"));
     }
@@ -33,39 +33,63 @@ private slots:
     void secondLineBecomesTheDetail()
     {
         const auto p = derivePreview(
-            {Item::makeText("sudo pacman -Syu\nNeed to check whether this breaks KDE.")}, 1);
+            {Item::makeText("sudo pacman -Syu\nNeed to check whether this breaks KDE.")}, 1, 0);
         QCOMPARE(p.primary, QStringLiteral("sudo pacman -Syu"));
         QCOMPARE(p.secondary, QStringLiteral("Need to check whether this breaks KDE."));
     }
 
     void pastedImageHasNoFilenameSoItIsCalledScreenshot()
     {
-        const auto p = derivePreview({Item::makeImage("abc", 1920, 1080, 4096)}, 1);
+        const auto p = derivePreview({Item::makeImage("abc", 1920, 1080, 4096)}, 1, 1);
         QCOMPARE(p.primary, QStringLiteral("Screenshot"));
         QCOMPARE(p.secondary, QStringLiteral("1920 × 1080"));
-        QVERIFY(p.hasImage);
+        QVERIFY(p.hasImage());
     }
 
     void animportedImageKeepsItsName()
     {
-        const auto p = derivePreview({Item::makeImage("abc", 800, 600, 4096, "diagram.png")}, 1);
+        const auto p = derivePreview({Item::makeImage("abc", 800, 600, 4096, "diagram.png")}, 1, 1);
         QCOMPARE(p.primary, QStringLiteral("diagram.png"));
     }
 
     void multipleItemsReportTheCountInsteadOfDetail()
     {
         const auto p = derivePreview(
-            {Item::makeText("Investigate this bug"), Item::makeImage("h", 10, 10, 1)}, 3);
+            {Item::makeText("Investigate this bug"), Item::makeImage("h", 10, 10, 1)}, 3, 1);
         QCOMPARE(p.primary, QStringLiteral("Investigate this bug"));
         QCOMPARE(p.secondary, QStringLiteral("3 items"));  // more useful than line 2
         QCOMPARE(p.itemCount, 3);
-        QVERIFY(p.hasImage);
+        QVERIFY(p.hasImage());
     }
 
     void whitespaceOnlyTextYieldsNothing()
     {
-        const auto p = derivePreview({Item::makeText("   \n\t\n  ")}, 1);
+        const auto p = derivePreview({Item::makeText("   \n\t\n  ")}, 1, 0);
         QVERIFY(p.primary.isEmpty());
+    }
+
+    void severalImagesYieldSeveralThumbnails()
+    {
+        std::vector<Item> head;
+        for (int i = 0; i < 5; ++i)
+            head.push_back(Item::makeImage(QStringLiteral("hash%1").arg(i), 100, 100, 10));
+
+        const auto p = derivePreview(head, 5, 5);
+        QCOMPARE(p.imageCount, 5);
+        QCOMPARE(int(p.thumbs.size()), kMaxCardThumbs);   // capped, with overflow shown
+        QCOMPARE(p.thumbs[0].hash, QStringLiteral("hash0"));
+        QCOMPARE(p.thumbs[2].hash, QStringLiteral("hash2"));
+        QCOMPARE(p.primary, QStringLiteral("5 images"));
+    }
+
+    void textLeadsEvenWhenImagesFollow()
+    {
+        const auto p = derivePreview({Item::makeText("Investigate this bug"),
+                                      Item::makeImage("a", 10, 10, 1),
+                                      Item::makeImage("b", 10, 10, 1)}, 3, 2);
+        QCOMPARE(p.primary, QStringLiteral("Investigate this bug"));
+        QCOMPARE(p.secondary, QStringLiteral("3 items"));
+        QCOMPARE(int(p.thumbs.size()), 2);
     }
 
     void byteSizes()

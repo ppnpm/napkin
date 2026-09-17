@@ -73,7 +73,8 @@ private slots:
         QElapsedTimer t; t.start();
         for (int i = 0; i < kScreenful; ++i) {
             const auto id = rows[size_t(i)].id;
-            const auto p = derivePreview(items.previewHead(id), items.countForBuffer(id));
+            const auto counts = items.countsForBuffer(id);
+            const auto p = derivePreview(items.previewHead(id), counts.total, counts.images);
             QVERIFY(!p.primary.isEmpty());
         }
         const qint64 ms = t.elapsed();

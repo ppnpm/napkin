@@ -1,7 +1,7 @@
 #include "BufferListView.h"
 #include "BufferCardDelegate.h"
 #include "BufferListModel.h"
-#include "InlineEditor.h"
+#include "BufferEditor.h"
 #include "../media/BlobStore.h"
 
 #include <QContextMenuEvent>
@@ -13,7 +13,8 @@
 
 namespace napkin {
 
-BufferListView::BufferListView(QWidget* parent) : QListView(parent)
+BufferListView::BufferListView(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
+    : QListView(parent), blobs_(&blobs)
 {
     delegate_ = new BufferCardDelegate(this);
     setItemDelegate(delegate_);
@@ -28,48 +29,32 @@ BufferListView::BufferListView(QWidget* parent) : QListView(parent)
     setFrameShape(QFrame::NoFrame);
     setAttribute(Qt::WA_MacShowFocusRect, false);
 
-    editor_ = new InlineEditor(viewport());
-    editor_->hide();
-    connect(editor_, &InlineEditor::textEdited, this, &BufferListView::editorTextChanged);
-    connect(editor_, &InlineEditor::collapseRequested, this, &BufferListView::collapseRequested);
-    connect(editor_, &InlineEditor::heightChanged, this, &BufferListView::syncExpandedHeight);
-    connect(editor_, &InlineEditor::imagePasted, this, &BufferListView::imagePasted);
+    delegate_->setThumbnailer(&thumbs);
 
-    connect(this, &QAbstractItemView::clicked, this, [this](const QModelIndex& i) {
-        if (i.row() == expandedRow_) return;
-        // Clicking the thumbnail opens the image; clicking the rest of the card
-        // opens the buffer for editing.
-        const QRect item = visualRect(i);
-        const QRect content = delegate_->contentRect(item, i);
-        const QRect thumb(content.left(), content.top(),
-                          BufferCardDelegate::kThumbSize, BufferCardDelegate::kThumbSize);
-        const bool hasThumb = !i.data(BufferListModel::ThumbHashRole).toString().isEmpty();
-        if (hasThumb && thumb.contains(mapFromGlobal(QCursor::pos()))) {
-            emit imageActivated(i.row());
-            return;
-        }
-        emit rowActivated(i.row());
-    });
+    editor_ = new BufferEditor(thumbs, blobs, viewport());
+    editor_->hide();
+    connect(editor_, &BufferEditor::edited, this, &BufferListView::editorTextChanged);
+    connect(editor_, &BufferEditor::collapseRequested, this, &BufferListView::collapseRequested);
+    connect(editor_, &BufferEditor::heightChanged, this, &BufferListView::syncExpandedHeight);
+    connect(editor_, &BufferEditor::imagePasted, this, &BufferListView::imagePasted);
+    connect(editor_, &BufferEditor::imageActivated, this, &BufferListView::imageItemActivated);
+    connect(editor_, &BufferEditor::itemRemoveRequested, this,
+            &BufferListView::itemRemoveRequested);
+
+
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { repositionEditor(); });
 }
 
-QString BufferListView::editorText() const { return editor_->text(); }
-
-void BufferListView::setThumbnailer(Thumbnailer* thumbnailer)
-{
-    delegate_->setThumbnailer(thumbnailer);
-}
-
-void BufferListView::expandRow(int row, const QString& initialText)
+void BufferListView::expandRow(int row, const std::vector<Item>& items)
 {
     expandedRow_ = row;
     if (auto* m = qobject_cast<BufferListModel*>(model())) m->setExpandedRow(row);
 
-    editor_->setText(initialText);
+    editor_->setItems(items);
     editor_->show();
     syncExpandedHeight();
     repositionEditor();
-    editor_->focusEditor();
+    editor_->focusFirstEditor();
 
     setCurrentIndex(model()->index(row, 0));
     scrollTo(model()->index(row, 0), QAbstractItemView::EnsureVisible);
@@ -122,6 +107,20 @@ void BufferListView::resizeEvent(QResizeEvent* e)
 {
     QListView::resizeEvent(e);
     repositionEditor();
+}
+
+// A single click only selects, so a card can be picked up and acted on — pinned,
+// kept, deleted — without being opened first. Opening is a deliberate second
+// gesture: double-click, or Enter.
+void BufferListView::mouseDoubleClickEvent(QMouseEvent* e)
+{
+    const QModelIndex index = indexAt(e->pos());
+    if (index.isValid() && index.row() != expandedRow_) {
+        setCurrentIndex(index);
+        emit rowActivated(index.row());
+        return;
+    }
+    QListView::mouseDoubleClickEvent(e);
 }
 
 void BufferListView::mouseMoveEvent(QMouseEvent* e)
