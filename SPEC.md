@@ -644,9 +644,38 @@ before SQLite had created the files. `secureDatabaseFiles()` now runs after
 `open()` and covers the sidecars, which carry uncommitted user content.
 Regression test: `tests/test_paths.cpp`.
 
-**Phase 2 — Text.** Buffer list (virtualized), draft creation, inline editing,
-autosave, timestamps, keyboard navigation, empty state. *Napkin is a genuinely
-useful text scratchpad at the end of this phase.*
+**Phase 2 — Text. ✅ COMPLETE.** Virtualized buffer stack with PINNED/RECENT
+sections, draft creation, inline expansion editing, two-timer autosave,
+relative timestamps, empty state. 17 new test cases (75 total, 8 binaries).
+
+Measured against §12 on a 5000-buffer database, file-backed, not in-memory:
+
+| §12 target | Measured |
+|---|---|
+| `listLive(5000)` metadata | **3 ms** |
+| Previews for a screenful (12 cards) | **<1 ms** |
+| Windowed query at offset 4980 | **2 ms** |
+| Idle RSS | **78 MB** (target <120 MB) |
+
+The list holds metadata only — roughly 48 bytes a row, so 5000 buffers is a
+quarter of a megabyte — and fetches previews lazily per visible row into a
+cache. `sizeHint` does no text layout, so it stays O(1) at any row count.
+
+Behaviours that only exist once the UI is wired up, so they are covered by
+headless GUI tests driving the real widget tree (`tests/test_editing.cpp`):
+
+- `Ctrl+N` shows a card but writes **no row** until there is content (invariant 5).
+- An abandoned empty draft evaporates — it never existed to clean up.
+- `Esc` and window-close both flush *before* collapsing, so the debounce window
+  is never a data-loss window.
+- **The list does not re-sort while a card is expanded.** Autosave bumps
+  `modified_at` continuously, so a naive reload would yank the card you are
+  typing into to the top. Reloads are deferred and applied on collapse.
+
+*Design change during implementation:* `Ctrl+N` is a `QAction`, not a bare
+`QShortcut`. A headless window is never active, so key-chord delivery cannot be
+relied on in tests — and the spec wants shortcuts discoverable anyway, which an
+action carrying its own label and key hint gives for free.
 
 **Phase 3 — Pin, Keep, Trash.** Both flags, the `guard_kept_delete` trigger,
 soft delete, undo toast, trash view, confirmation flow. Heaviest test phase.

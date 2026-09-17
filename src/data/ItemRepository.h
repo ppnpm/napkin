@@ -16,6 +16,10 @@ public:
 
     std::optional<Item> find(ItemId id);
     std::vector<Item> listForBuffer(BufferId bufferId);
+
+    // Only the first few items, for deriving a card preview. A list of 5000
+    // buffers must never read every item to draw itself (SPEC.md §12).
+    std::vector<Item> previewHead(BufferId bufferId, int limit = 2);
     int countForBuffer(BufferId bufferId);
 
     void updateText(ItemId id, const QString& text);

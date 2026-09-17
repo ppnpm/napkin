@@ -43,7 +43,7 @@ int main(int argc, char** argv)
     BufferService service(db, buffers, items);
     service.purgeExpiredTrash();  // the only automatic hard delete (§6)
 
-    MainWindow window(db, buffers);
+    MainWindow window(db, buffers, items, service);
     QObject::connect(&instance, &SingleInstance::raiseRequested,
                      &window, &MainWindow::raiseFromOtherInstance);
     window.show();

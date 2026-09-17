@@ -1,0 +1,103 @@
+#include "../src/domain/Preview.h"
+#include "../src/domain/TimeFormat.h"
+#include <QtTest>
+
+using namespace napkin;
+
+// Preview text is derived, never entered (SPEC.md §1). These cases pin down
+// what a card says for each shape of buffer.
+class TestPreview : public QObject {
+    Q_OBJECT
+private slots:
+    void emptyBufferHasNoPreview()
+    {
+        const auto p = derivePreview({}, 0);
+        QVERIFY(p.isEmpty());
+        QCOMPARE(p.itemCount, 0);
+    }
+
+    void singleTextUsesItsFirstLine()
+    {
+        const auto p = derivePreview({Item::makeText("systemctl restart nginx")}, 1);
+        QCOMPARE(p.primary, QStringLiteral("systemctl restart nginx"));
+        QVERIFY(p.secondary.isEmpty());
+    }
+
+    void leadingBlankLinesAreSkipped()
+    {
+        const auto p = derivePreview({Item::makeText("\n\n   \nreal content\nmore")}, 1);
+        QCOMPARE(p.primary, QStringLiteral("real content"));
+        QCOMPARE(p.secondary, QStringLiteral("more"));
+    }
+
+    void secondLineBecomesTheDetail()
+    {
+        const auto p = derivePreview(
+            {Item::makeText("sudo pacman -Syu\nNeed to check whether this breaks KDE.")}, 1);
+        QCOMPARE(p.primary, QStringLiteral("sudo pacman -Syu"));
+        QCOMPARE(p.secondary, QStringLiteral("Need to check whether this breaks KDE."));
+    }
+
+    void pastedImageHasNoFilenameSoItIsCalledScreenshot()
+    {
+        const auto p = derivePreview({Item::makeImage("abc", 1920, 1080, 4096)}, 1);
+        QCOMPARE(p.primary, QStringLiteral("Screenshot"));
+        QCOMPARE(p.secondary, QStringLiteral("1920 × 1080"));
+        QVERIFY(p.hasImage);
+    }
+
+    void animportedImageKeepsItsName()
+    {
+        const auto p = derivePreview({Item::makeImage("abc", 800, 600, 4096, "diagram.png")}, 1);
+        QCOMPARE(p.primary, QStringLiteral("diagram.png"));
+    }
+
+    void multipleItemsReportTheCountInsteadOfDetail()
+    {
+        const auto p = derivePreview(
+            {Item::makeText("Investigate this bug"), Item::makeImage("h", 10, 10, 1)}, 3);
+        QCOMPARE(p.primary, QStringLiteral("Investigate this bug"));
+        QCOMPARE(p.secondary, QStringLiteral("3 items"));  // more useful than line 2
+        QCOMPARE(p.itemCount, 3);
+        QVERIFY(p.hasImage);
+    }
+
+    void whitespaceOnlyTextYieldsNothing()
+    {
+        const auto p = derivePreview({Item::makeText("   \n\t\n  ")}, 1);
+        QVERIFY(p.primary.isEmpty());
+    }
+
+    void byteSizes()
+    {
+        QCOMPARE(formatBytes(512), QStringLiteral("512 B"));
+        QCOMPARE(formatBytes(2048), QStringLiteral("2 KB"));
+        QCOMPARE(formatBytes(4509715660LL), QStringLiteral("4.2 GB"));
+    }
+
+    // --- relative time -------------------------------------------------------
+    void relativeTimeBuckets()
+    {
+        constexpr qint64 s = 1000, m = 60 * s, h = 60 * m, d = 24 * h;
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+        QCOMPARE(relativeTime(now, now), QStringLiteral("just now"));
+        QCOMPARE(relativeTime(now - 30 * s, now), QStringLiteral("just now"));
+        QCOMPARE(relativeTime(now - 1 * m, now), QStringLiteral("a minute ago"));
+        QCOMPARE(relativeTime(now - 2 * m, now), QStringLiteral("2 minutes ago"));
+
+        // Beyond an hour the label depends on the calendar, not the elapsed
+        // time, so assert it is present and not a fallback rather than exact.
+        QVERIFY(!relativeTime(now - 3 * h, now).isEmpty());
+        QVERIFY(!relativeTime(now - 400 * d, now).isEmpty());
+    }
+
+    void clockSkewNeverReadsAsTheFuture()
+    {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        QCOMPARE(relativeTime(now + 5 * 60'000, now), QStringLiteral("just now"));
+    }
+};
+
+QTEST_APPLESS_MAIN(TestPreview)
+#include "test_preview.moc"

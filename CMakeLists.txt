@@ -22,6 +22,8 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 add_library(napkin_core STATIC
   src/domain/Clock.cpp
   src/domain/BufferService.cpp
+  src/domain/Preview.cpp
+  src/domain/TimeFormat.cpp
   src/data/Database.cpp
   src/data/Statement.cpp
   src/data/Migrations.cpp
@@ -32,13 +34,23 @@ add_library(napkin_core STATIC
 target_link_libraries(napkin_core PUBLIC Qt6::Core SQLite3::SQLite3)
 target_include_directories(napkin_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# --- application --------------------------------------------------------------
-qt_add_executable(napkin
-  src/main.cpp
+# --- ui -----------------------------------------------------------------------
+# A library rather than loose sources in the executable, so the widget tree can
+# be driven headlessly by tests instead of only by hand.
+qt_add_library(napkin_ui STATIC
   src/ui/MainWindow.cpp
+  src/ui/BufferListModel.cpp
+  src/ui/BufferListView.cpp
+  src/ui/BufferCardDelegate.cpp
+  src/ui/InlineEditor.cpp
+  src/ui/Autosave.cpp
   src/app/SingleInstance.cpp
 )
-target_link_libraries(napkin PRIVATE napkin_core Qt6::Widgets Qt6::Network)
+target_link_libraries(napkin_ui PUBLIC napkin_core Qt6::Widgets Qt6::Network)
+
+# --- application --------------------------------------------------------------
+qt_add_executable(napkin src/main.cpp)
+target_link_libraries(napkin PRIVATE napkin_ui)
 set_target_properties(napkin PROPERTIES WIN32_EXECUTABLE OFF MACOSX_BUNDLE OFF)
 
 # --- Phase 0 spike (disposable) -----------------------------------------------
@@ -47,8 +59,16 @@ target_link_libraries(napkin_spike PRIVATE Qt6::Widgets SQLite3::SQLite3)
 
 # --- tests --------------------------------------------------------------------
 enable_testing()
-foreach(t test_migrations test_invariants test_buffers test_items test_paths)
+foreach(t test_migrations test_invariants test_buffers test_items test_paths test_preview test_performance)
   qt_add_executable(${t} tests/${t}.cpp)
   target_link_libraries(${t} PRIVATE napkin_core Qt6::Test)
   add_test(NAME ${t} COMMAND ${t})
+endforeach()
+
+# GUI tests drive the real widget tree offscreen.
+foreach(t test_editing)
+  qt_add_executable(${t} tests/${t}.cpp)
+  target_link_libraries(${t} PRIVATE napkin_ui Qt6::Test)
+  add_test(NAME ${t} COMMAND ${t})
+  set_tests_properties(${t} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endforeach()

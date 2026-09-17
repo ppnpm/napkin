@@ -78,6 +78,17 @@ std::vector<Item> ItemRepository::listForBuffer(BufferId bufferId)
     return out;
 }
 
+std::vector<Item> ItemRepository::previewHead(BufferId bufferId, int limit)
+{
+    Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
+                     " source_name, width, height, byte_size FROM items"
+                     " WHERE buffer_id = ? ORDER BY position ASC, id ASC LIMIT ?");
+    s.bind(1, bufferId).bind(2, limit);
+    std::vector<Item> out;
+    while (s.step()) out.push_back(readItem(s));
+    return out;
+}
+
 int ItemRepository::countForBuffer(BufferId bufferId)
 {
     Statement s(db_, "SELECT COUNT(*) FROM items WHERE buffer_id = ?");
