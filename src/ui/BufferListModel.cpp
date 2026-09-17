@@ -21,12 +21,20 @@ int BufferListModel::rowCount(const QModelIndex& parent) const
     return parent.isValid() ? 0 : int(rows_.size());
 }
 
+void BufferListModel::setMode(Mode mode)
+{
+    if (mode_ == mode) return;
+    mode_ = mode;
+    expandedRow_ = -1;  // nothing stays open across a mode switch
+    reload();
+}
+
 void BufferListModel::reload()
 {
     if (expandedRow_ >= 0) { pendingReload_ = true; return; }  // see setExpandedRow
 
     beginResetModel();
-    rows_ = buffers_.listLive(kMaxRows);
+    rows_ = mode_ == Mode::Live ? buffers_.listLive(kMaxRows) : buffers_.listTrash();
     previewCache_.clear();
     endResetModel();
     emit countChanged(int(rows_.size()));
@@ -81,15 +89,21 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     case IsDraftRole:    return isDraft;
     case IsExpandedRole: return row == expandedRow_;
     case SectionFirstRole:
+        if (mode_ == Mode::Trash) return row == 0;
         if (row == 0) return true;
         return rows_[size_t(row) - 1].pinned != b.pinned;
     case SectionNameRole:
+        if (mode_ == Mode::Trash) return QStringLiteral("TRASH");
         return b.pinned ? QStringLiteral("PINNED") : QStringLiteral("RECENT");
-    case Qt::AccessibleTextRole:
+    case Qt::AccessibleTextRole: {
         // Never encode state in styling alone (SPEC.md §14).
-        return QStringLiteral("%1. %2%3")
-            .arg(p.primary.isEmpty() ? QStringLiteral("Empty buffer") : p.primary,
-                 p.secondary, b.kept ? QStringLiteral(". Kept") : QString());
+        QString label = p.primary.isEmpty() ? tr("Empty buffer") : p.primary;
+        if (!p.secondary.isEmpty()) label += QStringLiteral(". ") + p.secondary;
+        if (b.pinned) label += tr(". Pinned");
+        if (b.kept)   label += tr(". Kept");
+        if (b.inTrash()) label += tr(". In trash");
+        return label;
+    }
     default: return {};
     }
 }
@@ -164,6 +178,14 @@ void BufferListModel::removeDraftRow()
     endRemoveRows();
     if (expandedRow_ == row) expandedRow_ = -1;
     emit countChanged(int(rows_.size()));
+}
+
+void BufferListModel::refreshRow(BufferId id)
+{
+    const int row = rowForId(id);
+    if (row < 0) return;
+    if (const auto fresh = buffers_.find(id)) rows_[size_t(row)] = *fresh;
+    emit dataChanged(index(row), index(row));
 }
 
 void BufferListModel::invalidatePreview(BufferId id)

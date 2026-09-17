@@ -3,6 +3,7 @@
 #include "BufferListModel.h"
 #include "BufferListView.h"
 #include "InlineEditor.h"
+#include "UndoToast.h"
 
 #include "../data/BufferRepository.h"
 #include "../data/Database.h"
@@ -14,8 +15,12 @@
 #include <QCloseEvent>
 #include <QLabel>
 #include <QAction>
+#include <QMenu>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QStackedWidget>
 #include <QTimer>
+#include <QHBoxLayout>
 #include <QVBoxLayout>
 
 namespace napkin {
@@ -61,10 +66,25 @@ void MainWindow::buildUi()
     emptyLayout->addSpacing(4);
     emptyLayout->addWidget(line2);
 
+    emptyTitle_ = title; emptyLine1_ = line1; emptyLine2_ = line2;
+
     stack_ = new QStackedWidget;
     stack_->addWidget(view_);
     stack_->addWidget(empty);
-    setCentralWidget(stack_);
+
+    auto* central = new QWidget;
+    auto* rootLayout = new QVBoxLayout(central);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
+    rootLayout->addWidget(buildHeaderWidget());
+    rootLayout->addWidget(stack_, 1);
+    setCentralWidget(central);
+
+    toast_ = new UndoToast(central);
+    connect(toast_, &UndoToast::undoRequested, this, [this](BufferId id) {
+        service_.restore(id);
+        reloadPreservingSelection();
+    });
 
     // --- autosave ------------------------------------------------------------
     autosave_ = new Autosave(this);
@@ -94,6 +114,11 @@ void MainWindow::buildUi()
     connect(newBufferAction, &QAction::triggered, this, &MainWindow::newDraft);
     addAction(newBufferAction);
 
+    connect(view_, &BufferListView::pinToggleRequested,  this, &MainWindow::togglePin);
+    connect(view_, &BufferListView::keepToggleRequested, this, &MainWindow::toggleKeep);
+    connect(view_, &BufferListView::trashRequested,      this, &MainWindow::trashRow);
+    connect(view_, &BufferListView::contextMenuRequested, this, &MainWindow::showContextMenu);
+
     // Relative labels go stale silently, so repaint them on a slow tick.
     timeRefresh_ = new QTimer(this);
     timeRefresh_->setInterval(kTimeRefreshMs);
@@ -105,10 +130,144 @@ void MainWindow::buildUi()
     updateEmptyState();
 }
 
+QWidget* MainWindow::buildHeaderWidget()
+{
+    auto* header = new QWidget;
+    auto* layout = new QHBoxLayout(header);
+    layout->setContentsMargins(16, 10, 12, 10);
+
+    auto* name = new QLabel(tr("Napkin"));
+    QFont nf = name->font();
+    nf.setBold(true);
+    name->setFont(nf);
+    layout->addWidget(name);
+    layout->addStretch();
+
+    // Phase 5 puts the search field here, between the name and the trash
+    // toggle — the placement adopted from the §7 mockup review.
+    auto* trashButton = new QPushButton(tr("Trash"));
+    trashButton->setFlat(true);
+    trashButton->setCheckable(true);
+    trashButton->setCursor(Qt::PointingHandCursor);
+    trashButton->setObjectName(QStringLiteral("trashToggle"));
+    connect(trashButton, &QPushButton::toggled, this, &MainWindow::showTrash);
+    layout->addWidget(trashButton);
+
+    return header;
+}
+
+void MainWindow::showTrash(bool trash)
+{
+    collapseEditor();
+    toast_->dismiss();
+    model_->setMode(trash ? BufferListModel::Mode::Trash : BufferListModel::Mode::Live);
+    updateEmptyState();
+}
+
+void MainWindow::reloadPreservingSelection()
+{
+    const BufferId current = model_->idAt(view_->currentIndex().row());
+    model_->reload();
+    if (const int row = model_->rowForId(current); row >= 0)
+        view_->setCurrentIndex(model_->index(row, 0));
+    updateEmptyState();
+}
+
+void MainWindow::togglePin(int row)
+{
+    const BufferId id = model_->idAt(row);
+    if (id == kNoBuffer || model_->mode() != BufferListModel::Mode::Live) return;
+
+    const auto buffer = buffers_.find(id);
+    if (!buffer) return;
+    service_.setPinned(id, !buffer->pinned);
+    reloadPreservingSelection();   // pinning moves the card; that is the point
+}
+
+void MainWindow::toggleKeep(int row)
+{
+    const BufferId id = model_->idAt(row);
+    if (id == kNoBuffer || model_->mode() != BufferListModel::Mode::Live) return;
+
+    const auto buffer = buffers_.find(id);
+    if (!buffer) return;
+    service_.setKept(id, !buffer->kept);
+    model_->refreshRow(id);        // keeping changes nothing about placement
+}
+
+void MainWindow::trashRow(int row)
+{
+    const BufferId id = model_->idAt(row);
+    if (id == kNoBuffer) return;
+
+    if (model_->mode() == BufferListModel::Mode::Trash) {   // restore instead
+        service_.restore(id);
+        reloadPreservingSelection();
+        return;
+    }
+
+    // The repository refuses a kept buffer outright, so the confirmation cannot
+    // be skipped by a UI path that forgets to ask (SPEC.md §6).
+    if (!service_.trash(id)) {
+        QMessageBox box(this);
+        box.setWindowTitle(tr("Delete kept buffer?"));
+        box.setText(tr("This buffer is kept."));
+        box.setInformativeText(
+            tr("Kept buffers are never removed by a sweep. Deleting it now "
+               "releases that protection and moves it to the trash, where it "
+               "stays for %1 days.").arg(kTrashRetentionDays));
+        box.setIcon(QMessageBox::Warning);
+        box.addButton(QMessageBox::Cancel);
+        auto* del = box.addButton(tr("Delete"), QMessageBox::DestructiveRole);
+        box.setDefaultButton(QMessageBox::Cancel);
+        box.exec();
+        if (box.clickedButton() != del) return;
+        service_.trashConfirmed(id);
+    }
+
+    reloadPreservingSelection();
+    toast_->offer(tr("Buffer moved to trash"), id);
+}
+
+void MainWindow::showContextMenu(int row, const QPoint& globalPos)
+{
+    const BufferId id = model_->idAt(row);
+    if (id == kNoBuffer) return;
+    const auto buffer = buffers_.find(id);
+    if (!buffer) return;
+
+    QMenu menu(this);
+    if (model_->mode() == BufferListModel::Mode::Trash) {
+        menu.addAction(tr("Restore"), this, [this, row] { trashRow(row); });
+    } else {
+        // Only actions that apply: no greyed-out rows, no giant toolbar.
+        menu.addAction(buffer->pinned ? tr("Unpin") : tr("Pin\tP"),
+                       this, [this, row] { togglePin(row); });
+        menu.addAction(buffer->kept ? tr("Release keep\tK") : tr("Keep\tK"),
+                       this, [this, row] { toggleKeep(row); });
+        menu.addSeparator();
+        menu.addAction(tr("Delete\tDel"), this, [this, row] { trashRow(row); });
+    }
+    menu.exec(globalPos);
+}
+
 void MainWindow::updateEmptyState()
 {
     const bool empty = model_->rowCount() == 0;
     stack_->setCurrentIndex(empty ? 1 : 0);
+    if (!empty) return;
+
+    const bool trash = model_->mode() == BufferListModel::Mode::Trash;
+    emptyTitle_->setVisible(!trash);
+    emptyLine1_->setText(trash ? tr("Nothing in the trash.") : tr("Put something here."));
+    emptyLine2_->setText(trash ? tr("Deleted buffers stay here for %1 days.").arg(kTrashRetentionDays)
+                               : tr("Ctrl+N to begin"));
+}
+
+void MainWindow::resizeEvent(QResizeEvent* e)
+{
+    QMainWindow::resizeEvent(e);
+    if (toast_ && toast_->isVisible()) toast_->reposition();
 }
 
 void MainWindow::newDraft()

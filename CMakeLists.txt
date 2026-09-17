@@ -44,6 +44,8 @@ qt_add_library(napkin_ui STATIC
   src/ui/BufferCardDelegate.cpp
   src/ui/InlineEditor.cpp
   src/ui/Autosave.cpp
+  src/ui/Icons.cpp
+  src/ui/UndoToast.cpp
   src/app/SingleInstance.cpp
 )
 target_link_libraries(napkin_ui PUBLIC napkin_core Qt6::Widgets Qt6::Network)
@@ -66,7 +68,7 @@ foreach(t test_migrations test_invariants test_buffers test_items test_paths tes
 endforeach()
 
 # GUI tests drive the real widget tree offscreen.
-foreach(t test_editing)
+foreach(t test_editing test_lifecycle)
   qt_add_executable(${t} tests/${t}.cpp)
   target_link_libraries(${t} PRIVATE napkin_ui Qt6::Test)
   add_test(NAME ${t} COMMAND ${t})

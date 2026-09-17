@@ -27,9 +27,17 @@ signals:
     void collapseRequested();
     void editorTextChanged();
 
+    // List-scope commands. Emitted only when the list itself has focus, so they
+    // can never fire while the user is typing (SPEC.md §7).
+    void pinToggleRequested(int row);
+    void keepToggleRequested(int row);
+    void trashRequested(int row);
+    void contextMenuRequested(int row, const QPoint& globalPos);
+
 protected:
     void resizeEvent(QResizeEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
+    void contextMenuEvent(QContextMenuEvent* e) override;
 
 private:
     void repositionEditor();

@@ -3,6 +3,7 @@
 #include "BufferListModel.h"
 #include "InlineEditor.h"
 
+#include <QContextMenuEvent>
 #include <QKeyEvent>
 #include <QScrollBar>
 
@@ -87,6 +88,14 @@ void BufferListView::repositionEditor()
     editor_->setGeometry(delegate_->contentRect(item, index));
 }
 
+void BufferListView::contextMenuEvent(QContextMenuEvent* e)
+{
+    const QModelIndex index = indexAt(e->pos());
+    if (!index.isValid()) return;
+    setCurrentIndex(index);
+    emit contextMenuRequested(index.row(), e->globalPos());
+}
+
 void BufferListView::resizeEvent(QResizeEvent* e)
 {
     QListView::resizeEvent(e);
@@ -110,6 +119,19 @@ void BufferListView::keyPressEvent(QKeyEvent* e)
         return;
     default:
         break;
+    }
+
+    // Bare letters are safe as commands precisely because this handler only
+    // runs with list focus; Delete rather than Ctrl+D, which sits next to
+    // Ctrl+N and is far too easy to hit by accident.
+    if (!isEditing() && currentIndex().isValid() && e->modifiers() == Qt::NoModifier) {
+        const int row = currentIndex().row();
+        switch (e->key()) {
+        case Qt::Key_P:      emit pinToggleRequested(row);  return;
+        case Qt::Key_K:      emit keepToggleRequested(row); return;
+        case Qt::Key_Delete: emit trashRequested(row);      return;
+        default: break;
+        }
     }
     QListView::keyPressEvent(e);
 }

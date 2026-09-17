@@ -2,6 +2,7 @@
 #include "../domain/Types.h"
 #include <QMainWindow>
 
+class QAction;
 class QLabel;
 class QStackedWidget;
 class QTimer;
@@ -9,6 +10,7 @@ class QTimer;
 namespace napkin {
 
 class Autosave;
+class UndoToast;
 class BufferListModel;
 class BufferListView;
 class BufferRepository;
@@ -29,16 +31,24 @@ public slots:
     // rather than only through a key chord.
     void newDraft();
     void collapseEditor();
+    void togglePin(int row);
+    void toggleKeep(int row);
+    void trashRow(int row);
+    void showTrash(bool trash);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
     bool event(QEvent* e) override;
+    void resizeEvent(QResizeEvent* e) override;
 
 private:
     void buildUi();
+    QWidget* buildHeaderWidget();
     void openRow(int row);
     void flushEditor();
     void updateEmptyState();
+    void showContextMenu(int row, const QPoint& globalPos);
+    void reloadPreservingSelection();
 
     Database&         db_;
     BufferRepository& buffers_;
@@ -49,7 +59,12 @@ private:
     BufferListView*  view_   = nullptr;
     QStackedWidget*  stack_  = nullptr;
     Autosave*        autosave_ = nullptr;
+    UndoToast*       toast_ = nullptr;
     QTimer*          timeRefresh_ = nullptr;
+    QAction*         trashAction_ = nullptr;
+    QLabel*          emptyTitle_ = nullptr;
+    QLabel*          emptyLine1_ = nullptr;
+    QLabel*          emptyLine2_ = nullptr;
 
     // What the open editor is bound to. kNoBuffer means an uncommitted draft,
     // which by invariant 5 has no row in the database yet.

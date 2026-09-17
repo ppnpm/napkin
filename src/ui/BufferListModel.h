@@ -32,7 +32,14 @@ public:
         SectionNameRole,    // "PINNED" / "RECENT"
     };
 
+    // Live shows the stack; Trash shows what is recoverable. Same rows, same
+    // delegate — only the query and the available actions differ.
+    enum class Mode { Live, Trash };
+
     BufferListModel(BufferRepository& buffers, ItemRepository& items, QObject* parent = nullptr);
+
+    Mode mode() const { return mode_; }
+    void setMode(Mode mode);
 
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
@@ -60,6 +67,10 @@ public:
     void removeDraftRow();
 
     void invalidatePreview(BufferId id);
+
+    // Re-reads a single row's metadata without resetting the model, so toggling
+    // a flag does not cost the selection or the scroll position.
+    void refreshRow(BufferId id);
     void refreshTimestamps();
 
 signals:
@@ -75,6 +86,7 @@ private:
     std::vector<Buffer> rows_;
     mutable QHash<BufferId, BufferPreview> previewCache_;
     BufferPreview draftPreview_;
+    Mode mode_ = Mode::Live;
 
     int  expandedRow_   = -1;
     bool pendingReload_ = false;

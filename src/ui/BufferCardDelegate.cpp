@@ -1,5 +1,6 @@
 #include "BufferCardDelegate.h"
 #include "BufferListModel.h"
+#include "Icons.h"
 #include "../domain/Clock.h"
 #include "../domain/TimeFormat.h"
 
@@ -119,8 +120,26 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     // The inline editor covers the content area while the row is open.
     if (expanded) { p->restore(); return; }
 
+    // --- pin / keep indicators -------------------------------------------------
+    // Never colour alone: each glyph is a distinct shape, and the model exposes
+    // an accessible label alongside it (SPEC.md §14).
+    const bool pinned = index.data(BufferListModel::PinnedRole).toBool();
+    const bool kept   = index.data(BufferListModel::KeptRole).toBool();
+    int glyphRight = 0;
+    if (pinned || kept) {
+        const int g = icons::kGlyphSize;
+        int x = card.right() - kPadding - g;
+        if (kept) {
+            icons::drawKeep(p, QRect(x, card.top() + kPadding, g, g), dimmed(pal, 190));
+            x -= g + 6;
+        }
+        if (pinned)
+            icons::drawPin(p, QRect(x, card.top() + kPadding, g, g), dimmed(pal, 190));
+        glyphRight = card.right() - kPadding - x + g;
+    }
+
     // --- content ---------------------------------------------------------------
-    const QRect content = contentRect(option.rect, index);
+    const QRect content = contentRect(option.rect, index).adjusted(0, 0, -glyphRight, 0);
     const QFontMetrics fm(option.font);
     const QFontMetrics tfm(timestampFont(option.font));
 

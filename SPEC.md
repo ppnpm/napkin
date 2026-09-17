@@ -318,6 +318,26 @@ No modal, no second pane, no navigation model to learn. This matches the "pieces
 of paper on a desk" metaphor better than master-detail, and it means there is
 exactly one screen in the entire application.
 
+> **Reviewed against a master-detail mockup and upheld** (`docs/UI_suggestion.png`).
+> A two-pane proposal
+> (narrow list rail, large preview pane) was considered and rejected. The cost
+> is not aesthetic: two panes add a navigation model — which pane has focus, two
+> scroll positions, focus ping-pong on every interaction — to an application
+> whose entire premise is zero friction.
+>
+> The specific losses in that layout were: every row elided to a single
+> truncated line; **timestamps absent entirely**, on a surface organized by
+> recency; no home for the PINNED/RECENT split, which makes pinning invisible;
+> and a list that read as one row per *item* rather than per *buffer*, which
+> would delete the concept that lets a screenshot, a command and a URL stay
+> together as one thought.
+>
+> Three ideas from it were adopted: a **persistent search field** in the header
+> rather than a hidden `Ctrl+K` (Phase 5); **thumbnails in the card** (Phase 4);
+> and the legitimate problem it exposed — a 2560×1440 screenshot is cramped in a
+> card — solved by the **lightbox** already planned for Phase 4, which buys the
+> full-size view without making every text buffer pay for a permanent pane.
+
 ### Two latent bugs from v1, fixed here
 
 **Sort thrash.** Recent buffers sort by `modified_at`, and autosave updates
@@ -677,13 +697,33 @@ headless GUI tests driving the real widget tree (`tests/test_editing.cpp`):
 relied on in tests — and the spec wants shortcuts discoverable anyway, which an
 action carrying its own label and key hint gives for free.
 
-**Phase 3 — Pin, Keep, Trash.** Both flags, the `guard_kept_delete` trigger,
-soft delete, undo toast, trash view, confirmation flow. Heaviest test phase.
+**Phase 3 — Pin, Keep, Trash. ✅ COMPLETE.** Both flags with drawn indicators,
+list-scope keys, context menu, soft delete, undo toast, trash view and the
+confirmation flow. 13 new GUI test cases (88 total, 9 binaries).
+
+- **Pin moves the card, Keep does not.** Pinning reloads the list — that is the
+  point of it. Keeping refreshes one row in place, so the stack never reshuffles
+  for a lifecycle change. Both are asserted.
+- **The confirmation cannot be skipped.** `trashRow()` calls `service.trash()`,
+  which *returns false* for a kept buffer; the dialog is the only route to
+  `trashConfirmed()`. A UI path that forgot to ask would simply fail to delete.
+- **Every delete is soft and undoable** for 8 seconds, from a toast, without
+  hunting for the trash. A second delete replaces the standing offer — the most
+  recent is the one the user most likely meant.
+- Pin and Keep are inert in the trash view; `Delete` restores there instead.
+- Indicators are **drawn vector glyphs**, not an icon theme: a pushpin and a
+  bookmark. Deliberately not a padlock — Keep is retention, not security, and
+  the icon must not promise otherwise. Each state is also carried in the row's
+  accessible label, so nothing is encoded in styling alone.
+
+The header now carries the app name and the trash toggle, with the gap between
+them reserved for the Phase 5 search field.
 
 **Phase 4 — Images.** Clipboard paste, blob store, thumbnailer, inline preview,
 lightbox, image picker, reconciliation sweep.
 
-**Phase 5 — Search.** FTS5, buffer-level roll-up, inline filtering, highlighting.
+**Phase 5 — Search.** FTS5, buffer-level roll-up, inline filtering, highlighting,
+and the persistent header search field adopted from the §7 mockup review.
 
 **Phase 6 — Sweep.** Older section, nudge, review dialog, sweep-to-trash, trash purge.
 
@@ -724,6 +764,11 @@ because of the focus constraint measured in Phase 0 (below).
 **Drag and drop.** The item model is type-tagged and position-ordered
 specifically so a drop handler is additive: it constructs the same items paste
 does. Re-add when Linux feels finished.
+
+**A read mode.** Opening a buffer currently means editing it; there is no way to
+simply look at a long one. Acceptable for a scratchpad, and surfaced only by
+reviewing the master-detail mockup in §7, but worth revisiting once the content
+types are richer.
 
 **Generic files.** Deliberately closed. Reopening it means reopening large-file
 policy, MIME handling, and the file-manager identity question. Do not.
