@@ -6,6 +6,7 @@ class QAction;
 class QLabel;
 class QPushButton;
 class QStackedWidget;
+class QMenu;
 class QTimer;
 
 namespace napkin {
@@ -39,6 +40,10 @@ public slots:
     void toggleKeep(int row);
     void trashRow(int row);
     void showTrash(bool trash);
+    void restoreRow(int row);
+    void showShortcuts();
+    // The undo path normally runs from the toast; tests drive it directly.
+    void undoLastTrashForTest(BufferId id, bool wasKept, Timestamp modifiedAt);
     void emptyTrash();
     void pasteFromClipboard();
     void addImageFromFile();
@@ -54,7 +59,12 @@ protected:
 private:
     void buildUi();
     QWidget* buildHeaderWidget();
-    void flushEditor();
+    QMenu* buildOverflowMenu();
+    // Returns false when the write failed. The caller must NOT collapse or close
+    // on a false: doing so strands the text in a widget that is about to go
+    // away, and the next flush returns early because nothing is being edited.
+    bool flushEditor();
+    bool flushAndReportFailure();
     void updateEmptyState();
     void showContextMenu(int row, const QPoint& globalPos);
     void reloadPreservingSelection();
@@ -73,6 +83,11 @@ private:
     QStackedWidget*  stack_  = nullptr;
     Autosave*        autosave_ = nullptr;
     UndoToast*       toast_ = nullptr;
+    // What a trashed buffer looked like before it was trashed, so Undo can put
+    // it back as it was rather than as a stripped copy of itself.
+    struct TrashedState { BufferId id = kNoBuffer; bool kept = false; Timestamp modifiedAt = 0; };
+    TrashedState lastTrashed_;
+    int saveFailures_ = 0;
     QTimer*          timeRefresh_ = nullptr;
     QAction*         trashAction_ = nullptr;
     QPushButton*     emptyTrashButton_ = nullptr;

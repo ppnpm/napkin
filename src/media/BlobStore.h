@@ -15,6 +15,11 @@ public:
     // with a clear message rather than silently swallowing a gigabyte.
     static constexpr qint64 kMaxBytes = 64LL * 1024 * 1024;
 
+    // Bytes are not the only way to be enormous: a 48 KB PNG can declare
+    // 20000x20000 and cost 1.6 GB to decode. 80 megapixels is well past any
+    // camera or screenshot a scratch surface should hold.
+    static constexpr qint64 kMaxPixels = 80LL * 1000 * 1000;
+
     struct Stored {
         QString hash;
         QString mime;

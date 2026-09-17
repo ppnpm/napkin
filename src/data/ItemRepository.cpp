@@ -83,7 +83,11 @@ std::vector<Item> ItemRepository::listForBuffer(BufferId bufferId)
 
 std::vector<Item> ItemRepository::previewHead(BufferId bufferId, int limit)
 {
-    Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
+    // substr in SQL, not in C++: a card never shows more than a couple of lines,
+    // and loading the whole of a pasted log file to throw it away is the
+    // difference between a list that scrolls and one that does not.
+    Statement s(db_, "SELECT id, buffer_id, position, type, created_at,"
+                     " substr(text, 1, 2048), blob_hash,"
                      " source_name, width, height, byte_size, mime, animated FROM items"
                      " WHERE buffer_id = ? ORDER BY position ASC, id ASC LIMIT ?");
     s.bind(1, bufferId).bind(2, limit);

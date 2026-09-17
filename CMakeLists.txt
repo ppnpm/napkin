@@ -83,7 +83,7 @@ foreach(t test_migrations test_invariants test_buffers test_items test_paths tes
 endforeach()
 
 # GUI tests drive the real widget tree offscreen.
-foreach(t test_editing test_lifecycle test_images test_multiitem)
+foreach(t test_editing test_lifecycle test_images test_multiitem test_review_fixes)
   qt_add_executable(${t} tests/${t}.cpp)
   target_link_libraries(${t} PRIVATE napkin_ui Qt6::Test)
   add_test(NAME ${t} COMMAND ${t})

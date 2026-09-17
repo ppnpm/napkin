@@ -5,21 +5,32 @@
 
 namespace napkin::icons {
 
-// A pushpin seen head-on: round head, tapered shaft going down-left.
+// A pushpin: flat head, a crossbar, a tapered shaft and a point.
+//
+// The first attempt was a filled circle with a straight stem, which at 13px is
+// the universal magnifying-glass idiom — and would have collided head-on with
+// the search field arriving in the header. The crossbar and the point are what
+// make it read as a pin rather than a lens.
 void drawPin(QPainter* p, const QRect& box, const QColor& colour)
 {
     p->save();
     p->setRenderHint(QPainter::Antialiasing, true);
     const QRectF r(box);
-    const qreal cx = r.center().x(), cy = r.center().y(), s = r.width();
+    const qreal cx = r.center().x(), top = r.top() + r.height() * 0.10;
+    const qreal w = r.width(), h = r.height();
 
-    QPainterPath head;
-    head.addEllipse(QPointF(cx + s * 0.08, cy - s * 0.12), s * 0.26, s * 0.26);
-    p->fillPath(head, colour);
-
-    QPen pen(colour, std::max(1.0, s * 0.11), Qt::SolidLine, Qt::RoundCap);
-    p->setPen(pen);
-    p->drawLine(QPointF(cx - s * 0.10, cy + s * 0.06), QPointF(cx - s * 0.34, cy + s * 0.40));
+    QPainterPath pin;
+    pin.moveTo(cx - w * 0.26, top);                  // flat head
+    pin.lineTo(cx + w * 0.26, top);
+    pin.lineTo(cx + w * 0.17, top + h * 0.16);
+    pin.lineTo(cx + w * 0.38, top + h * 0.42);       // crossbar, right wing
+    pin.lineTo(cx + w * 0.07, top + h * 0.50);
+    pin.lineTo(cx,            top + h * 0.90);       // point
+    pin.lineTo(cx - w * 0.07, top + h * 0.50);
+    pin.lineTo(cx - w * 0.38, top + h * 0.42);       // crossbar, left wing
+    pin.lineTo(cx - w * 0.17, top + h * 0.16);
+    pin.closeSubpath();
+    p->fillPath(pin, colour);
     p->restore();
 }
 

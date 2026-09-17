@@ -13,10 +13,12 @@ class ItemRepository;
 // missing must be reported rather than silently rendered blank (SPEC.md §8).
 struct GcResult {
     int orphansRemoved = 0;   // files on disk that nothing references
+    int thumbnailsRemoved = 0;   // renderings of images that no longer exist
     int temporariesRemoved = 0;   // .tmp files from an interrupted write
     std::vector<QString> missingBlobs;  // referenced hashes with no file
 };
 
-GcResult reconcileBlobs(ItemRepository& items, BlobStore& blobs);
+GcResult reconcileBlobs(ItemRepository& items, BlobStore& blobs,
+                        const QString& thumbnailDir = {});
 
 }  // namespace napkin

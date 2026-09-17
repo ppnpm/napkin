@@ -130,10 +130,27 @@ private slots:
         QCOMPARE(f.model()->index(0, 0).data(BufferListModel::SectionNameRole).toString(),
                  QStringLiteral("TRASH"));
 
-        f.window.trashRow(0);                    // in trash mode this restores
+        // Delete in the trash now means delete, as it does in every file
+        // manager; Restore is its own action, bound to R.
+        f.window.restoreRow(0);
         QCOMPARE(f.model()->rowCount(), 0);
         f.window.showTrash(false);
         QCOMPARE(f.model()->rowCount(), 1);
+    }
+
+    void restoreIsItsOwnActionSeparateFromDelete()
+    {
+        GuiFixture f;
+        const auto id = f.seed("recoverable");
+        f.window.trashRow(f.model()->rowForId(id));
+        f.window.showTrash(true);
+        QCOMPARE(f.model()->rowCount(), 1);
+
+        f.window.restoreRow(0);
+
+        QCOMPARE(f.buffers.countTrash(), 0);
+        QCOMPARE(f.buffers.countLive(), 1);
+        QVERIFY(!f.buffers.find(id)->inTrash());
     }
 
     void pinAndKeepAreInertInTheTrashView()

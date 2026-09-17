@@ -46,6 +46,19 @@ BlobStore::Stored BlobStore::store(const QByteArray& bytes, const QString& mimeH
         return out;
     }
 
+    // An SVG is a program that can name files. Compressed SVG cannot be
+    // inspected without decompressing it, so it is refused outright.
+    if (mime == QLatin1String("image/svg+xml-compressed")) {
+        out.error = QObject::tr("Napkin does not accept compressed SVG files.");
+        return out;
+    }
+    if (mime == QLatin1String("image/svg+xml") && formats::svgHasExternalReferences(payload)) {
+        out.error = QObject::tr(
+            "That SVG refers to other files on this computer, so Napkin will not store it. "
+            "An image that reaches outside itself could expose private files.");
+        return out;
+    }
+
     // Read the geometry without decoding the whole thing: a 100-megapixel HEIC
     // should not be fully rasterised just to record how big it is.
     QSize size;
@@ -58,6 +71,12 @@ BlobStore::Stored BlobStore::store(const QByteArray& bytes, const QString& mimeH
             reader.setAutoTransform(true);
             size = reader.size();
             animated = reader.supportsAnimation() && reader.imageCount() > 1;
+            if (size.isValid() && qint64(size.width()) * size.height() > kMaxPixels) {
+                out.error = QObject::tr(
+                    "That image is %1 by %2 pixels, which is larger than Napkin will open.")
+                        .arg(size.width()).arg(size.height());
+                return out;
+            }
             if (!size.isValid()) {
                 const QImage decoded = reader.read();   // some formats need it
                 if (decoded.isNull()) {

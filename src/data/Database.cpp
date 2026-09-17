@@ -31,6 +31,9 @@ void Database::open(const QString& path)
     exec("PRAGMA synchronous=NORMAL;");
     exec("PRAGMA foreign_keys=ON;");
     exec("PRAGMA busy_timeout=3000;");
+    // Without this, INSERT OR REPLACE silently deletes the replaced row WITHOUT
+    // firing guard_kept_delete — a hole straight through invariant 1.
+    exec("PRAGMA recursive_triggers=ON;");
 
     migrate(*this);
 }

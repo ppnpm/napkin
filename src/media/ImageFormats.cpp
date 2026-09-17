@@ -4,6 +4,7 @@
 #include <QImageReader>
 #include <QMimeDatabase>
 #include <QSet>
+#include <QXmlStreamReader>
 
 namespace napkin::formats {
 namespace {
@@ -114,6 +115,34 @@ QString mimeForExtension(const QString& extension)
     const QMimeDatabase db;
     const auto type = db.mimeTypeForFile(QStringLiteral("x.") + e, QMimeDatabase::MatchExtension);
     return type.isValid() ? type.name() : QStringLiteral("image/png");
+}
+
+bool svgHasExternalReferences(const QByteArray& bytes)
+{
+    QXmlStreamReader xml(bytes);
+    while (!xml.atEnd()) {
+        if (xml.readNext() != QXmlStreamReader::StartElement) continue;
+
+        for (const auto& attribute : xml.attributes()) {
+            const QString name = attribute.name().toString().toLower();
+            const QString value = attribute.value().toString().trimmed();
+
+            if (name == QLatin1String("href") || name == QLatin1String("src")) {
+                // A fragment ("#gradient") points inside this document.
+                if (value.startsWith(QLatin1Char('#'))) continue;
+                if (value.startsWith(QLatin1String("data:"), Qt::CaseInsensitive)) continue;
+                if (value.isEmpty()) continue;
+                return true;
+            }
+            // CSS can smuggle a reference too: fill="url(/tmp/secret.png)".
+            if (value.contains(QLatin1String("url("), Qt::CaseInsensitive)
+                && !value.contains(QLatin1String("url(#"), Qt::CaseInsensitive)
+                && !value.contains(QLatin1String("url(data:"), Qt::CaseInsensitive))
+                return true;
+        }
+    }
+    // A malformed SVG is not proof of safety.
+    return xml.hasError();
 }
 
 bool isAnimated(const QByteArray& bytes, const QString& mime)

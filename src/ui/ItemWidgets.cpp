@@ -117,7 +117,7 @@ bool TextItemWidget::eventFilter(QObject* watched, QEvent* event)
 
 // --- image -------------------------------------------------------------------
 
-ImageItemWidget::ImageItemWidget(const Item& item, Thumbnailer& thumbs, BlobStore& blobs,
+ImageItemWidget::ImageItemWidget(const Item& item, Thumbnailer& thumbs, BlobStore&,
                                  QWidget* parent)
     : QWidget(parent), id_(item.id)
 {

@@ -12,6 +12,7 @@
 #include "../domain/BufferService.h"
 #include "../domain/Preview.h"
 #include "../domain/TimeFormat.h"
+#include "../app/Paths.h"
 #include "../media/BlobGc.h"
 #include "../media/BlobStore.h"
 #include "../media/ClipboardContent.h"
@@ -25,6 +26,7 @@
 #include <QClipboard>
 #include <QFileDialog>
 #include <QMenu>
+#include <QToolButton>
 #include <QMimeData>
 #include <QMessageBox>
 #include <QPushButton>
@@ -95,12 +97,21 @@ void MainWindow::buildUi()
     toast_ = new UndoToast(central);
     connect(toast_, &UndoToast::undoRequested, this, [this](BufferId id) {
         service_.restore(id);
+        // Confirming the deletion of a kept buffer releases the keep. Undoing
+        // that deletion has to put the keep back, or the user recovers a buffer
+        // that has quietly lost the protection they asked for and the next
+        // sweep will offer it up.
+        if (lastTrashed_.id == id) {
+            if (lastTrashed_.kept) service_.setKept(id, true);
+            buffers_.setModifiedAt(id, lastTrashed_.modifiedAt);
+            lastTrashed_ = {};
+        }
         reloadPreservingSelection();
     });
 
     // --- autosave ------------------------------------------------------------
     autosave_ = new Autosave(this);
-    autosave_->setFlushHandler([this] { flushEditor(); });
+    autosave_->setFlushHandler([this] { flushAndReportFailure(); });
 
     connect(view_, &BufferListView::rowActivated, this, &MainWindow::openRow);
     connect(view_, &BufferListView::collapseRequested, this, &MainWindow::collapseEditor);
@@ -150,6 +161,7 @@ void MainWindow::buildUi()
     connect(view_, &BufferListView::pinToggleRequested,  this, &MainWindow::togglePin);
     connect(view_, &BufferListView::keepToggleRequested, this, &MainWindow::toggleKeep);
     connect(view_, &BufferListView::trashRequested,      this, &MainWindow::trashRow);
+    connect(view_, &BufferListView::restoreRequested,    this, &MainWindow::restoreRow);
     connect(view_, &BufferListView::contextMenuRequested, this, &MainWindow::showContextMenu);
 
     // Relative labels go stale silently, so repaint them on a slow tick.
@@ -158,9 +170,18 @@ void MainWindow::buildUi()
     connect(timeRefresh_, &QTimer::timeout, this, [this] { model_->refreshTimestamps(); });
     timeRefresh_->start();
 
+    view_->setAccessibleName(tr("Buffers"));
+    view_->setAccessibleDescription(
+        tr("Your buffers, newest first. Enter opens one; P pins, K keeps, Delete trashes."));
+
     setWindowTitle(tr("Napkin"));
     resize(560, 760);
     updateEmptyState();
+
+    // A keyboard user arriving with focus on the Trash button and no row
+    // selected could press P, K, Delete or Enter and have nothing happen at all.
+    if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
+    view_->setFocus(Qt::OtherFocusReason);
 }
 
 QWidget* MainWindow::buildHeaderWidget()
@@ -179,10 +200,35 @@ QWidget* MainWindow::buildHeaderWidget()
     // Phase 5 puts the search field here, between the name and the trash
     // toggle — the placement adopted from the §7 mockup review.
     auto* trashButton = new QPushButton(tr("Trash"));
+    trashButton->setAccessibleName(tr("Show trash"));
+    trashButton->setToolTip(tr("Show deleted buffers"));
     trashButton->setFlat(true);
     trashButton->setCheckable(true);
     trashButton->setCursor(Qt::PointingHandCursor);
     trashButton->setObjectName(QStringLiteral("trashToggle"));
+    // SPEC §16 justified using QAction over QShortcut because an action
+    // "carries its own label and key hint" — but they were attached to no menu
+    // and no button, so they were invisible shortcuts wearing a label. This
+    // collects that payoff: every binding is now readable somewhere.
+    auto* newButton = new QPushButton(tr("＋ New"));
+    newButton->setFlat(true);
+    newButton->setCursor(Qt::PointingHandCursor);
+    newButton->setObjectName(QStringLiteral("newButton"));
+    newButton->setToolTip(tr("New buffer (Ctrl+N)"));
+    newButton->setAccessibleName(tr("New buffer"));
+    connect(newButton, &QPushButton::clicked, this, &MainWindow::newDraft);
+    layout->addWidget(newButton);
+
+    auto* menuButton = new QToolButton;
+    menuButton->setText(QStringLiteral("⋯"));
+    menuButton->setAutoRaise(true);
+    menuButton->setPopupMode(QToolButton::InstantPopup);
+    menuButton->setObjectName(QStringLiteral("overflowButton"));
+    menuButton->setToolTip(tr("More actions"));
+    menuButton->setAccessibleName(tr("More actions"));
+    menuButton->setMenu(buildOverflowMenu());
+    layout->addWidget(menuButton);
+
     emptyTrashButton_ = new QPushButton(tr("Empty trash"));
     emptyTrashButton_->setFlat(true);
     emptyTrashButton_->setCursor(Qt::PointingHandCursor);
@@ -195,6 +241,54 @@ QWidget* MainWindow::buildHeaderWidget()
     layout->addWidget(trashButton);
 
     return header;
+}
+
+QMenu* MainWindow::buildOverflowMenu()
+{
+    auto* menu = new QMenu(this);
+    for (QAction* action : actions()) menu->addAction(action);
+    menu->addSeparator();
+    auto* help = menu->addAction(tr("Keyboard shortcuts…"));
+    connect(help, &QAction::triggered, this, &MainWindow::showShortcuts);
+    return menu;
+}
+
+void MainWindow::showShortcuts()
+{
+    QMessageBox::information(
+        this, tr("Keyboard shortcuts"),
+        tr("<table cellpadding='4'>"
+           "<tr><td><b>Ctrl+N</b></td><td>New buffer</td></tr>"
+           "<tr><td><b>Ctrl+V</b></td><td>Paste text or an image</td></tr>"
+           "<tr><td><b>Ctrl+Shift+I</b></td><td>Add an image from a file</td></tr>"
+           "<tr><td><b>Enter</b> / double-click</td><td>Open the selected buffer</td></tr>"
+           "<tr><td><b>Esc</b></td><td>Close the open buffer</td></tr>"
+           "<tr><td colspan='2'>&nbsp;</td></tr>"
+           "<tr><td colspan='2'><i>With the list focused:</i></td></tr>"
+           "<tr><td><b>P</b></td><td>Pin — keeps it at the top</td></tr>"
+           "<tr><td><b>K</b></td><td>Keep — never removed by a sweep</td></tr>"
+           "<tr><td><b>Delete</b></td><td>Move to trash</td></tr>"
+           "<tr><td><b>R</b></td><td>Restore (in the trash)</td></tr>"
+           "</table>"));
+}
+
+void MainWindow::undoLastTrashForTest(BufferId id, bool wasKept, Timestamp modifiedAt)
+{
+    service_.restore(id);
+    if (wasKept) service_.setKept(id, true);
+    buffers_.setModifiedAt(id, modifiedAt);
+    lastTrashed_ = {};
+    reloadPreservingSelection();
+}
+
+void MainWindow::restoreRow(int row)
+{
+    if (model_->mode() != BufferListModel::Mode::Trash) return;
+    const BufferId id = model_->idAt(row);
+    if (id == kNoBuffer) return;
+    service_.restore(id);
+    reloadPreservingSelection();
+    emptyTrashButton_->setVisible(model_->rowCount() > 0);
 }
 
 void MainWindow::showTrash(bool trash)
@@ -242,14 +336,33 @@ void MainWindow::trashRow(int row)
     const BufferId id = model_->idAt(row);
     if (id == kNoBuffer) return;
 
-    if (model_->mode() == BufferListModel::Mode::Trash) {   // restore instead
-        service_.restore(id);
+    if (model_->mode() == BufferListModel::Mode::Trash) {
+        // Delete used to mean *restore* here, which is the opposite of what it
+        // means in every file manager and mail client. Restore is its own
+        // action; Delete destroys, with a confirmation because it is final.
+        QMessageBox box(this);
+        box.setWindowTitle(tr("Delete permanently?"));
+        box.setText(tr("Delete this buffer permanently?"));
+        box.setInformativeText(tr("This cannot be undone."));
+        box.setIcon(QMessageBox::Warning);
+        box.addButton(QMessageBox::Cancel);
+        auto* confirm = box.addButton(tr("Delete permanently"), QMessageBox::DestructiveRole);
+        box.setDefaultButton(QMessageBox::Cancel);
+        box.exec();
+        if (box.clickedButton() != confirm) return;
+
+        buffers_.hardDeleteEvenIfKept(id);
+        reconcileBlobs(items_, blobs_, paths::thumbsDir());
         reloadPreservingSelection();
+        emptyTrashButton_->setVisible(model_->rowCount() > 0);
         return;
     }
 
     // The repository refuses a kept buffer outright, so the confirmation cannot
     // be skipped by a UI path that forgets to ask (SPEC.md §6).
+    if (const auto before = buffers_.find(id))
+        lastTrashed_ = {id, before->kept, before->modifiedAt};
+
     if (!service_.trash(id)) {
         QMessageBox box(this);
         box.setWindowTitle(tr("Delete kept buffer?"));
@@ -280,7 +393,9 @@ void MainWindow::showContextMenu(int row, const QPoint& globalPos)
 
     QMenu menu(this);
     if (model_->mode() == BufferListModel::Mode::Trash) {
-        menu.addAction(tr("Restore"), this, [this, row] { trashRow(row); });
+        menu.addAction(tr("Restore\tR"), this, [this, row] { restoreRow(row); });
+        menu.addSeparator();
+        menu.addAction(tr("Delete permanently\tDel"), this, [this, row] { trashRow(row); });
     } else {
         // Only actions that apply: no greyed-out rows, no giant toolbar.
         menu.addAction(buffer->pinned ? tr("Unpin") : tr("Pin\tP"),
@@ -417,7 +532,9 @@ void MainWindow::addImageFromFile()
 
 void MainWindow::emptyTrash()
 {
-    const int count = buffers_.countTrash();
+    // What will actually be destroyed, not what is merely in the bin: a kept
+    // row is skipped by the purge, so counting it here over-promises.
+    const int count = buffers_.countPurgeable();
     if (count == 0) return;
 
     QMessageBox box(this);
@@ -433,7 +550,7 @@ void MainWindow::emptyTrash()
 
     toast_->dismiss();   // whatever it was offering no longer exists
     service_.emptyTrash();
-    reconcileBlobs(items_, blobs_);   // rows are gone; now reclaim their blobs
+    reconcileBlobs(items_, blobs_, paths::thumbsDir());  // reclaim blobs AND thumbnails
     reloadPreservingSelection();
     emptyTrashButton_->setVisible(model_->rowCount() > 0);
 }
@@ -447,9 +564,12 @@ void MainWindow::resizeEvent(QResizeEvent* e)
 void MainWindow::newDraft()
 {
     if (view_->isEditing()) {
-        autosave_->flushNow();
         collapseEditor();
+        if (view_->isEditing()) return;   // a failed save is holding the editor open
     }
+    // Ctrl+N while looking at the bin used to create a live buffer and display
+    // it under the TRASH header.
+    if (model_->mode() != BufferListModel::Mode::Live) showTrash(false);
     stack_->setCurrentIndex(0);  // leave the empty state immediately
 
     const int row = model_->insertDraftRow();
@@ -461,8 +581,8 @@ void MainWindow::newDraft()
 void MainWindow::openRow(int row)
 {
     if (view_->isEditing()) {
-        autosave_->flushNow();
         collapseEditor();
+        if (view_->isEditing()) return;
     }
 
     const BufferId id = model_->idAt(row);
@@ -473,7 +593,7 @@ void MainWindow::openRow(int row)
 void MainWindow::collapseEditor()
 {
     if (!view_->isEditing()) return;
-    autosave_->flushNow();
+    if (!flushAndReportFailure()) return;   // keep the editor open; the text lives there
 
     // An abandoned draft evaporates because it was never written (invariant 5).
     if (editingBuffer_ == kNoBuffer) model_->removeDraftRow();
@@ -484,12 +604,12 @@ void MainWindow::collapseEditor()
     updateEmptyState();
 }
 
-void MainWindow::flushEditor()
+bool MainWindow::flushEditor()
 {
-    if (!view_->isEditing()) return;
+    if (!view_->isEditing()) return true;
     auto* editor = view_->editor();
     const auto dirty = editor->dirtyText();
-    if (dirty.empty()) return;
+    if (dirty.empty()) return true;
 
     // Whitespace is not content: a draft of blank text still writes no row.
     bool hasContent = false;
@@ -497,13 +617,13 @@ void MainWindow::flushEditor()
 
     try {
         if (editingBuffer_ == kNoBuffer) {
-            if (!hasContent) return;                 // invariant 5
+            if (!hasContent) return true;            // invariant 5
 
             Draft draft;
             for (const auto& d : dirty)
                 if (!d.text.trimmed().isEmpty()) draft.add(Item::makeText(d.text));
             editingBuffer_ = service_.commitDraft(draft);
-            if (editingBuffer_ == kNoBuffer) return;
+            if (editingBuffer_ == kNoBuffer) return true;
 
             model_->promoteDraft(editingBuffer_);
             // Rebind ids rather than rebuilding: the user may still be typing,
@@ -524,10 +644,31 @@ void MainWindow::flushEditor()
         }
         editor->markClean();
         model_->invalidatePreview(editingBuffer_);
+        saveFailures_ = 0;
+        return true;
     } catch (const std::exception&) {
         // SPEC.md §14: never silently discard content. The text stays in the
-        // editor and the next flush tries again.
+        // editor, which is why the caller must not collapse on a false.
+        ++saveFailures_;
+        return false;
     }
+}
+
+// Flushes, and if the write failed tells the user rather than letting the text
+// evaporate. Retries are bounded: an earlier build re-armed the debounce on
+// every failure and spun at ~3 transactions a second, for ever, in silence.
+bool MainWindow::flushAndReportFailure()
+{
+    if (flushEditor()) return true;
+
+    if (saveFailures_ == 1 || saveFailures_ % 20 == 0) {
+        reportProblem(tr("Napkin could not save this buffer"),
+                      tr("Your text is still here and has not been changed. Napkin will keep "
+                         "trying.\n\nThis usually means the disk is full, or the storage "
+                         "folder is not writable."));
+    }
+    if (saveFailures_ < 60) autosave_->noteChange();   // bounded retry
+    return false;
 }
 
 void MainWindow::openImageItem(ItemId id)
@@ -553,7 +694,7 @@ void MainWindow::removeItemFromBuffer(ItemId id)
     if (!item) return;
 
     service_.removeItem(editingBuffer_, id);
-    reconcileBlobs(items_, blobs_);   // the blob may now have no references left
+    reconcileBlobs(items_, blobs_, paths::thumbsDir());
     view_->editor()->setItems(items_.listForBuffer(editingBuffer_));
     model_->invalidatePreview(editingBuffer_);
 }
@@ -568,7 +709,9 @@ bool MainWindow::event(QEvent* e)
 
 void MainWindow::closeEvent(QCloseEvent* e)
 {
-    autosave_->flushNow();
+    // Closing with unsaved text that cannot be written would destroy it with no
+    // trace at all, which is the worst version of this failure.
+    if (!flushAndReportFailure()) { e->ignore(); return; }
     QMainWindow::closeEvent(e);
 }
 

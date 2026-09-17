@@ -77,6 +77,7 @@ public:
     // a flag does not cost the selection or the scroll position.
     void refreshRow(BufferId id);
     void refreshTimestamps();
+    int previewCacheSize() const { return int(previewCache_.size()); }
 
 signals:
     void countChanged(int liveCount);

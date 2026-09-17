@@ -93,7 +93,9 @@ These are testable MUSTs. Everything else in this document is guidance.
 1. A **kept** buffer is never deleted by any automatic process.
 2. Nothing is ever hard-deleted without passing through the trash first.
 3. Napkin never modifies, moves, or deletes a file outside its own data directory.
-4. Napkin makes no network requests. Ever. There is no code path that opens a socket.
+4. Napkin makes no network requests. Ever. There is no code path that opens a
+   *network* socket. (It does open one AF_UNIX socket, inside the 0700 data
+   directory, solely so a second launch can raise the first window.)
 5. A buffer row is never written until the buffer has content.
 6. An image blob is written and fsynced to disk *before* the DB row referencing it commits.
 7. A DB row is deleted and committed *before* its blob is unlinked.
@@ -194,9 +196,31 @@ file open per visible card per frame. It plays:
 > in which case the clipboard never contains the animation and Napkin cannot
 > recover it. Copying the file itself, or using **Add image…**, keeps the frames.
 
-**SVG is safe to render.** Measured, not assumed: Qt's SVG renderer loads no
-local file references and makes no network requests, so an SVG cannot be used to
-exfiltrate a file or to breach invariant 4.
+**SVG is sanitised at import, because rendering it is *not* inherently safe.**
+
+An earlier version of this section claimed, "measured, not assumed: Qt's SVG
+renderer loads no local file references." **That claim was false, and the probe
+behind it was written in a way that could not fail** — it tested only
+`xlink:href='file:///…'`, the one spelling Qt already rejects. A bare filesystem
+path loads fine:
+
+```
+xlink:href='file:///tmp/secret.png'   → not read
+href='/tmp/secret.png'                → LOADED
+xlink:href='/tmp/secret.png'          → LOADED
+```
+
+A hostile SVG could therefore render any local image the user can read into a
+card — and the thumbnailer would persist a copy of it inside Napkin's own data
+directory. Napkin now **refuses at import** any SVG whose `href`, `src` or
+`url(...)` points anywhere but a `data:` URI or an in-document `#fragment`, and
+refuses compressed SVGZ outright since it cannot be inspected without
+decompressing it.
+
+What *did* hold under test: `http://` references trigger no connection, and XXE
+(`<!ENTITY SYSTEM 'file:///etc/passwd'>`) is blocked. **Invariant 4 itself was
+never breached.** The lesson is about the test, not the renderer: a probe that
+only exercises the case you expect to pass is not evidence.
 3. **Add image…** (`Ctrl+Shift+I`) — a native file dialog whose filter is built
    from the formats this build can actually open, which copies the chosen file
    into the blob store immediately. This is the reliable path for animated GIFs.
@@ -716,12 +740,18 @@ All three Phase 0 risks are retired. Phase 1 may proceed on this stack.
 **Phase 1 — Foundation. ✅ COMPLETE.** Schema v1 with the `guard_kept_delete`
 trigger, forward-only migrations on `user_version`, buffer and item
 repositories, `BufferService` with draft semantics, single-instance guard, XDG
-paths, and 41 headless test cases across 5 binaries — all passing.
+paths, and 39 test functions across 5 binaries — all passing.
 
 Enforced structurally rather than by convention:
 
 - `napkin_core` links `Qt6::Core` but **not** `Qt6::Widgets`, so the
   domain-has-no-GUI rule is a link error rather than a code-review note.
+- The delete guard needs `PRAGMA recursive_triggers=ON`: without it,
+  `INSERT OR REPLACE` deletes the replaced row **without firing the trigger**,
+  which was a hole straight through invariant 1. The guard stops deletion, not
+  an `UPDATE` that clears `kept` first — releasing a keep is a legitimate user
+  action, so the trigger is an assertion against automatic *deletion*, not a
+  capability model.
 - `moveToTrash()` **returns false** for a kept buffer. The only way past it is
   `moveToTrashConfirmed()`, so no UI path can forget to ask (§6).
 - Confirmed deletion of a kept buffer **releases the keep** as it trashes. No
@@ -743,7 +773,7 @@ Regression test: `tests/test_paths.cpp`.
 
 **Phase 2 — Text. ✅ COMPLETE.** Virtualized buffer stack with PINNED/RECENT
 sections, draft creation, inline expansion editing, two-timer autosave,
-relative timestamps, empty state. 17 new test cases (75 total, 8 binaries).
+relative timestamps, empty state. 19 new test functions (58 total, 8 binaries).
 
 Measured against §12 on a 5000-buffer database, file-backed, not in-memory:
 
@@ -755,8 +785,18 @@ Measured against §12 on a 5000-buffer database, file-backed, not in-memory:
 | Idle RSS | **78 MB** (target <120 MB) |
 
 The list holds metadata only — roughly 48 bytes a row, so 5000 buffers is a
-quarter of a megabyte — and fetches previews lazily per visible row into a
-cache. `sizeHint` does no text layout, so it stays O(1) at any row count.
+quarter of a megabyte. `sizeHint` does no text layout.
+
+> **Corrected after review.** An earlier version of this paragraph claimed
+> previews were fetched "lazily per visible row" and that `sizeHint` was O(1).
+> Neither was true: `data()` computed the preview *before* the role switch, so
+> every metadata read — including the `IsExpandedRole` that `sizeHint` reads for
+> **every** row — issued two queries and loaded each buffer's text. A
+> 5000-buffer startup executed ~10,000 statements. Metadata roles now return
+> before any preview is touched, the preview cache is bounded, and preview text
+> is truncated in SQL (`substr(text, 1, 2048)`) and again at 256 characters, so
+> pasting a minified bundle no longer makes `elidedText` O(text length) on every
+> repaint.
 
 Behaviours that only exist once the UI is wired up, so they are covered by
 headless GUI tests driving the real widget tree (`tests/test_editing.cpp`):
@@ -776,7 +816,7 @@ action carrying its own label and key hint gives for free.
 
 **Phase 3 — Pin, Keep, Trash. ✅ COMPLETE.** Both flags with drawn indicators,
 list-scope keys, context menu, soft delete, undo toast, trash view and the
-confirmation flow. 13 new GUI test cases (88 total, 9 binaries).
+confirmation flow. 12 new GUI test functions (70 total, 9 binaries).
 
 - **Pin moves the card, Keep does not.** Pinning reloads the list — that is the
   point of it. Keeping refreshes one row in place, so the stack never reshuffles
@@ -800,7 +840,7 @@ them reserved for the Phase 5 search field.
 
 **Phase 4 — Images. ✅ COMPLETE.** Clipboard paste, content-addressed blob
 store, thumbnailer, card thumbnails, lightbox, image picker and the
-reconciliation sweep. 19 new test cases (107 total, 10 binaries).
+reconciliation sweep. 21 new test functions (91 total, 10 binaries).
 
 - **The §4 preference order is a tested contract.** A `QMimeData` carrying both
   `image/png` and a URL — exactly what a browser's *Copy Image* produces —
@@ -901,7 +941,55 @@ And the adversarial path, which v1 omitted entirely:
 
 ---
 
-## 19. The test that governs every future feature
+## 19. Review findings and corrections
+
+An independent adversarial review (security/performance and UI/UX, run as two
+separate agents with an explicit brief to find what is wrong and to treat this
+document as claims to verify rather than facts) produced the corrections above
+and the fixes below. Recording it here because **several claims in earlier
+versions of this spec were false, and one test had been written so that it could
+not fail.**
+
+| Finding | Severity | State |
+|---|---|---|
+| SVG could read local files via a bare `href` path | high, privacy | fixed — refused at import; §4 corrected |
+| Text silently lost when a save fails, and on close | **critical** | fixed — collapse and close now refuse, and say so |
+| Failed saves retried ~3×/second, for ever, in silence | medium | fixed — bounded retry, then a message |
+| Undo of a confirmed delete silently dropped the Keep flag | high | fixed — undo restores `kept` and `modified_at` |
+| Thumbnails were never deleted; `forget()` was dead code | high, privacy | fixed — the sweep now reclaims thumbnails too |
+| `INSERT OR REPLACE` bypassed the kept-delete trigger | high | fixed — `PRAGMA recursive_triggers=ON` |
+| Previews computed for every row, not per visible row | high, perf | fixed — metadata roles touch no preview |
+| Preview cache unbounded; 253 MB at 5000 rich buffers | high, perf | fixed — bounded, and text truncated |
+| `paint()` was O(text length): 153 ms for a 1 M-char line | high, perf | fixed — truncated in SQL and again at 256 chars |
+| A 48 KB PNG declaring 20000×20000 was accepted | medium | fixed — 80-megapixel ceiling |
+| Failed thumbnails re-decoded on every repaint | medium | fixed — negative results cached |
+| Instance socket was world-connectable in `/tmp` | high | fixed — 0700 data dir, `UserAccessOption` |
+| Empty-trash dialog counted rows it would not delete | low | fixed — counts what will actually go |
+| `Ctrl+N` in the trash created a live buffer shown in the bin | medium | fixed — returns to the live list first |
+| `Delete` in the trash *restored* instead of deleting | medium | fixed — Delete destroys (confirmed), `R` restores |
+| Timestamps at 2.71:1 contrast; four styles failed WCAG AA | high, a11y | fixed — alphas raised to measured thresholds |
+| Hover state was a 1.04:1 change, i.e. invisible | medium | fixed |
+| Pin glyph read as a magnifying glass | medium | fixed — redrawn with crossbar and point |
+| Three `QAction`s attached to no menu — bindings undiscoverable | high | fixed — ＋New button, ⋯ menu, shortcut sheet |
+| Cards stretched to full window width | medium | fixed — 760px measure, centred |
+| No accessible names; no initial selection for keyboard users | high, a11y | fixed |
+| Test counts in this document were inflated | — | corrected (`PASS` lines counted init/cleanup) |
+
+**Known and not yet fixed**, carried forward honestly:
+
+- The lightbox does not page across a buffer's images with ←/→; each image is
+  opened individually from the expanded card.
+- No undo for Pin or Keep, and no confirmation that they happened beyond the
+  glyph appearing.
+- `reconcileBlobs()` runs synchronously on the UI thread, so a very large blob
+  store will stall the window during *Empty trash*.
+- The multi-instance guard is still best-effort; a real `flock` on the data
+  directory would be the correct mutex.
+- The undo toast still replaces rather than stacks, and does not name the buffer.
+
+---
+
+## 20. The test that governs every future feature
 
 > Does this make it easier to **put something in**, **find it**, **use it**,
 > **keep it**, or **get rid of it**?

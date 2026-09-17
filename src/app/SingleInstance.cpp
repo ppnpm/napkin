@@ -1,12 +1,22 @@
 #include "SingleInstance.h"
+#include "Paths.h"
+
+#include <QDir>
+#include <QFile>
 #include <QLocalSocket>
 #include <unistd.h>
 
 namespace napkin {
 
-SingleInstance::SingleInstance(QObject* parent)
-    : QObject(parent), key_(QString("napkin-%1").arg(::getuid()))
+SingleInstance::SingleInstance(QObject* parent) : QObject(parent)
 {
+    // Not a bare name: Qt would put that in a shared temp directory when
+    // XDG_RUNTIME_DIR is unset, world-connectable, where any local user can
+    // create it first and stop Napkin starting at all. Under the 0700 data
+    // directory it is ours alone.
+    key_ = paths::dataDir() + QStringLiteral("/napkin.sock");
+    server_.setSocketOptions(QLocalServer::UserAccessOption);
+
     connect(&server_, &QLocalServer::newConnection, this, [this] {
         if (auto* c = server_.nextPendingConnection()) {
             connect(c, &QLocalSocket::disconnected, c, &QLocalSocket::deleteLater);

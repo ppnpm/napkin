@@ -36,6 +36,12 @@ BufferPreview derivePreview(const std::vector<Item>& head, int totalCount, int i
 // How many items the preview needs: enough to find an image a line or two down.
 inline constexpr int kPreviewHeadSize = 8;
 
+// A card draws at most a line or two. Keeping the whole of a pasted minified
+// bundle in the preview made elidedText O(text length): a single 50 000-char
+// line cost 7 ms per paint, and a million-char line 153 ms — for one card, on
+// every repaint, including the once-a-minute timestamp tick.
+inline constexpr int kPreviewLineLimit = 256;
+
 // First non-blank line of a block of text, whitespace-trimmed.
 QString firstLine(const QString& text);
 

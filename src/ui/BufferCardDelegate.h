@@ -45,6 +45,11 @@ public:
     static constexpr int kRadius   = 6;
     static constexpr int kSectionH = 36;
 
+    // A card holding two words was 1360px wide on a wide window, with the state
+    // glyphs 1250px from the text they describe. SPEC §7 asks for content to
+    // dominate; past this measure it is mostly margin pretending to be content.
+    static constexpr int kMaxCardWidth = 760;
+
     static constexpr int kThumbSize = 52;       // a lone image
     static constexpr int kThumbSizeMulti = 38;  // several in a row
 

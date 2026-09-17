@@ -16,7 +16,19 @@ namespace {
 
 // Text that is present but secondary. Not placeholderText: on several themes
 // that is faint enough to fail contrast for content the user needs to read.
-QColor dimmed(const QPalette& pal, int alpha = 140)
+//
+// The alphas below are not taste. Composited over QPalette::Base and measured
+// against Breeze Light — the harsher of the two themes — alpha 161 is the
+// threshold for WCAG AA 4.5:1 on text, and 126 for the 3:1 that non-text
+// affordances need. An earlier build used 115 for timestamps (2.71:1 in light),
+// which made the recency signal the least legible thing in an application whose
+// whole organizing principle is recency.
+constexpr int kTextSecondary = 170;   // 5.06:1 light — comfortably past AA
+constexpr int kTextTertiary  = 161;   // 4.51:1 light — timestamps, section labels
+constexpr int kBorderResting = 128;   // 3.07:1 light — a card must read as a card
+constexpr int kBorderActive  = 178;
+
+QColor dimmed(const QPalette& pal, int alpha = kTextSecondary)
 {
     QColor c = pal.color(QPalette::Text);
     c.setAlpha(alpha);
@@ -71,7 +83,13 @@ QSize BufferCardDelegate::sizeHint(const QStyleOptionViewItem& option, const QMo
 
 QRect BufferCardDelegate::cardRect(const QRect& itemRect, const QModelIndex& index) const
 {
-    return itemRect.adjusted(kMarginX, sectionHeight(index) + kMarginY, -kMarginX, -kMarginY);
+    QRect card = itemRect.adjusted(kMarginX, sectionHeight(index) + kMarginY, -kMarginX, -kMarginY);
+    if (card.width() > kMaxCardWidth) {
+        // Centre the column and let the window grow around it.
+        card.setLeft(card.left() + (card.width() - kMaxCardWidth) / 2);
+        card.setWidth(kMaxCardWidth);
+    }
+    return card;
 }
 
 QRect BufferCardDelegate::contentRect(const QRect& itemRect, const QModelIndex& index) const
@@ -98,9 +116,10 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
         f.setBold(true);
         f.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
         p->setFont(f);
-        p->setPen(dimmed(pal, 120));
-        const QRect labelRect(option.rect.left() + kMarginX, option.rect.top() + 12,
-                              option.rect.width() - kMarginX * 2, kSectionH - 14);
+        p->setPen(dimmed(pal, kTextTertiary));
+        const QRect card0 = cardRect(option.rect, index);
+        const QRect labelRect(card0.left(), option.rect.top() + 12,
+                              card0.width(), kSectionH - 14);
         p->drawText(labelRect, Qt::AlignLeft | Qt::AlignVCenter,
                     index.data(BufferListModel::SectionNameRole).toString());
     }
@@ -111,11 +130,16 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     path.addRoundedRect(QRectF(card), kRadius, kRadius);
 
     QColor fill = pal.color(QPalette::Base);
-    if (hovered && !expanded) fill = fill.lighter(pal.color(QPalette::Window).lightness() > 128 ? 98 : 112);
+    if (hovered && !expanded) {
+        // A 2% shift is not a hover state, it is a rounding error. This is
+        // still quiet, but it is actually perceptible.
+        const bool lightTheme = pal.color(QPalette::Window).lightness() > 128;
+        fill = lightTheme ? fill.darker(106) : fill.lighter(128);
+    }
     p->fillPath(path, fill);
 
     QColor border = pal.color(QPalette::Text);
-    border.setAlpha(selected || expanded ? 90 : 38);
+    border.setAlpha(selected || expanded ? kBorderActive : kBorderResting);
     p->setPen(QPen(border, 1));
     p->drawPath(path);
 
@@ -144,11 +168,11 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
         const int g = icons::kGlyphSize;
         int x = card.right() - kPadding - g;
         if (kept) {
-            icons::drawKeep(p, QRect(x, card.top() + kPadding, g, g), dimmed(pal, 190));
+            icons::drawKeep(p, QRect(x, card.top() + kPadding, g, g), dimmed(pal, 215));
             x -= g + 6;
         }
         if (pinned)
-            icons::drawPin(p, QRect(x, card.top() + kPadding, g, g), dimmed(pal, 190));
+            icons::drawPin(p, QRect(x, card.top() + kPadding, g, g), dimmed(pal, 215));
         glyphRight = card.right() - kPadding - x + g;
     }
 
@@ -240,7 +264,7 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     int y = content.top();
     p->setFont(option.font);
     if (primary.isEmpty()) {
-        p->setPen(dimmed(pal, 110));
+        p->setPen(dimmed(pal, kTextTertiary));
         p->drawText(QRect(content.left(), y, content.width(), fm.height()),
                     Qt::AlignLeft | Qt::AlignVCenter,
                     isDraft ? QObject::tr("Type or paste something…") : QObject::tr("Empty"));
@@ -263,7 +287,7 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     if (!isDraft) {
         const auto modified = index.data(BufferListModel::ModifiedAtRole).value<Timestamp>();
         p->setFont(timestampFont(option.font));
-        p->setPen(dimmed(pal, 115));
+        p->setPen(dimmed(pal, kTextTertiary));
         p->drawText(QRect(content.left(), content.bottom() - tfm.height(),
                           content.width(), tfm.height()),
                     Qt::AlignLeft | Qt::AlignVCenter, relativeTime(modified, nowMs()));

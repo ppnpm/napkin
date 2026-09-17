@@ -28,12 +28,16 @@ public:
     void moveToTrashConfirmed(BufferId id);
 
     void restore(BufferId id);
+    // Undo has to be able to put a timestamp back exactly as it was.
+    void setModifiedAt(BufferId id, Timestamp when);
 
     std::vector<Buffer> listLive(int limit, int offset = 0);
     std::vector<Buffer> listTrash();
 
     int countLive();
     int countTrash();
+    // What an "empty trash" would actually destroy: kept rows are skipped.
+    int countPurgeable();
     int countKept();
 
     // The only automatic hard delete in Napkin, and it only ever touches rows

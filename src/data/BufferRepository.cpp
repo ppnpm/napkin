@@ -89,6 +89,13 @@ void BufferRepository::restore(BufferId id)
     s.exec();
 }
 
+void BufferRepository::setModifiedAt(BufferId id, Timestamp when)
+{
+    Statement s(db_, "UPDATE buffers SET modified_at = ? WHERE id = ?");
+    s.bind(1, when).bind(2, id);
+    s.exec();
+}
+
 std::vector<Buffer> BufferRepository::listLive(int limit, int offset)
 {
     // SPEC.md §7: pinned above everything, then newest first. Windowed, never
@@ -123,6 +130,12 @@ int BufferRepository::countLive()
 int BufferRepository::countTrash()
 {
     Statement s(db_, "SELECT COUNT(*) FROM buffers WHERE deleted_at IS NOT NULL");
+    return s.step() ? s.columnInt(0) : 0;
+}
+
+int BufferRepository::countPurgeable()
+{
+    Statement s(db_, "SELECT COUNT(*) FROM buffers WHERE deleted_at IS NOT NULL AND kept = 0");
     return s.step() ? s.columnInt(0) : 0;
 }
 

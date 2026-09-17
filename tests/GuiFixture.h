@@ -44,6 +44,19 @@ public:
     napkin::UndoToast*       toast() { return window.findChild<napkin::UndoToast*>(); }
     QPlainTextEdit*          editor() { return window.findChild<QPlainTextEdit*>(); }
 
+    QString thumbsDir() const { return base_.dir.path() + "/thumbs"; }
+
+    // Counts statements SQLite has prepared, for asserting that a code path
+    // does no querying at all.
+    int statementCount() const
+    {
+        int count = 0;
+        for (sqlite3_stmt* s = sqlite3_next_stmt(db.handle(), nullptr); s;
+             s = sqlite3_next_stmt(db.handle(), s))
+            count += sqlite3_stmt_status(s, SQLITE_STMTSTATUS_RUN, 0);
+        return count;
+    }
+
     napkin::BufferId seed(const char* text)
     {
         const auto id = buffers.create();

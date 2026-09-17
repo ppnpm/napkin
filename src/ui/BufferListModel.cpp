@@ -2,12 +2,14 @@
 #include "../data/BufferRepository.h"
 #include "../data/ItemRepository.h"
 #include "../domain/Clock.h"
+#include "../domain/TimeFormat.h"
 
 namespace napkin {
 namespace {
 // Generous enough that scrolling never blocks on a query, small enough that we
 // are never reading the whole table. Revisited if §12 measurements say so.
 constexpr int kMaxRows = 5000;
+constexpr int kPreviewCacheLimit = 400;
 }  // namespace
 
 BufferListModel::BufferListModel(BufferRepository& buffers, ItemRepository& items, QObject* parent)
@@ -64,6 +66,13 @@ BufferPreview BufferListModel::previewFor(BufferId id) const
 {
     if (const auto it = previewCache_.constFind(id); it != previewCache_.constEnd())
         return *it;
+
+    // The cache was previously unbounded and only ever cleared on a full
+    // reload, so scrolling a large list accumulated every buffer's preview text
+    // for the lifetime of the window. A screenful is ~12 rows; this is
+    // generous, and dropping it whole is cheap because a miss is two indexed
+    // queries.
+    if (previewCache_.size() >= kPreviewCacheLimit) previewCache_.clear();
     const auto counts = items_.countsForBuffer(id);
     const auto preview = derivePreview(items_.previewHead(id), counts.total, counts.images);
     previewCache_.insert(id, preview);
@@ -76,22 +85,13 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     const int row = index.row();
     const Buffer& b = rows_[size_t(row)];
     const bool isDraft = b.id == kNoBuffer;
-    const BufferPreview p = isDraft ? draftPreview_ : previewFor(b.id);
 
+    // Metadata roles first, and WITHOUT touching the preview. sizeHint() reads
+    // IsExpandedRole for every row in the list, and QListView asks every row for
+    // its size hint — so computing a preview up here turned a 5000-buffer
+    // startup into 10 001 SQL statements and materialised every buffer's text.
     switch (role) {
     case IdRole:         return QVariant::fromValue(b.id);
-    case PrimaryRole:    return p.primary;
-    case SecondaryRole:  return p.secondary;
-    case ItemCountRole:  return p.itemCount;
-    case HasImageRole:   return p.hasImage();
-    case ImageCountRole: return p.imageCount;
-    case ThumbHashRole:  return p.thumbs.empty() ? QString() : p.thumbs.front().hash;
-    case ThumbMimeRole:  return p.thumbs.empty() ? QString() : p.thumbs.front().mime;
-    case ThumbAnimatedRole: {
-        for (const auto& t : p.thumbs) if (t.animated) return true;
-        return false;
-    }
-    case ThumbCountRole: return int(p.thumbs.size());
     case ModifiedAtRole: return QVariant::fromValue(b.modifiedAt);
     case PinnedRole:     return b.pinned;
     case KeptRole:       return b.kept;
@@ -104,6 +104,25 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     case SectionNameRole:
         if (mode_ == Mode::Trash) return QStringLiteral("TRASH");
         return b.pinned ? QStringLiteral("PINNED") : QStringLiteral("RECENT");
+    default:
+        break;
+    }
+
+    const BufferPreview p = isDraft ? draftPreview_ : previewFor(b.id);
+
+    switch (role) {
+    case PrimaryRole:    return p.primary;
+    case SecondaryRole:  return p.secondary;
+    case ItemCountRole:  return p.itemCount;
+    case HasImageRole:   return p.hasImage();
+    case ImageCountRole: return p.imageCount;
+    case ThumbHashRole:  return p.thumbs.empty() ? QString() : p.thumbs.front().hash;
+    case ThumbMimeRole:  return p.thumbs.empty() ? QString() : p.thumbs.front().mime;
+    case ThumbAnimatedRole: {
+        for (const auto& t : p.thumbs) if (t.animated) return true;
+        return false;
+    }
+    case ThumbCountRole: return int(p.thumbs.size());
     case Qt::AccessibleTextRole: {
         // Never encode state in styling alone (SPEC.md §14).
         QString label = p.primary.isEmpty() ? tr("Empty buffer") : p.primary;
@@ -111,6 +130,9 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
         if (b.pinned) label += tr(". Pinned");
         if (b.kept)   label += tr(". Kept");
         if (b.inTrash()) label += tr(". In trash");
+        // A sighted user reads "2 minutes ago" off the card; without this a
+        // screen-reader user gets no recency at all, on a recency-ordered list.
+        if (!isDraft) label += QStringLiteral(". ") + relativeTime(b.modifiedAt, nowMs());
         return label;
     }
     default: return {};

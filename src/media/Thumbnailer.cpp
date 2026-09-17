@@ -32,8 +32,10 @@ QPixmap Thumbnailer::forBlob(const QString& hash, const QString& mime, int maxSi
         return cached;
     }
 
+    if (failed_.contains(key)) return {};
+
     const QString blobPath = blobs_.pathFor(hash, mime);
-    if (!QFile::exists(blobPath)) return {};
+    if (!QFile::exists(blobPath)) { failed_.insert(key); return {}; }
 
     // Scaled during decode, so a 4000x3000 photo never lands in memory whole.
     QImageReader reader(blobPath);
@@ -46,7 +48,12 @@ QPixmap Thumbnailer::forBlob(const QString& hash, const QString& mime, int maxSi
     }
 
     const QImage image = reader.read();
-    if (image.isNull()) return {};
+    if (image.isNull()) {
+        // Remember the failure. Without this the delegate re-decodes on every
+        // repaint, including the once-a-minute timestamp tick.
+        failed_.insert(key);
+        return {};
+    }
 
     const QPixmap pixmap = QPixmap::fromImage(image);
     QPixmapCache::insert(key, pixmap);

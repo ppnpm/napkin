@@ -30,6 +30,13 @@ QString sniff(const QByteArray& bytes);
 QString extensionFor(const QString& mime);
 QString mimeForExtension(const QString& extension);
 
+// True when an SVG references anything outside itself. Qt's renderer refuses a
+// file:// URL but happily loads a BARE filesystem path in href/xlink:href, so a
+// hostile SVG can render any local image the user can read into a card — and the
+// thumbnailer then writes a copy of it into Napkin's own data directory.
+// Rejected at import; only data: URIs are allowed.
+bool svgHasExternalReferences(const QByteArray& bytes);
+
 // Whether these bytes hold more than one frame.
 bool isAnimated(const QByteArray& bytes, const QString& mime);
 

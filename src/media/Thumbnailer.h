@@ -1,5 +1,6 @@
 #pragma once
 #include <QPixmap>
+#include <QSet>
 #include <QString>
 
 namespace napkin {
@@ -25,6 +26,7 @@ private:
 
     QString    cacheDir_;
     BlobStore& blobs_;
+    QSet<QString> failed_;   // blobs that could not be rendered; do not retry
 };
 
 }  // namespace napkin

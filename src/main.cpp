@@ -21,16 +21,12 @@ int main(int argc, char** argv)
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     QGuiApplication::setDesktopFileName(QStringLiteral("napkin"));
 
-    SingleInstance instance;
-    if (!instance.acquire())
-        return 0;  // an existing Napkin was asked to raise itself
-
     Database db;
     BufferRepository buffers(db);
     ItemRepository items(db);
 
     try {
-        paths::ensureDirs();
+        paths::ensureDirs();   // the instance socket lives in here, so first
         db.open(paths::databaseFile());
         paths::secureDatabaseFiles();  // the files exist only now, on a first run
     } catch (const std::exception& e) {
@@ -43,12 +39,16 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    SingleInstance instance;
+    if (!instance.acquire())
+        return 0;  // an existing Napkin was asked to raise itself
+
     BufferService service(db, buffers, items);
     service.purgeExpiredTrash();  // the only automatic hard delete (§6)
 
     BlobStore blobs(paths::blobsDir());
     Thumbnailer thumbs(paths::thumbsDir(), blobs);
-    reconcileBlobs(items, blobs);  // collect orphans left by any interrupted write
+    reconcileBlobs(items, blobs, paths::thumbsDir());  // collect orphans and stale thumbnails
 
     MainWindow window(db, buffers, items, service, blobs, thumbs);
     QObject::connect(&instance, &SingleInstance::raiseRequested,

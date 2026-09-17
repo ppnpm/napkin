@@ -8,11 +8,16 @@ namespace {
 QStringList nonBlankLines(const QString& text, int limit)
 {
     QStringList out;
-    for (const auto& raw : text.split(QLatin1Char('\n'))) {
-        const QString line = raw.trimmed();
-        if (line.isEmpty()) continue;
-        out << line;
-        if (out.size() >= limit) break;
+    // Scanning by index rather than split() so a huge single-line paste does not
+    // allocate a copy of itself before we throw all but the first 256 chars away.
+    qsizetype pos = 0;
+    while (pos < text.size() && out.size() < limit) {
+        qsizetype end = text.indexOf(QLatin1Char('\n'), pos);
+        if (end < 0) end = text.size();
+        const QString line = text.mid(pos, std::min(end - pos, qsizetype(kPreviewLineLimit) * 4))
+                                 .trimmed();
+        if (!line.isEmpty()) out << line.left(kPreviewLineLimit);
+        pos = end + 1;
     }
     return out;
 }

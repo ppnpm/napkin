@@ -205,6 +205,7 @@ void BufferListView::keyPressEvent(QKeyEvent* e)
         case Qt::Key_P:      emit pinToggleRequested(row);  return;
         case Qt::Key_K:      emit keepToggleRequested(row); return;
         case Qt::Key_Delete: emit trashRequested(row);      return;
+        case Qt::Key_R:      emit restoreRequested(row);    return;
         default: break;
         }
     }
