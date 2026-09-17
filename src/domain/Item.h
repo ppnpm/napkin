@@ -17,6 +17,7 @@ struct Item {
     QString blobHash;    // type == Image, sha256 hex
     QString sourceName;  // original filename if imported; empty if pasted
     QString mime;        // type == Image, e.g. "image/png"; the blob is verbatim
+    bool    animated = false;  // more than one frame; decided once, at import
     int     width  = 0;
     int     height = 0;
     qint64  byteSize = 0;
@@ -35,7 +36,7 @@ struct Item {
     }
 
     static Item makeImage(QString hash, int w, int h, qint64 bytes, QString source = {},
-                          QString mime = QStringLiteral("image/png"))
+                          QString mime = QStringLiteral("image/png"), bool animated = false)
     {
         Item i;
         i.type       = ItemType::Image;
@@ -45,6 +46,7 @@ struct Item {
         i.byteSize   = bytes;
         i.sourceName = std::move(source);
         i.mime       = std::move(mime);
+        i.animated   = animated;
         return i;
     }
 };

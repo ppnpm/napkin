@@ -25,6 +25,7 @@ public:
         HasImageRole,
         ThumbHashRole,
         ThumbMimeRole,
+        ThumbAnimatedRole,
         ModifiedAtRole,
         PinnedRole,
         KeptRole,

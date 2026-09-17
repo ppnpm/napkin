@@ -1,4 +1,5 @@
 #pragma once
+#include <QPixmap>
 #include <QStyledItemDelegate>
 
 namespace napkin {
@@ -16,6 +17,11 @@ public:
 
     // Optional: without one, image buffers simply render as text.
     void setThumbnailer(Thumbnailer* thumbnailer) { thumbnailer_ = thumbnailer; }
+
+    // Only one card animates at a time — the one under the pointer. Animating
+    // every visible GIF would break §12's idle-CPU budget for decoration.
+    void setAnimationFrame(int row, const QPixmap& frame);
+    void clearAnimationFrame();
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option,
                const QModelIndex& index) const override;
@@ -45,6 +51,8 @@ private:
     QFont timestampFont(const QFont& base) const;
 
     Thumbnailer* thumbnailer_ = nullptr;
+    int     animatedRow_ = -1;
+    QPixmap animatedFrame_;
     int expandedHeight_ = 260;
 };
 

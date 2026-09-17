@@ -14,6 +14,7 @@ struct BufferPreview {
     bool    hasImage  = false;
     QString thumbHash;   // first image item in the buffer, if any
     QString thumbMime;
+    bool    thumbAnimated = false;
 
     bool isEmpty() const { return primary.isEmpty() && secondary.isEmpty(); }
 };

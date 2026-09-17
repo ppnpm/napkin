@@ -74,6 +74,13 @@ ALTER TABLE items ADD COLUMN mime TEXT;
 UPDATE items SET mime = 'image/png' WHERE type = 'image' AND mime IS NULL;
 )SQL";
 
+// --- v3: remember whether an image is animated -------------------------------
+// Checked once at import rather than by reopening the file every time a card
+// repaints, which at 12 visible cards would mean 12 file opens per frame.
+constexpr const char* kV3 = R"SQL(
+ALTER TABLE items ADD COLUMN animated INTEGER NOT NULL DEFAULT 0;
+)SQL";
+
 struct Migration {
     int version;
     const char* sql;
@@ -82,6 +89,7 @@ struct Migration {
 constexpr std::array kMigrations{
     Migration{1, kV1},
     Migration{2, kV2},
+    Migration{3, kV3},
 };
 
 }  // namespace

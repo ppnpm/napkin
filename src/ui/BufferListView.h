@@ -2,9 +2,12 @@
 #include "../domain/Types.h"
 #include <QListView>
 
+class QMovie;
+
 namespace napkin {
 
 class BufferCardDelegate;
+class BlobStore;
 class Thumbnailer;
 class InlineEditor;
 
@@ -17,6 +20,7 @@ public:
     explicit BufferListView(QWidget* parent = nullptr);
 
     void setThumbnailer(Thumbnailer* thumbnailer);
+    void setBlobStore(BlobStore* blobs) { blobs_ = blobs; }
     void expandRow(int row, const QString& initialText);
     void collapse();
 
@@ -42,12 +46,20 @@ protected:
     void resizeEvent(QResizeEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void contextMenuEvent(QContextMenuEvent* e) override;
+    void mouseMoveEvent(QMouseEvent* e) override;
+    void leaveEvent(QEvent* e) override;
 
 private:
     void repositionEditor();
     void syncExpandedHeight();
 
+    void updateHoverAnimation(const QModelIndex& index);
+    void stopHoverAnimation();
+
     BufferCardDelegate* delegate_ = nullptr;
+    BlobStore*          blobs_    = nullptr;
+    QMovie*             hoverMovie_ = nullptr;
+    int                 hoverRow_ = -1;
     InlineEditor*       editor_   = nullptr;
     int                 expandedRow_ = -1;
 };

@@ -85,6 +85,7 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     case HasImageRole:   return p.hasImage;
     case ThumbHashRole:  return p.thumbHash;
     case ThumbMimeRole:  return p.thumbMime;
+    case ThumbAnimatedRole: return p.thumbAnimated;
     case ModifiedAtRole: return QVariant::fromValue(b.modifiedAt);
     case PinnedRole:     return b.pinned;
     case KeptRole:       return b.kept;

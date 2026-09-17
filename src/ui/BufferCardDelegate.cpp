@@ -46,6 +46,18 @@ int BufferCardDelegate::sectionHeight(const QModelIndex& index) const
     return index.data(BufferListModel::SectionFirstRole).toBool() ? kSectionH : 0;
 }
 
+void BufferCardDelegate::setAnimationFrame(int row, const QPixmap& frame)
+{
+    animatedRow_ = row;
+    animatedFrame_ = frame;
+}
+
+void BufferCardDelegate::clearAnimationFrame()
+{
+    animatedRow_ = -1;
+    animatedFrame_ = {};
+}
+
 void BufferCardDelegate::setExpandedHeight(int h) { expandedHeight_ = std::clamp(h, 180, 520); }
 
 QSize BufferCardDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
@@ -144,8 +156,12 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     const QString thumbHash = index.data(BufferListModel::ThumbHashRole).toString();
     if (thumbnailer_ && !thumbHash.isEmpty()) {
         const QRect box(content.left(), content.top(), kThumbSize, kThumbSize);
-        const QPixmap pixmap = thumbnailer_->forBlob(
-            thumbHash, index.data(BufferListModel::ThumbMimeRole).toString(), kThumbSize * 2);
+        const bool live = index.row() == animatedRow_ && !animatedFrame_.isNull();
+        const QPixmap pixmap = live
+            ? animatedFrame_
+            : thumbnailer_->forBlob(thumbHash,
+                                    index.data(BufferListModel::ThumbMimeRole).toString(),
+                                    kThumbSize * 2);
 
         if (pixmap.isNull()) {
             // The blob is gone. Say so visibly rather than drawing nothing —
@@ -166,6 +182,24 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
                                              box.size()));
             p->restore();
         }
+        // An animation that is only showing its first frame says so, rather
+        // than looking like a still that happens not to move.
+        if (index.data(BufferListModel::ThumbAnimatedRole).toBool() && !live) {
+            QFont badge = option.font;
+            badge.setPointSizeF(std::max(6.5, option.font.pointSizeF() - 3.0));
+            badge.setBold(true);
+            p->setFont(badge);
+            const QFontMetrics bfm(badge);
+            const QString text = QStringLiteral("GIF");
+            const QRect pill(box.left() + 4, box.bottom() - bfm.height() - 3,
+                             bfm.horizontalAdvance(text) + 8, bfm.height() + 2);
+            QPainterPath pillPath;
+            pillPath.addRoundedRect(QRectF(pill), 3, 3);
+            p->fillPath(pillPath, QColor(0, 0, 0, 150));
+            p->setPen(Qt::white);
+            p->drawText(pill, Qt::AlignCenter, text);
+        }
+
         content.setLeft(box.right() + 12);
     }
 

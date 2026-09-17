@@ -40,6 +40,7 @@ target_include_directories(napkin_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # GUI dependency by proximity.
 add_library(napkin_media STATIC
   src/media/BlobStore.cpp
+  src/media/ImageFormats.cpp
   src/media/BlobGc.cpp
   src/media/Thumbnailer.cpp
   src/media/ClipboardContent.cpp

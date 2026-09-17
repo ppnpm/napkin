@@ -1,67 +1,24 @@
 #include "BlobStore.h"
+#include "ImageFormats.h"
 
 #include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QImage>
-#include <QImageReader>
 #include <QBuffer>
+#include <QImageReader>
 
 #include <fcntl.h>
 #include <unistd.h>
 
 namespace napkin {
-namespace {
-
-// Formats we are willing to keep byte-for-byte. Anything else that still
-// decodes gets normalised to PNG on the way in.
-bool isPassthroughMime(const QString& mime)
-{
-    return mime == QLatin1String("image/png") || mime == QLatin1String("image/jpeg")
-        || mime == QLatin1String("image/webp") || mime == QLatin1String("image/gif");
-}
-
-QString sniffMime(const QByteArray& bytes)
-{
-    QBuffer buf;
-    buf.setData(bytes);
-    buf.open(QIODevice::ReadOnly);
-    QImageReader reader(&buf);
-    const QString format = QString::fromLatin1(reader.format()).toLower();
-    if (format == QLatin1String("png"))  return QStringLiteral("image/png");
-    if (format == QLatin1String("jpeg") || format == QLatin1String("jpg"))
-        return QStringLiteral("image/jpeg");
-    if (format == QLatin1String("webp")) return QStringLiteral("image/webp");
-    if (format == QLatin1String("gif"))  return QStringLiteral("image/gif");
-    return {};
-}
-
-}  // namespace
-
 BlobStore::BlobStore(QString rootDir) : root_(std::move(rootDir)) {}
-
-QString BlobStore::extensionFor(const QString& mime)
-{
-    if (mime == QLatin1String("image/jpeg")) return QStringLiteral("jpg");
-    if (mime == QLatin1String("image/webp")) return QStringLiteral("webp");
-    if (mime == QLatin1String("image/gif"))  return QStringLiteral("gif");
-    return QStringLiteral("png");
-}
-
-QString BlobStore::mimeForExtension(const QString& ext)
-{
-    const QString e = ext.toLower();
-    if (e == QLatin1String("jpg") || e == QLatin1String("jpeg")) return QStringLiteral("image/jpeg");
-    if (e == QLatin1String("webp")) return QStringLiteral("image/webp");
-    if (e == QLatin1String("gif"))  return QStringLiteral("image/gif");
-    return QStringLiteral("image/png");
-}
 
 QString BlobStore::pathFor(const QString& hash, const QString& mime) const
 {
     return QStringLiteral("%1/%2/%3.%4")
-        .arg(root_, hash.left(2), hash, extensionFor(mime));
+        .arg(root_, hash.left(2), hash, formats::extensionFor(mime));
 }
 
 bool BlobStore::exists(const QString& hash, const QString& mime) const
@@ -81,33 +38,45 @@ BlobStore::Stored BlobStore::store(const QByteArray& bytes, const QString& mimeH
     }
 
     QByteArray payload = bytes;
-    QString mime = sniffMime(bytes);
-    if (mime.isEmpty()) mime = mimeHint;
+    QString mime = formats::sniff(bytes);
+    if (mime.isEmpty() && !mimeHint.isEmpty() && formats::canDecode(mimeHint)) mime = mimeHint;
 
-    QImage image;
-    if (!image.loadFromData(payload)) {
-        out.error = QObject::tr("That does not look like an image Napkin can read.");
+    if (mime.isEmpty() || !formats::canDecode(mime)) {
+        out.error = QObject::tr("Napkin cannot read that image format on this system.");
         return out;
     }
 
-    // Keep the original bytes when the format is already one we serve; only
-    // re-encode the odd formats, where the cost is paid once and rarely.
-    if (!isPassthroughMime(mime)) {
-        payload.clear();
-        QBuffer buf(&payload);
-        buf.open(QIODevice::WriteOnly);
-        if (!image.save(&buf, "PNG")) {
-            out.error = QObject::tr("Napkin could not convert that image.");
-            return out;
+    // Read the geometry without decoding the whole thing: a 100-megapixel HEIC
+    // should not be fully rasterised just to record how big it is.
+    QSize size;
+    bool animated = false;
+    {
+        QBuffer probe;
+        probe.setData(payload);
+        if (probe.open(QIODevice::ReadOnly)) {
+            QImageReader reader(&probe);
+            reader.setAutoTransform(true);
+            size = reader.size();
+            animated = reader.supportsAnimation() && reader.imageCount() > 1;
+            if (!size.isValid()) {
+                const QImage decoded = reader.read();   // some formats need it
+                if (decoded.isNull()) {
+                    out.error = QObject::tr("That does not look like an image Napkin can read.");
+                    return out;
+                }
+                size = decoded.size();
+            }
         }
-        mime = QStringLiteral("image/png");
     }
 
+    // Every decodable format is kept byte for byte. Nothing is re-encoded, so
+    // animation, vector geometry and original quality all survive.
     out.hash = QString::fromLatin1(
         QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex());
     out.mime     = mime;
-    out.size     = image.size();
+    out.size     = size;
     out.byteSize = payload.size();
+    out.animated = animated;
 
     const QString finalPath = pathFor(out.hash, mime);
     if (QFile::exists(finalPath)) { out.ok = true; return out; }  // dedupe

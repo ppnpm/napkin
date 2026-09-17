@@ -48,6 +48,7 @@ BufferPreview derivePreview(const std::vector<Item>& head, int totalCount)
         p.hasImage  = true;
         p.thumbHash = i.blobHash;
         p.thumbMime = i.mime;
+        p.thumbAnimated = i.animated;
         break;
     }
 

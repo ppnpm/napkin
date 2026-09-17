@@ -20,15 +20,17 @@ public:
         QString mime;
         QSize   size;
         qint64  byteSize = 0;
+        bool    animated = false;
         bool    ok = false;
         QString error;   // plain language, safe to show (SPEC.md §14)
     };
 
     explicit BlobStore(QString rootDir);
 
-    // Stores the bytes verbatim when they already decode as an image, so a
-    // JPEG stays a JPEG. Invariant 6: the file is fsynced and renamed into
-    // place before this returns, so the caller may then commit its row.
+    // Stores the bytes verbatim for every format this build can decode, so a
+    // JPEG stays a JPEG, a GIF keeps its frames and an SVG stays vector. Only
+    // bytes nothing can read are rejected. Invariant 6: the file is fsynced and
+    // renamed into place before this returns, so the caller may then commit.
     Stored store(const QByteArray& bytes, const QString& mimeHint = {});
 
     QString pathFor(const QString& hash, const QString& mime) const;
@@ -41,9 +43,6 @@ public:
     std::vector<QString> allStoredFiles() const;
 
     QString rootDir() const { return root_; }
-
-    static QString extensionFor(const QString& mime);
-    static QString mimeForExtension(const QString& ext);
 
 private:
     QString root_;

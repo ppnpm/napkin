@@ -1,12 +1,14 @@
 #include "GuiFixture.h"
 #include "../src/media/BlobGc.h"
 #include "../src/media/ClipboardContent.h"
+#include "../src/media/ImageFormats.h"
 
 #include <QApplication>
 #include <QBuffer>
 #include <QClipboard>
 #include <QDir>
 #include <QMimeData>
+#include <QMovie>
 #include <QtTest>
 
 using namespace napkin;
@@ -33,6 +35,52 @@ QByteArray makeJpeg(int w, int h)
     buffer.open(QIODevice::WriteOnly);
     image.save(&buffer, "JPEG", 90);
     return out;
+}
+
+// A hand-assembled two-frame GIF: Qt has no GIF writer, so one is built here.
+QByteArray makeAnimatedGif()
+{
+    auto blocks = [](QByteArray d) {
+        QByteArray out;
+        while (!d.isEmpty()) {
+            const int n = std::min(255, int(d.size()));
+            out.append(char(n)).append(d.left(n));
+            d = d.mid(n);
+        }
+        return out.append('\0');
+    };
+    const int w = 24, h = 24;
+    QByteArray g("GIF89a", 6);
+    auto le16 = [&](int v) { g.append(char(v & 0xFF)).append(char((v >> 8) & 0xFF)); };
+    le16(w); le16(h);
+    g.append(char(0x80)).append('\0').append('\0');
+    g.append("\xFF\x00\x00\x00\x00\xFF", 6);                     // 2-colour table
+    g.append("\x21\xFF\x0BNETSCAPE2.0\x03\x01\x00\x00\x00", 19);  // loop forever
+
+    for (int frame = 0; frame < 2; ++frame) {
+        g.append("\x21\xF9\x04\x00\x32\x00\x00\x00", 8);       // 500ms delay
+        g.append(char(0x2C)); le16(0); le16(0); le16(w); le16(h); g.append('\0');
+        constexpr int minCode = 2;
+        QList<int> codes{1 << minCode};
+        for (int i = 0; i < w * h; ++i) codes << frame;
+        codes << ((1 << minCode) + 1);
+        QByteArray packed;
+        quint32 acc = 0; int bits = 0;
+        for (int c : codes) {
+            acc |= quint32(c) << bits; bits += minCode + 1;
+            while (bits >= 8) { packed.append(char(acc & 0xFF)); acc >>= 8; bits -= 8; }
+        }
+        if (bits) packed.append(char(acc & 0xFF));
+        g.append(char(minCode)).append(blocks(packed));
+    }
+    return g.append(char(0x3B));
+}
+
+QByteArray makeSvg()
+{
+    return QByteArray(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='120' height='80'>"
+        "<rect width='120' height='80' fill='#3a7bd5'/></svg>");
 }
 
 }  // namespace
@@ -239,6 +287,111 @@ private slots:
         QCOMPARE(f.model()->index(row, 0).data(BufferListModel::SecondaryRole).toString(),
                  QStringLiteral("2 items"));
         QVERIFY(!f.model()->index(row, 0).data(BufferListModel::ThumbHashRole).toString().isEmpty());
+    }
+
+    // --- format breadth ------------------------------------------------------
+    void theBuildCanDecodeTheFormatsWeAdvertise()
+    {
+        // Runtime capability, not a hard-coded list: a machine without
+        // kimageformats simply has fewer, and Napkin degrades rather than lies.
+        QVERIFY(formats::canDecode(QStringLiteral("image/png")));
+        QVERIFY(formats::canDecode(QStringLiteral("image/jpeg")));
+        QVERIFY(formats::canDecode(QStringLiteral("image/gif")));
+        QVERIFY(!formats::pickerFilter().isEmpty());
+        QVERIFY(!formats::canDecode(QStringLiteral("application/x-shellscript")));
+        QVERIFY(!formats::canDecode(QString()));
+    }
+
+    void animationCapableFormatsOutrankPngOnTheClipboard()
+    {
+        // The bug this test exists for: a source offering both a GIF and a PNG
+        // was resolving to the PNG, flattening the animation to one frame.
+        QMimeData mime;
+        mime.setData(QStringLiteral("image/gif"), makeAnimatedGif());
+        mime.setData(QStringLiteral("image/png"), makePng(24, 24));
+
+        const auto content = readClipboard(&mime);
+        QCOMPARE(content.kind, ClipboardContent::Kind::Image);
+        QCOMPARE(content.imageMime, QStringLiteral("image/gif"));
+    }
+
+    void vectorOutranksRaster()
+    {
+        if (!formats::canDecode(QStringLiteral("image/svg+xml")))
+            QSKIP("this build has no SVG plugin");
+
+        QMimeData mime;
+        mime.setData(QStringLiteral("image/svg+xml"), makeSvg());
+        mime.setData(QStringLiteral("image/png"), makePng(120, 80));
+
+        QCOMPARE(readClipboard(&mime).imageMime, QStringLiteral("image/svg+xml"));
+    }
+
+    void anAnimatedGifIsStoredWithItsFramesIntact()
+    {
+        QTemporaryDir dir;
+        BlobStore store(dir.path());
+        const auto stored = store.store(makeAnimatedGif());
+
+        QVERIFY2(stored.ok, qPrintable(stored.error));
+        QCOMPARE(stored.mime, QStringLiteral("image/gif"));
+        QVERIFY(stored.animated);                       // recorded once, at import
+        QCOMPARE(stored.size, QSize(24, 24));
+        QVERIFY(store.pathFor(stored.hash, stored.mime).endsWith(QStringLiteral(".gif")));
+
+        // Byte for byte: the file on disk is still a playable animation.
+        QFile onDisk(store.pathFor(stored.hash, stored.mime));
+        QVERIFY(onDisk.open(QIODevice::ReadOnly));
+        QCOMPARE(onDisk.readAll(), makeAnimatedGif());
+        QMovie movie(store.pathFor(stored.hash, stored.mime));
+        QVERIFY(movie.isValid());
+        QCOMPARE(movie.frameCount(), 2);
+    }
+
+    void aStillImageIsNotMarkedAnimated()
+    {
+        QTemporaryDir dir;
+        BlobStore store(dir.path());
+        QVERIFY(!store.store(makePng(30, 30)).animated);
+    }
+
+    void svgIsKeptAsVectorRatherThanRasterised()
+    {
+        if (!formats::canDecode(QStringLiteral("image/svg+xml")))
+            QSKIP("this build has no SVG plugin");
+
+        QTemporaryDir dir;
+        BlobStore store(dir.path());
+        const auto stored = store.store(makeSvg());
+
+        QVERIFY2(stored.ok, qPrintable(stored.error));
+        QVERIFY(stored.mime.startsWith(QStringLiteral("image/svg")));
+        QCOMPARE(stored.byteSize, qint64(makeSvg().size()));   // still the XML
+    }
+
+    void theAnimatedFlagSurvivesTheDatabase()
+    {
+        GuiFixture f;
+        const auto stored = f.blobs.store(makeAnimatedGif());
+        QVERIFY(stored.ok);
+
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeImage(stored.hash, 24, 24, stored.byteSize,
+                                               QStringLiteral("loop.gif"), stored.mime, true));
+        f.model()->reload();
+
+        QVERIFY(f.items.listForBuffer(id).front().animated);
+        const int row = f.model()->rowForId(id);
+        QVERIFY(f.model()->index(row, 0).data(BufferListModel::ThumbAnimatedRole).toBool());
+    }
+
+    void anUnreadableFormatIsRefusedRatherThanStoredAsGarbage()
+    {
+        QTemporaryDir dir;
+        BlobStore store(dir.path());
+        const auto stored = store.store(QByteArray("\x00\x01\x02 not any image", 24));
+        QVERIFY(!stored.ok);
+        QCOMPARE(store.allStoredFiles().size(), size_t(0));
     }
 
     // --- empty trash ---------------------------------------------------------

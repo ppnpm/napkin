@@ -143,15 +143,63 @@ Exactly three ways content enters Napkin:
 1. **Typing** into an expanded buffer.
 2. **Paste** (`Ctrl+V`) — the clipboard is inspected in this fixed order:
    ```
-   image/png  →  image item
-   any other image/*  →  image item (transcoded to PNG)
-   text/plain  →  text item
-   anything else  →  ignored, with a quiet status message
+   1. the richest decodable image the source offers, kept BYTE FOR BYTE
+        vector           image/svg+xml
+        animation-capable  image/gif, image/apng, image/webp, image/avif
+        static raster    image/png, image/jxl, image/heif, image/jpeg, …
+   2. any other image representation  →  transcoded to PNG (lossy; last resort)
+   3. text/plain                      →  text item
+   4. anything else                   →  ignored, quietly
    ```
-   That preference order is a contract. Test it. The ambiguous case is real:
-   copying an image from a browser offers both a bitmap and a URL, and image wins.
-3. **Add image…** (`Ctrl+Shift+I`) — a native file dialog filtered to image MIME
-   types, which copies the chosen file into the blob store immediately.
+   That preference order is a contract. Test it. Two ambiguous cases are real
+   and both are covered: copying an image from a browser offers a bitmap *and* a
+   URL, and the image wins; a source offering a GIF *and* a PNG must resolve to
+   the GIF, or the animation is silently flattened to one frame.
+
+### Image formats
+
+Napkin stores every format it can decode **verbatim** — nothing is re-encoded,
+so animation, vector geometry and original quality all survive, and export hands
+back exactly what arrived. Only bytes nothing can read are refused.
+
+What "can decode" means is **discovered at runtime** from
+`QImageReader::supportedMimeTypes()`, never hard-coded: it depends on which Qt
+image plugins are installed, and a missing plugin degrades to the next-best
+representation rather than failing.
+
+| Source | Formats |
+|---|---|
+| Qt built-in | PNG, JPEG, GIF, BMP, ICO, PPM/PGM/PBM, XPM, WBMP |
+| `qt6-imageformats` | WebP, TIFF, JPEG 2000, MNG, ICNS, TGA |
+| `qt6-svg` | SVG, SVGZ |
+| `kimageformats` | **AVIF, HEIC/HEIF, JPEG XL**, PSD, XCF, EXR, DDS, QOI, RAW (CR2/NEF/ARW/DNG/…), and more |
+
+Packaging must list `qt6-svg`, `qt6-imageformats` and `kimageformats` as
+recommended dependencies. Without them Napkin still runs; it simply understands
+fewer formats, and says so instead of pretending.
+
+**Animation.** A multi-frame image is detected once at import and recorded in
+schema v3 (`items.animated`) — reopening the file on every repaint would mean a
+file open per visible card per frame. It plays:
+
+- in the **lightbox**, always, decoded frame by frame so a long animation never
+  sits in memory whole;
+- in its **card, while the pointer is over it** — one at a time. Animating every
+  visible GIF at once would spend §12's idle-CPU budget on decoration. A card
+  showing a still first frame carries a small `GIF` badge so it is not mistaken
+  for a static image.
+
+> **Known limitation, not a defect.** Whether a paste preserves animation is up
+> to the *source*. Browsers commonly rasterise to `image/png` on "Copy Image",
+> in which case the clipboard never contains the animation and Napkin cannot
+> recover it. Copying the file itself, or using **Add image…**, keeps the frames.
+
+**SVG is safe to render.** Measured, not assumed: Qt's SVG renderer loads no
+local file references and makes no network requests, so an SVG cannot be used to
+exfiltrate a file or to breach invariant 4.
+3. **Add image…** (`Ctrl+Shift+I`) — a native file dialog whose filter is built
+   from the formats this build can actually open, which copies the chosen file
+   into the blob store immediately. This is the reliable path for animated GIFs.
 
 > **On keeping the picker.** You cut *files as a content type*, not *ways to get
 > an image in*. Without the picker, a user with `diagram.png` on disk has to open

@@ -15,6 +15,7 @@
 #include "../media/BlobGc.h"
 #include "../media/BlobStore.h"
 #include "../media/ClipboardContent.h"
+#include "../media/ImageFormats.h"
 #include "../media/Thumbnailer.h"
 
 #include <QCloseEvent>
@@ -49,6 +50,7 @@ void MainWindow::buildUi()
     view_  = new BufferListView;
     view_->setModel(model_);
     view_->setThumbnailer(&thumbs_);
+    view_->setBlobStore(&blobs_);
 
     // --- empty state (SPEC.md §7) -------------------------------------------
     auto* empty = new QWidget;
@@ -331,19 +333,20 @@ bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
             if (editingBuffer_ == kNoBuffer) {           // an empty draft gets promoted
                 Draft draft;
                 draft.add(Item::makeImage(stored.hash, stored.size.width(), stored.size.height(),
-                                          stored.byteSize, sourceName, stored.mime));
+                                          stored.byteSize, sourceName, stored.mime,
+                                          stored.animated));
                 editingBuffer_ = service_.commitDraft(draft);
                 model_->promoteDraft(editingBuffer_);
             } else {
                 service_.appendTo(editingBuffer_,
                     Item::makeImage(stored.hash, stored.size.width(), stored.size.height(),
-                                    stored.byteSize, sourceName, stored.mime));
+                                    stored.byteSize, sourceName, stored.mime, stored.animated));
             }
             model_->invalidatePreview(editingBuffer_);
         } else {
             Draft draft;
             draft.add(Item::makeImage(stored.hash, stored.size.width(), stored.size.height(),
-                                      stored.byteSize, sourceName, stored.mime));
+                                      stored.byteSize, sourceName, stored.mime, stored.animated));
             const BufferId id = service_.commitDraft(draft);
             model_->reload();
             if (const int row = model_->rowForId(id); row >= 0)
@@ -394,7 +397,7 @@ void MainWindow::addImageFromFile()
 
     const QString path = QFileDialog::getOpenFileName(
         this, tr("Add image"), QString(),
-        tr("Images (*.png *.jpg *.jpeg *.webp *.gif);;All files (*)"));
+        formats::pickerFilter());   // built from what this build can actually open
     if (path.isEmpty()) return;
 
     QFile file(path);
@@ -420,14 +423,14 @@ void MainWindow::openImage(int row)
     for (const auto& item : items_.listForBuffer(id)) {
         if (item.type != ItemType::Image) continue;
 
-        QPixmap full(blobs_.pathFor(item.blobHash, item.mime));
-        if (full.isNull()) {
+        const QString path = blobs_.pathFor(item.blobHash, item.mime);
+        if (!QFile::exists(path)) {
             reportProblem(tr("The image is missing"),
                           tr("Napkin can no longer find the file for this image. "
                              "The rest of the buffer is unchanged."));
             return;
         }
-        Lightbox box(full, item.sourceName, this);
+        Lightbox box(path, item.animated, item.sourceName, this);
         box.exec();
         return;
     }

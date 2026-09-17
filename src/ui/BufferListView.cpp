@@ -2,9 +2,12 @@
 #include "BufferCardDelegate.h"
 #include "BufferListModel.h"
 #include "InlineEditor.h"
+#include "../media/BlobStore.h"
 
 #include <QContextMenuEvent>
 #include <QCursor>
+#include <QMouseEvent>
+#include <QMovie>
 #include <QKeyEvent>
 #include <QScrollBar>
 
@@ -119,6 +122,60 @@ void BufferListView::resizeEvent(QResizeEvent* e)
 {
     QListView::resizeEvent(e);
     repositionEditor();
+}
+
+void BufferListView::mouseMoveEvent(QMouseEvent* e)
+{
+    QListView::mouseMoveEvent(e);
+    updateHoverAnimation(indexAt(e->pos()));
+}
+
+void BufferListView::leaveEvent(QEvent* e)
+{
+    stopHoverAnimation();
+    QListView::leaveEvent(e);
+}
+
+// An animated image plays while the pointer is over its card, so a GIF is
+// visibly a GIF without twelve of them running at once (SPEC.md §12).
+void BufferListView::updateHoverAnimation(const QModelIndex& index)
+{
+    if (!index.isValid() || !blobs_) { stopHoverAnimation(); return; }
+    if (index.row() == hoverRow_) return;
+
+    stopHoverAnimation();
+
+    if (!index.data(BufferListModel::ThumbAnimatedRole).toBool()) return;
+    const QString hash = index.data(BufferListModel::ThumbHashRole).toString();
+    const QString mime = index.data(BufferListModel::ThumbMimeRole).toString();
+    if (hash.isEmpty()) return;
+
+    hoverRow_ = index.row();
+    hoverMovie_ = new QMovie(blobs_->pathFor(hash, mime), QByteArray(), this);
+    hoverMovie_->setCacheMode(QMovie::CacheNone);
+    hoverMovie_->setScaledSize(QSize(BufferCardDelegate::kThumbSize * 2,
+                                     BufferCardDelegate::kThumbSize * 2));
+    connect(hoverMovie_, &QMovie::frameChanged, this, [this] {
+        if (hoverRow_ < 0 || !hoverMovie_) return;
+        delegate_->setAnimationFrame(hoverRow_, hoverMovie_->currentPixmap());
+        update(model()->index(hoverRow_, 0));
+    });
+    hoverMovie_->start();
+}
+
+void BufferListView::stopHoverAnimation()
+{
+    if (hoverMovie_) {
+        hoverMovie_->stop();
+        hoverMovie_->deleteLater();
+        hoverMovie_ = nullptr;
+    }
+    if (hoverRow_ >= 0) {
+        const int row = hoverRow_;
+        hoverRow_ = -1;
+        delegate_->clearAnimationFrame();
+        if (model() && row < model()->rowCount()) update(model()->index(row, 0));
+    }
 }
 
 void BufferListView::keyPressEvent(QKeyEvent* e)
