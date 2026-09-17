@@ -616,8 +616,33 @@ Wayland, Qt 6.11.2, GCC 16.2.1, SQLite 3.53.4:
 
 All three Phase 0 risks are retired. Phase 1 may proceed on this stack.
 
-**Phase 1 — Foundation.** Schema, migrations, repositories, domain model,
-single-instance guard, XDG paths, headless tests. No UI beyond a bare window.
+**Phase 1 — Foundation. ✅ COMPLETE.** Schema v1 with the `guard_kept_delete`
+trigger, forward-only migrations on `user_version`, buffer and item
+repositories, `BufferService` with draft semantics, single-instance guard, XDG
+paths, and 41 headless test cases across 5 binaries — all passing.
+
+Enforced structurally rather than by convention:
+
+- `napkin_core` links `Qt6::Core` but **not** `Qt6::Widgets`, so the
+  domain-has-no-GUI rule is a link error rather than a code-review note.
+- `moveToTrash()` **returns false** for a kept buffer. The only way past it is
+  `moveToTrashConfirmed()`, so no UI path can forget to ask (§6).
+- Confirmed deletion of a kept buffer **releases the keep** as it trashes. No
+  legitimate path therefore ever hard-deletes a `kept = 1` row, which leaves the
+  trigger as a standing assertion against service-layer bugs.
+- Blob liveness is `SELECT 1 FROM items WHERE blob_hash = ?`, not a refcount, so
+  no drift is possible.
+
+Verified against the real on-disk database, not just in-memory: an external
+`sqlite3` process running `DELETE FROM buffers WHERE kept=1` is refused with
+*"refusing to delete a kept buffer"* and the row survives — acceptance
+criterion 17, end to end.
+
+*Bug found and fixed during verification:* `napkin.db` and its `-wal`/`-shm`
+sidecars were left at `0644` on a first run, because permissions were applied
+before SQLite had created the files. `secureDatabaseFiles()` now runs after
+`open()` and covers the sidecars, which carry uncommitted user content.
+Regression test: `tests/test_paths.cpp`.
 
 **Phase 2 — Text.** Buffer list (virtualized), draft creation, inline editing,
 autosave, timestamps, keyboard navigation, empty state. *Napkin is a genuinely

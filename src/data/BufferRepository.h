@@ -1,0 +1,52 @@
+#pragma once
+#include "../domain/Buffer.h"
+#include <optional>
+#include <vector>
+
+namespace napkin {
+
+class Database;
+
+class BufferRepository {
+public:
+    explicit BufferRepository(Database& db) : db_(db) {}
+
+    BufferId create(bool pinned = false, bool kept = false);
+    std::optional<Buffer> find(BufferId id);
+    void touch(BufferId id);  // bump modified_at
+
+    void setPinned(BufferId id, bool pinned);
+    void setKept(BufferId id, bool kept);
+
+    // Ordinary trash. Refuses a kept buffer and returns false — the caller must
+    // obtain confirmation and call moveToTrashConfirmed instead. Making the
+    // refusal structural means no UI path can forget to ask (SPEC.md §6).
+    bool moveToTrash(BufferId id);
+
+    // Confirmed deletion of a kept buffer. Releases the keep as it goes: having
+    // confirmed, the user has withdrawn the request to hold on to it.
+    void moveToTrashConfirmed(BufferId id);
+
+    void restore(BufferId id);
+
+    std::vector<Buffer> listLive(int limit, int offset = 0);
+    std::vector<Buffer> listTrash();
+
+    int countLive();
+    int countTrash();
+    int countKept();
+
+    // The only automatic hard delete in Napkin, and it only ever touches rows
+    // the user already deleted (SPEC.md §6). kept = 0 is belt and braces; the
+    // confirmed-trash path has already cleared it.
+    int purgeTrashOlderThan(Timestamp cutoff);
+
+    // Escape hatch for a future "delete permanently" path. Raises the
+    // transaction-scoped guard flag so the trigger permits the delete.
+    void hardDeleteEvenIfKept(BufferId id);
+
+private:
+    Database& db_;
+};
+
+}  // namespace napkin
