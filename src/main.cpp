@@ -4,6 +4,9 @@
 #include "data/Database.h"
 #include "data/ItemRepository.h"
 #include "domain/BufferService.h"
+#include "media/BlobGc.h"
+#include "media/BlobStore.h"
+#include "media/Thumbnailer.h"
 #include "ui/MainWindow.h"
 
 #include <QApplication>
@@ -43,7 +46,11 @@ int main(int argc, char** argv)
     BufferService service(db, buffers, items);
     service.purgeExpiredTrash();  // the only automatic hard delete (§6)
 
-    MainWindow window(db, buffers, items, service);
+    BlobStore blobs(paths::blobsDir());
+    Thumbnailer thumbs(paths::thumbsDir(), blobs);
+    reconcileBlobs(items, blobs);  // collect orphans left by any interrupted write
+
+    MainWindow window(db, buffers, items, service, blobs, thumbs);
     QObject::connect(&instance, &SingleInstance::raiseRequested,
                      &window, &MainWindow::raiseFromOtherInstance);
     window.show();

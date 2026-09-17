@@ -21,6 +21,9 @@ public:
     int desiredHeight() const;
 
 signals:
+    // An image arrived on the clipboard while this editor had focus. The
+    // editor does not store it — it hands it up to be turned into an item.
+    void imagePasted(const QByteArray& bytes, const QString& mime);
     void textEdited();
     void collapseRequested();
     void heightChanged();

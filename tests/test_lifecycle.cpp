@@ -1,13 +1,6 @@
-#include "../src/data/BufferRepository.h"
-#include "../src/data/Database.h"
-#include "../src/data/ItemRepository.h"
-#include "../src/domain/BufferService.h"
-#include "../src/ui/BufferListModel.h"
-#include "../src/ui/BufferListView.h"
-#include "../src/ui/MainWindow.h"
-#include "../src/ui/UndoToast.h"
 
 #include <QPushButton>
+#include "GuiFixture.h"
 #include <QtTest>
 
 using namespace napkin;
@@ -17,36 +10,10 @@ using namespace napkin;
 // most in the whole suite.
 class TestLifecycle : public QObject {
     Q_OBJECT
-private:
-    struct OpenDb {
-        Database db;
-        OpenDb() { db.open(QStringLiteral(":memory:")); }
-    };
-    struct Fixture : OpenDb {
-        BufferRepository buffers{db};
-        ItemRepository items{db};
-        BufferService service{db, buffers, items};
-        MainWindow window{db, buffers, items, service};
-
-        Fixture() { window.show(); }
-
-        BufferListModel* model() { return window.findChild<BufferListModel*>(); }
-        BufferListView*  view()  { return window.findChild<BufferListView*>(); }
-        UndoToast*       toast() { return window.findChild<UndoToast*>(); }
-
-        BufferId seed(const char* text)
-        {
-            const auto id = buffers.create();
-            service.appendTo(id, Item::makeText(QString::fromUtf8(text)));
-            model()->reload();
-            return id;
-        }
-    };
-
 private slots:
     void pinMovesTheCardToTheTop()
     {
-        Fixture f;
+        GuiFixture f;
         f.seed("older");
         const auto target = f.seed("newer");
         const auto third = f.seed("newest");
@@ -62,7 +29,7 @@ private slots:
 
     void keepDoesNotMoveTheCard()
     {
-        Fixture f;
+        GuiFixture f;
         const auto first = f.seed("first");
         const auto second = f.seed("second");
         QCOMPARE(f.model()->idAt(0), second);
@@ -78,7 +45,7 @@ private slots:
 
     void pinAndKeepStayIndependentThroughTheUi()
     {
-        Fixture f;
+        GuiFixture f;
         const auto id = f.seed("both");
 
         f.window.togglePin(f.model()->rowForId(id));
@@ -93,7 +60,7 @@ private slots:
 
     void deletingAnOrdinaryBufferIsSoftAndOffersUndo()
     {
-        Fixture f;
+        GuiFixture f;
         const auto id = f.seed("throwaway");
 
         f.window.trashRow(f.model()->rowForId(id));
@@ -107,7 +74,7 @@ private slots:
 
     void undoBringsItBack()
     {
-        Fixture f;
+        GuiFixture f;
         const auto id = f.seed("mistake");
         f.window.trashRow(f.model()->rowForId(id));
 
@@ -124,7 +91,7 @@ private slots:
 
     void deletingAKeptBufferIsRefusedWithoutConfirmation()
     {
-        Fixture f;
+        GuiFixture f;
         const auto id = f.seed("important");
         f.window.toggleKeep(f.model()->rowForId(id));
 
@@ -138,7 +105,7 @@ private slots:
 
     void confirmingReleasesTheKeepAndTrashes()
     {
-        Fixture f;
+        GuiFixture f;
         const auto id = f.seed("important");
         f.window.toggleKeep(f.model()->rowForId(id));
 
@@ -152,7 +119,7 @@ private slots:
 
     void trashViewListsDeletedBuffersAndRestores()
     {
-        Fixture f;
+        GuiFixture f;
         const auto id = f.seed("deleted thing");
         f.window.trashRow(f.model()->rowForId(id));
         QCOMPARE(f.model()->rowCount(), 0);      // gone from the live stack
@@ -171,7 +138,7 @@ private slots:
 
     void pinAndKeepAreInertInTheTrashView()
     {
-        Fixture f;
+        GuiFixture f;
         const auto id = f.seed("deleted");
         f.window.trashRow(f.model()->rowForId(id));
         f.window.showTrash(true);
@@ -185,7 +152,7 @@ private slots:
 
     void accessibleLabelCarriesStateNotJustStyling()
     {
-        Fixture f;
+        GuiFixture f;
         const auto id = f.seed("labelled");
         f.window.togglePin(f.model()->rowForId(id));
         f.window.toggleKeep(f.model()->rowForId(id));
@@ -199,7 +166,7 @@ private slots:
 
     void anotherDeleteReplacesTheStandingUndoOffer()
     {
-        Fixture f;
+        GuiFixture f;
         const auto first = f.seed("first");
         const auto second = f.seed("second");
 

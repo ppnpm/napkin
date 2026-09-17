@@ -3,6 +3,7 @@
 #include "BufferListModel.h"
 #include "BufferListView.h"
 #include "InlineEditor.h"
+#include "Lightbox.h"
 #include "UndoToast.h"
 
 #include "../data/BufferRepository.h"
@@ -11,11 +12,19 @@
 #include "../domain/BufferService.h"
 #include "../domain/Preview.h"
 #include "../domain/TimeFormat.h"
+#include "../media/BlobGc.h"
+#include "../media/BlobStore.h"
+#include "../media/ClipboardContent.h"
+#include "../media/Thumbnailer.h"
 
 #include <QCloseEvent>
 #include <QLabel>
 #include <QAction>
+#include <QApplication>
+#include <QClipboard>
+#include <QFileDialog>
 #include <QMenu>
+#include <QMimeData>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStackedWidget>
@@ -26,8 +35,10 @@
 namespace napkin {
 
 MainWindow::MainWindow(Database& db, BufferRepository& buffers, ItemRepository& items,
-                       BufferService& service, QWidget* parent)
-    : QMainWindow(parent), db_(db), buffers_(buffers), items_(items), service_(service)
+                       BufferService& service, BlobStore& blobs, Thumbnailer& thumbs,
+                       QWidget* parent)
+    : QMainWindow(parent), db_(db), buffers_(buffers), items_(items), service_(service),
+      blobs_(blobs), thumbs_(thumbs)
 {
     buildUi();
 }
@@ -37,6 +48,7 @@ void MainWindow::buildUi()
     model_ = new BufferListModel(buffers_, items_, this);
     view_  = new BufferListView;
     view_->setModel(model_);
+    view_->setThumbnailer(&thumbs_);
 
     // --- empty state (SPEC.md §7) -------------------------------------------
     auto* empty = new QWidget;
@@ -102,6 +114,10 @@ void MainWindow::buildUi()
         }
     });
     connect(model_, &BufferListModel::countChanged, this, [this] { updateEmptyState(); });
+    connect(view_, &BufferListView::imagePasted, this,
+            [this](const QByteArray& bytes, const QString& mime) {
+                addImageToCurrent(bytes, mime, QString());
+            });
 
     // --- actions --------------------------------------------------------------
     // An action rather than a bare shortcut: it carries its own label and key
@@ -114,6 +130,21 @@ void MainWindow::buildUi()
     connect(newBufferAction, &QAction::triggered, this, &MainWindow::newDraft);
     addAction(newBufferAction);
 
+    auto* pasteAction = new QAction(tr("Paste"), this);
+    pasteAction->setObjectName(QStringLiteral("pasteAction"));
+    pasteAction->setShortcut(QKeySequence::Paste);
+    pasteAction->setShortcutContext(Qt::WindowShortcut);
+    connect(pasteAction, &QAction::triggered, this, &MainWindow::pasteFromClipboard);
+    addAction(pasteAction);
+
+    auto* addImageAction = new QAction(tr("Add image…"), this);
+    addImageAction->setObjectName(QStringLiteral("addImageAction"));
+    addImageAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+I")));
+    addImageAction->setShortcutContext(Qt::WindowShortcut);
+    connect(addImageAction, &QAction::triggered, this, &MainWindow::addImageFromFile);
+    addAction(addImageAction);
+
+    connect(view_, &BufferListView::imageActivated, this, &MainWindow::openImage);
     connect(view_, &BufferListView::pinToggleRequested,  this, &MainWindow::togglePin);
     connect(view_, &BufferListView::keepToggleRequested, this, &MainWindow::toggleKeep);
     connect(view_, &BufferListView::trashRequested,      this, &MainWindow::trashRow);
@@ -150,6 +181,14 @@ QWidget* MainWindow::buildHeaderWidget()
     trashButton->setCheckable(true);
     trashButton->setCursor(Qt::PointingHandCursor);
     trashButton->setObjectName(QStringLiteral("trashToggle"));
+    emptyTrashButton_ = new QPushButton(tr("Empty trash"));
+    emptyTrashButton_->setFlat(true);
+    emptyTrashButton_->setCursor(Qt::PointingHandCursor);
+    emptyTrashButton_->setObjectName(QStringLiteral("emptyTrashButton"));
+    emptyTrashButton_->hide();   // only meaningful while looking at the trash
+    connect(emptyTrashButton_, &QPushButton::clicked, this, &MainWindow::emptyTrash);
+    layout->addWidget(emptyTrashButton_);
+
     connect(trashButton, &QPushButton::toggled, this, &MainWindow::showTrash);
     layout->addWidget(trashButton);
 
@@ -161,6 +200,7 @@ void MainWindow::showTrash(bool trash)
     collapseEditor();
     toast_->dismiss();
     model_->setMode(trash ? BufferListModel::Mode::Trash : BufferListModel::Mode::Live);
+    emptyTrashButton_->setVisible(trash && model_->rowCount() > 0);
     updateEmptyState();
 }
 
@@ -262,6 +302,158 @@ void MainWindow::updateEmptyState()
     emptyLine1_->setText(trash ? tr("Nothing in the trash.") : tr("Put something here."));
     emptyLine2_->setText(trash ? tr("Deleted buffers stay here for %1 days.").arg(kTrashRetentionDays)
                                : tr("Ctrl+N to begin"));
+}
+
+void MainWindow::reportProblem(const QString& title, const QString& detail)
+{
+    // SPEC.md §14: plain language, and the user's content is accounted for.
+    QMessageBox box(QMessageBox::Warning, title, detail, QMessageBox::Ok, this);
+    box.exec();
+}
+
+bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
+                                   const QString& sourceName)
+{
+    if (model_->mode() != BufferListModel::Mode::Live) return false;
+
+    const auto stored = blobs_.store(bytes, mime);
+    if (!stored.ok) {
+        reportProblem(tr("Could not add the image"),
+                      stored.error + tr("\n\nNothing else in the buffer was changed."));
+        return false;
+    }
+
+    try {
+        // The blob is already fsynced and renamed into place, so committing the
+        // row now can only ever leave an orphan, never a dangling reference.
+        if (view_->isEditing()) {
+            autosave_->flushNow();                       // the text lands first
+            if (editingBuffer_ == kNoBuffer) {           // an empty draft gets promoted
+                Draft draft;
+                draft.add(Item::makeImage(stored.hash, stored.size.width(), stored.size.height(),
+                                          stored.byteSize, sourceName, stored.mime));
+                editingBuffer_ = service_.commitDraft(draft);
+                model_->promoteDraft(editingBuffer_);
+            } else {
+                service_.appendTo(editingBuffer_,
+                    Item::makeImage(stored.hash, stored.size.width(), stored.size.height(),
+                                    stored.byteSize, sourceName, stored.mime));
+            }
+            model_->invalidatePreview(editingBuffer_);
+        } else {
+            Draft draft;
+            draft.add(Item::makeImage(stored.hash, stored.size.width(), stored.size.height(),
+                                      stored.byteSize, sourceName, stored.mime));
+            const BufferId id = service_.commitDraft(draft);
+            model_->reload();
+            if (const int row = model_->rowForId(id); row >= 0)
+                view_->setCurrentIndex(model_->index(row, 0));
+        }
+    } catch (const std::exception&) {
+        reportProblem(tr("Could not add the image"),
+                      tr("Napkin saved the image but could not record it. "
+                         "Nothing else in the buffer was changed."));
+        return false;
+    }
+
+    updateEmptyState();
+    return true;
+}
+
+void MainWindow::pasteFromClipboard()
+{
+    // While an editor is focused the editor handles its own paste, so this
+    // only fires for a paste onto the stack itself.
+    if (view_->isEditing()) return;
+
+    const auto content = readClipboard(QApplication::clipboard()->mimeData());
+    switch (content.kind) {
+    case ClipboardContent::Kind::Image:
+        addImageToCurrent(content.imageBytes, content.imageMime, QString());
+        break;
+    case ClipboardContent::Kind::Text: {
+        if (model_->mode() != BufferListModel::Mode::Live) return;
+        Draft draft;
+        draft.setText(content.text);
+        const BufferId id = service_.commitDraft(draft);
+        if (id == kNoBuffer) return;
+        model_->reload();
+        if (const int row = model_->rowForId(id); row >= 0)
+            view_->setCurrentIndex(model_->index(row, 0));
+        updateEmptyState();
+        break;
+    }
+    case ClipboardContent::Kind::None:
+        break;  // nothing usable; say nothing rather than nag
+    }
+}
+
+void MainWindow::addImageFromFile()
+{
+    if (model_->mode() != BufferListModel::Mode::Live) return;
+
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Add image"), QString(),
+        tr("Images (*.png *.jpg *.jpeg *.webp *.gif);;All files (*)"));
+    if (path.isEmpty()) return;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        reportProblem(tr("Could not read that file"),
+                      tr("Napkin could not open %1.").arg(QFileInfo(path).fileName()));
+        return;
+    }
+    if (file.size() > BlobStore::kMaxBytes) {
+        reportProblem(tr("That image is too large"),
+                      tr("Napkin keeps images up to %1 MB.")
+                          .arg(BlobStore::kMaxBytes / (1024 * 1024)));
+        return;
+    }
+    addImageToCurrent(file.readAll(), QString(), QFileInfo(path).fileName());
+}
+
+void MainWindow::openImage(int row)
+{
+    const BufferId id = model_->idAt(row);
+    if (id == kNoBuffer) return;
+
+    for (const auto& item : items_.listForBuffer(id)) {
+        if (item.type != ItemType::Image) continue;
+
+        QPixmap full(blobs_.pathFor(item.blobHash, item.mime));
+        if (full.isNull()) {
+            reportProblem(tr("The image is missing"),
+                          tr("Napkin can no longer find the file for this image. "
+                             "The rest of the buffer is unchanged."));
+            return;
+        }
+        Lightbox box(full, item.sourceName, this);
+        box.exec();
+        return;
+    }
+}
+
+void MainWindow::emptyTrash()
+{
+    const int count = buffers_.countTrash();
+    if (count == 0) return;
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("Empty the trash?"));
+    box.setText(tr("Delete %n buffer(s) permanently?", nullptr, count));
+    box.setInformativeText(tr("This cannot be undone."));
+    box.setIcon(QMessageBox::Warning);
+    box.addButton(QMessageBox::Cancel);
+    auto* confirm = box.addButton(tr("Delete permanently"), QMessageBox::DestructiveRole);
+    box.setDefaultButton(QMessageBox::Cancel);
+    box.exec();
+    if (box.clickedButton() != confirm) return;
+
+    toast_->dismiss();   // whatever it was offering no longer exists
+    service_.emptyTrash();
+    reconcileBlobs(items_, blobs_);   // rows are gone; now reclaim their blobs
+    reloadPreservingSelection();
+    emptyTrashButton_->setVisible(model_->rowCount() > 0);
 }
 
 void MainWindow::resizeEvent(QResizeEvent* e)

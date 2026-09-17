@@ -43,8 +43,13 @@ BufferPreview derivePreview(const std::vector<Item>& head, int totalCount)
 {
     BufferPreview p;
     p.itemCount = totalCount;
-    for (const auto& i : head)
-        if (i.type == ItemType::Image) { p.hasImage = true; break; }
+    for (const auto& i : head) {
+        if (i.type != ItemType::Image) continue;
+        p.hasImage  = true;
+        p.thumbHash = i.blobHash;
+        p.thumbMime = i.mime;
+        break;
+    }
 
     if (head.empty()) return p;
 

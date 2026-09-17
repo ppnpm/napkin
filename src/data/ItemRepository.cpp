@@ -20,6 +20,7 @@ Item readItem(const Statement& s)
     i.width      = s.columnInt(8);
     i.height     = s.columnInt(9);
     i.byteSize   = s.columnInt64(10);
+    i.mime       = s.columnText(11);
     return i;
 }
 
@@ -44,8 +45,8 @@ ItemId ItemRepository::append(BufferId bufferId, Item item)
 
     Statement s(db_,
         "INSERT INTO items(buffer_id, position, type, created_at, text, blob_hash,"
-        "                  source_name, width, height, byte_size)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?)");
+        "                  source_name, width, height, byte_size, mime)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?)");
     s.bind(1, item.bufferId).bind(2, item.position).bind(3, itemTypeName(item.type))
      .bind(4, item.createdAt);
 
@@ -54,6 +55,7 @@ ItemId ItemRepository::append(BufferId bufferId, Item item)
     else                             { s.bindNull(5); s.bind(6, item.blobHash); }
 
     s.bind(7, item.sourceName).bind(8, item.width).bind(9, item.height).bind(10, item.byteSize);
+    s.bind(11, item.mime);
     s.exec();
     return db_.lastInsertId();
 }
@@ -61,7 +63,7 @@ ItemId ItemRepository::append(BufferId bufferId, Item item)
 std::optional<Item> ItemRepository::find(ItemId id)
 {
     Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
-                     " source_name, width, height, byte_size FROM items WHERE id = ?");
+                     " source_name, width, height, byte_size, mime FROM items WHERE id = ?");
     s.bind(1, id);
     if (!s.step()) return std::nullopt;
     return readItem(s);
@@ -70,7 +72,7 @@ std::optional<Item> ItemRepository::find(ItemId id)
 std::vector<Item> ItemRepository::listForBuffer(BufferId bufferId)
 {
     Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
-                     " source_name, width, height, byte_size FROM items"
+                     " source_name, width, height, byte_size, mime FROM items"
                      " WHERE buffer_id = ? ORDER BY position ASC, id ASC");
     s.bind(1, bufferId);
     std::vector<Item> out;
@@ -81,7 +83,7 @@ std::vector<Item> ItemRepository::listForBuffer(BufferId bufferId)
 std::vector<Item> ItemRepository::previewHead(BufferId bufferId, int limit)
 {
     Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
-                     " source_name, width, height, byte_size FROM items"
+                     " source_name, width, height, byte_size, mime FROM items"
                      " WHERE buffer_id = ? ORDER BY position ASC, id ASC LIMIT ?");
     s.bind(1, bufferId).bind(2, limit);
     std::vector<Item> out;
@@ -115,6 +117,16 @@ bool ItemRepository::blobIsReferenced(const QString& hash)
     Statement s(db_, "SELECT 1 FROM items WHERE blob_hash = ? LIMIT 1");
     s.bind(1, hash);
     return s.step();
+}
+
+std::vector<Item> ItemRepository::allImageItems()
+{
+    Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
+                     " source_name, width, height, byte_size, mime FROM items"
+                     " WHERE type = 'image'");
+    std::vector<Item> out;
+    while (s.step()) out.push_back(readItem(s));
+    return out;
 }
 
 std::vector<QString> ItemRepository::allBlobHashes()

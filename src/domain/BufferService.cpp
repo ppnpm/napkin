@@ -74,6 +74,11 @@ int BufferService::purgeExpiredTrash()
     return buffers_.purgeTrashOlderThan(nowMs() - kTrashRetentionDays * kMsPerDay);
 }
 
+int BufferService::emptyTrash()
+{
+    return buffers_.purgeAllTrash();
+}
+
 Timestamp BufferService::olderThanCutoff()
 {
     return nowMs() - kOlderThresholdDays * kMsPerDay;

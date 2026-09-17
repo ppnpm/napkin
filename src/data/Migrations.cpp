@@ -65,6 +65,15 @@ BEGIN
 END;
 )SQL";
 
+// --- v2: remember an image's media type --------------------------------------
+// Images are stored byte-for-byte as they arrived rather than transcoded to
+// PNG: re-encoding a JPEG photo would inflate it several times over and add
+// generation loss for nothing. That means the blob's type has to be recorded.
+constexpr const char* kV2 = R"SQL(
+ALTER TABLE items ADD COLUMN mime TEXT;
+UPDATE items SET mime = 'image/png' WHERE type = 'image' AND mime IS NULL;
+)SQL";
+
 struct Migration {
     int version;
     const char* sql;
@@ -72,6 +81,7 @@ struct Migration {
 
 constexpr std::array kMigrations{
     Migration{1, kV1},
+    Migration{2, kV2},
 };
 
 }  // namespace

@@ -4,6 +4,7 @@
 #include "InlineEditor.h"
 
 #include <QContextMenuEvent>
+#include <QCursor>
 #include <QKeyEvent>
 #include <QScrollBar>
 
@@ -29,14 +30,32 @@ BufferListView::BufferListView(QWidget* parent) : QListView(parent)
     connect(editor_, &InlineEditor::textEdited, this, &BufferListView::editorTextChanged);
     connect(editor_, &InlineEditor::collapseRequested, this, &BufferListView::collapseRequested);
     connect(editor_, &InlineEditor::heightChanged, this, &BufferListView::syncExpandedHeight);
+    connect(editor_, &InlineEditor::imagePasted, this, &BufferListView::imagePasted);
 
     connect(this, &QAbstractItemView::clicked, this, [this](const QModelIndex& i) {
-        if (i.row() != expandedRow_) emit rowActivated(i.row());
+        if (i.row() == expandedRow_) return;
+        // Clicking the thumbnail opens the image; clicking the rest of the card
+        // opens the buffer for editing.
+        const QRect item = visualRect(i);
+        const QRect content = delegate_->contentRect(item, i);
+        const QRect thumb(content.left(), content.top(),
+                          BufferCardDelegate::kThumbSize, BufferCardDelegate::kThumbSize);
+        const bool hasThumb = !i.data(BufferListModel::ThumbHashRole).toString().isEmpty();
+        if (hasThumb && thumb.contains(mapFromGlobal(QCursor::pos()))) {
+            emit imageActivated(i.row());
+            return;
+        }
+        emit rowActivated(i.row());
     });
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { repositionEditor(); });
 }
 
 QString BufferListView::editorText() const { return editor_->text(); }
+
+void BufferListView::setThumbnailer(Thumbnailer* thumbnailer)
+{
+    delegate_->setThumbnailer(thumbnailer);
+}
 
 void BufferListView::expandRow(int row, const QString& initialText)
 {

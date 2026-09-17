@@ -41,6 +41,11 @@ public:
     // confirmed-trash path has already cleared it.
     int purgeTrashOlderThan(Timestamp cutoff);
 
+    // User-initiated "empty trash". Irreversible, so the caller confirms first.
+    // kept = 0 is belt and braces: a kept buffer cannot be in the trash, and if
+    // one somehow is, skipping it is the safe failure.
+    int purgeAllTrash();
+
     // Escape hatch for a future "delete permanently" path. Raises the
     // transaction-scoped guard flag so the trigger permits the delete.
     void hardDeleteEvenIfKept(BufferId id);

@@ -23,6 +23,8 @@ public:
         SecondaryRole,
         ItemCountRole,
         HasImageRole,
+        ThumbHashRole,
+        ThumbMimeRole,
         ModifiedAtRole,
         PinnedRole,
         KeptRole,

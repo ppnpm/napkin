@@ -4,6 +4,7 @@
 
 class QAction;
 class QLabel;
+class QPushButton;
 class QStackedWidget;
 class QTimer;
 
@@ -15,14 +16,17 @@ class BufferListModel;
 class BufferListView;
 class BufferRepository;
 class BufferService;
+class BlobStore;
 class Database;
 class ItemRepository;
+class Thumbnailer;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     MainWindow(Database& db, BufferRepository& buffers, ItemRepository& items,
-               BufferService& service, QWidget* parent = nullptr);
+               BufferService& service, BlobStore& blobs, Thumbnailer& thumbs,
+               QWidget* parent = nullptr);
 
 public slots:
     void raiseFromOtherInstance();
@@ -35,6 +39,10 @@ public slots:
     void toggleKeep(int row);
     void trashRow(int row);
     void showTrash(bool trash);
+    void emptyTrash();
+    void pasteFromClipboard();
+    void addImageFromFile();
+    void openImage(int row);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -49,11 +57,15 @@ private:
     void updateEmptyState();
     void showContextMenu(int row, const QPoint& globalPos);
     void reloadPreservingSelection();
+    bool addImageToCurrent(const QByteArray& bytes, const QString& mime, const QString& sourceName);
+    void reportProblem(const QString& title, const QString& detail);
 
     Database&         db_;
     BufferRepository& buffers_;
     ItemRepository&   items_;
     BufferService&    service_;
+    BlobStore&        blobs_;
+    Thumbnailer&      thumbs_;
 
     BufferListModel* model_  = nullptr;
     BufferListView*  view_   = nullptr;
@@ -62,6 +74,7 @@ private:
     UndoToast*       toast_ = nullptr;
     QTimer*          timeRefresh_ = nullptr;
     QAction*         trashAction_ = nullptr;
+    QPushButton*     emptyTrashButton_ = nullptr;
     QLabel*          emptyTitle_ = nullptr;
     QLabel*          emptyLine1_ = nullptr;
     QLabel*          emptyLine2_ = nullptr;

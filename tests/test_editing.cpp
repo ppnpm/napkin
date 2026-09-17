@@ -1,16 +1,10 @@
-#include "../src/data/BufferRepository.h"
-#include "../src/data/Database.h"
-#include "../src/data/ItemRepository.h"
-#include "../src/domain/BufferService.h"
-#include "../src/ui/BufferListModel.h"
-#include "../src/ui/BufferListView.h"
-#include "../src/ui/MainWindow.h"
-#include "../src/domain/Clock.h"
 
 #include <QAbstractItemView>
 #include <QAction>
 #include <QPlainTextEdit>
 #include <QStackedWidget>
+#include "GuiFixture.h"
+#include "../src/domain/Clock.h"
 #include <QtTest>
 
 using namespace napkin;
@@ -20,42 +14,11 @@ using namespace napkin;
 // not have caught any of them.
 class TestEditing : public QObject {
     Q_OBJECT
-private:
-    // The database must be open before MainWindow is constructed: its model
-    // queries on construction. A base class is initialized before members, so
-    // this ordering is guaranteed rather than merely observed.
-    struct OpenDb {
-        Database db;
-        OpenDb() { db.open(QStringLiteral(":memory:")); }
-    };
-
-    struct Fixture : OpenDb {
-        BufferRepository buffers{db};
-        ItemRepository items{db};
-        BufferService service{db, buffers, items};
-        MainWindow window{db, buffers, items, service};
-
-        Fixture() { window.show(); }
-        QPlainTextEdit* editor() { return window.findChild<QPlainTextEdit*>(); }
-        BufferListModel* model() { return window.findChild<BufferListModel*>(); }
-    };
-
-    // Triggers the same action Ctrl+N is bound to. Headless platforms never
-    // make a window active, so key-chord delivery cannot be relied on here;
-    // the action is the unit under test either way.
-    static void pressCtrlN(QWidget* w)
-    {
-        auto* action = w->findChild<QAction*>(QStringLiteral("newBufferAction"));
-        QVERIFY(action);
-        QCOMPARE(action->shortcut(), QKeySequence(QKeySequence::New));
-        action->trigger();
-    }
-
 private slots:
     void ctrlNOpensAnEditorButWritesNothing()
     {
-        Fixture f;
-        pressCtrlN(&f.window);
+        GuiFixture f;
+        f.trigger("newBufferAction");
 
         QVERIFY(f.editor());
         QVERIFY(f.editor()->isVisible());
@@ -65,8 +28,8 @@ private slots:
 
     void typingThenFlushingWritesExactlyOneBuffer()
     {
-        Fixture f;
-        pressCtrlN(&f.window);
+        GuiFixture f;
+        f.trigger("newBufferAction");
         QTest::keyClicks(f.editor(), "systemctl restart nginx");
 
         // Wait past the debounce; the autosave must fire on its own.
@@ -80,8 +43,8 @@ private slots:
 
     void continuedTypingUpdatesTheSameBufferRatherThanMakingMore()
     {
-        Fixture f;
-        pressCtrlN(&f.window);
+        GuiFixture f;
+        f.trigger("newBufferAction");
         QTest::keyClicks(f.editor(), "first");
         QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
 
@@ -95,8 +58,8 @@ private slots:
 
     void anAbandonedEmptyDraftEvaporates()
     {
-        Fixture f;
-        pressCtrlN(&f.window);
+        GuiFixture f;
+        f.trigger("newBufferAction");
         QCOMPARE(f.model()->rowCount(), 1);
 
         QTest::keyClick(f.editor(), Qt::Key_Escape);
@@ -107,8 +70,8 @@ private slots:
 
     void whitespaceOnlyIsNotContent()
     {
-        Fixture f;
-        pressCtrlN(&f.window);
+        GuiFixture f;
+        f.trigger("newBufferAction");
         QTest::keyClicks(f.editor(), "   \t  ");
         QTest::qWait(600);
 
@@ -117,8 +80,8 @@ private slots:
 
     void escapeFlushesBeforeCollapsing()
     {
-        Fixture f;
-        pressCtrlN(&f.window);
+        GuiFixture f;
+        f.trigger("newBufferAction");
         QTest::keyClicks(f.editor(), "quick note");
         QTest::keyClick(f.editor(), Qt::Key_Escape);  // immediately, inside the debounce
 
@@ -133,7 +96,7 @@ private slots:
         qint64 clock = 1'700'000'000'000LL;
         setClockForTesting([&clock] { return clock; });
 
-        Fixture f;
+        GuiFixture f;
         const auto older = f.buffers.create();
         f.service.appendTo(older, Item::makeText(QStringLiteral("older buffer")));
         clock += 60'000;
@@ -165,8 +128,8 @@ private slots:
 
     void closingTheWindowFlushesPendingText()
     {
-        Fixture f;
-        pressCtrlN(&f.window);
+        GuiFixture f;
+        f.trigger("newBufferAction");
         QTest::keyClicks(f.editor(), "unsaved when closing");
         f.window.close();  // inside the debounce window
 
@@ -175,12 +138,12 @@ private slots:
 
     void emptyStateAppearsOnlyWhenThereIsNothing()
     {
-        Fixture f;
+        GuiFixture f;
         auto* stack = f.window.findChild<QStackedWidget*>();
         QVERIFY(stack);
         QCOMPARE(stack->currentIndex(), 1);  // empty state
 
-        pressCtrlN(&f.window);
+        f.trigger("newBufferAction");
         QTest::keyClicks(f.editor(), "content");
         QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
         QCOMPARE(stack->currentIndex(), 0);  // the stack

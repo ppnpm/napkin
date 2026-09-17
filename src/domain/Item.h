@@ -16,6 +16,7 @@ struct Item {
     QString text;        // type == Text
     QString blobHash;    // type == Image, sha256 hex
     QString sourceName;  // original filename if imported; empty if pasted
+    QString mime;        // type == Image, e.g. "image/png"; the blob is verbatim
     int     width  = 0;
     int     height = 0;
     qint64  byteSize = 0;
@@ -33,7 +34,8 @@ struct Item {
         return i;
     }
 
-    static Item makeImage(QString hash, int w, int h, qint64 bytes, QString source = {})
+    static Item makeImage(QString hash, int w, int h, qint64 bytes, QString source = {},
+                          QString mime = QStringLiteral("image/png"))
     {
         Item i;
         i.type       = ItemType::Image;
@@ -42,6 +44,7 @@ struct Item {
         i.height     = h;
         i.byteSize   = bytes;
         i.sourceName = std::move(source);
+        i.mime       = std::move(mime);
         return i;
     }
 };

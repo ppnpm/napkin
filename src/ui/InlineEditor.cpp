@@ -1,21 +1,54 @@
 #include "InlineEditor.h"
 #include "BufferCardDelegate.h"
+#include "../media/ClipboardContent.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QMimeData>
 #include <QPlainTextEdit>
+#include <functional>
 #include <QTextDocument>
 #include <QVBoxLayout>
 
 namespace napkin {
+namespace {
+
+// QPlainTextEdit would otherwise drop an image on the floor and paste whatever
+// text came alongside it — the exact inversion of the §4 preference order.
+class PasteAwareTextEdit : public QPlainTextEdit {
+public:
+    using QPlainTextEdit::QPlainTextEdit;
+    std::function<bool(const QMimeData*)> onPaste;
+
+protected:
+    bool canInsertFromMimeData(const QMimeData* source) const override
+    {
+        return (source && source->hasImage()) || QPlainTextEdit::canInsertFromMimeData(source);
+    }
+
+    void insertFromMimeData(const QMimeData* source) override
+    {
+        if (onPaste && onPaste(source)) return;   // handled as an image
+        QPlainTextEdit::insertFromMimeData(source);
+    }
+};
+
+}  // namespace
 
 InlineEditor::InlineEditor(QWidget* parent) : QWidget(parent)
 {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
-    edit_ = new QPlainTextEdit;
+    auto* edit = new PasteAwareTextEdit;
+    edit->onPaste = [this](const QMimeData* source) {
+        const auto content = readClipboard(source);
+        if (content.kind != ClipboardContent::Kind::Image) return false;
+        emit imagePasted(content.imageBytes, content.imageMime);
+        return true;
+    };
+    edit_ = edit;
     edit_->setFrameShape(QFrame::NoFrame);
     edit_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     edit_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);

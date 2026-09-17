@@ -3,6 +3,8 @@
 
 namespace napkin {
 
+class Thumbnailer;
+
 // Paints the buffer stack. The visual contract is SPEC.md §7: whitespace,
 // subtle separators, restrained borders, clear typography — no shadows, no
 // gradients, no large radii. Every colour comes from QPalette so light and dark
@@ -11,6 +13,9 @@ class BufferCardDelegate : public QStyledItemDelegate {
     Q_OBJECT
 public:
     explicit BufferCardDelegate(QObject* parent = nullptr);
+
+    // Optional: without one, image buffers simply render as text.
+    void setThumbnailer(Thumbnailer* thumbnailer) { thumbnailer_ = thumbnailer; }
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option,
                const QModelIndex& index) const override;
@@ -34,9 +39,12 @@ public:
     static constexpr int kRadius   = 6;
     static constexpr int kSectionH = 36;
 
+    static constexpr int kThumbSize = 52;
+
 private:
     QFont timestampFont(const QFont& base) const;
 
+    Thumbnailer* thumbnailer_ = nullptr;
     int expandedHeight_ = 260;
 };
 

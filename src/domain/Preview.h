@@ -12,6 +12,8 @@ struct BufferPreview {
     QString secondary;   // quiet detail line; may be empty
     int     itemCount = 0;
     bool    hasImage  = false;
+    QString thumbHash;   // first image item in the buffer, if any
+    QString thumbMime;
 
     bool isEmpty() const { return primary.isEmpty() && secondary.isEmpty(); }
 };
@@ -20,6 +22,9 @@ struct BufferPreview {
 // is how many it actually has. Only the head is loaded so a list of 5000
 // buffers never reads every item (§12).
 BufferPreview derivePreview(const std::vector<Item>& head, int totalCount);
+
+// How many items the preview needs: enough to find an image a line or two down.
+inline constexpr int kPreviewHeadSize = 4;
 
 // First non-blank line of a block of text, whitespace-trimmed.
 QString firstLine(const QString& text);

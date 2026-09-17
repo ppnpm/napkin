@@ -141,6 +141,13 @@ int BufferRepository::purgeTrashOlderThan(Timestamp cutoff)
     return db_.changes();
 }
 
+int BufferRepository::purgeAllTrash()
+{
+    Statement s(db_, "DELETE FROM buffers WHERE deleted_at IS NOT NULL AND kept = 0");
+    s.exec();
+    return db_.changes();
+}
+
 void BufferRepository::hardDeleteEvenIfKept(BufferId id)
 {
     Transaction tx(db_);

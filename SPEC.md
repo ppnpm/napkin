@@ -198,17 +198,23 @@ CREATE INDEX idx_buffers_recent ON buffers(deleted_at, pinned, modified_at DESC)
 
 ### Image storage
 
-Content-addressed, no refcount table:
+Content-addressed, no refcount table. Images are kept **byte for byte as they
+arrived** rather than normalised to PNG: re-encoding a JPEG photo would inflate
+it several times over and add generation loss for nothing. Schema v2 therefore
+carries a `mime` column, and the blob keeps its own extension.
 
 ```
 ~/.local/share/napkin/
 ├── napkin.db
 ├── napkin.db-wal
 ├── blobs/
-│   └── ab/abcdef0123….png
+│   └── ab/abcdef0123….png      (or .jpg, .webp, .gif — verbatim)
 └── thumbs/
-    └── ab/abcdef0123….jpg
+    └── ab/abcdef0123…_96.png
 ```
+
+Only formats Napkin cannot serve directly are converted, and only on the way in.
+Anything above 64 MB is refused with a readable message rather than swallowed.
 
 Pasting the same screenshot twice dedupes for free. On item delete, unlink the
 blob only if `SELECT 1 FROM items WHERE blob_hash = ? LIMIT 1` returns nothing.
@@ -292,9 +298,11 @@ accidental deletion is the single fastest way to lose a user forever.
 
 - Delete is a soft delete (`deleted_at`), always, for every path.
 - An **Undo** toast appears for ~8 seconds after any delete or sweep.
-- Trash is browsable and restorable.
+- Trash is browsable and restorable, and can be emptied on demand — a confirmed,
+  irreversible action, which then reclaims the blobs those buffers held.
 - Trash purges items older than 30 days on startup. **This is the only automatic
   hard delete in Napkin, and it only ever touches things the user already deleted.**
+  Emptying the trash skips any buffer still marked kept, which is the safe failure.
 - Deleting a `kept` buffer requires explicit confirmation, even into trash.
 
 ---
@@ -711,6 +719,8 @@ confirmation flow. 13 new GUI test cases (88 total, 9 binaries).
   hunting for the trash. A second delete replaces the standing offer — the most
   recent is the one the user most likely meant.
 - Pin and Keep are inert in the trash view; `Delete` restores there instead.
+- **Empty trash** is available while viewing the trash, behind a confirmation
+  that names how many buffers it will destroy.
 - Indicators are **drawn vector glyphs**, not an icon theme: a pushpin and a
   bookmark. Deliberately not a padlock — Keep is retention, not security, and
   the icon must not promise otherwise. Each state is also carried in the row's
@@ -719,8 +729,28 @@ confirmation flow. 13 new GUI test cases (88 total, 9 binaries).
 The header now carries the app name and the trash toggle, with the gap between
 them reserved for the Phase 5 search field.
 
-**Phase 4 — Images.** Clipboard paste, blob store, thumbnailer, inline preview,
-lightbox, image picker, reconciliation sweep.
+**Phase 4 — Images. ✅ COMPLETE.** Clipboard paste, content-addressed blob
+store, thumbnailer, card thumbnails, lightbox, image picker and the
+reconciliation sweep. 19 new test cases (107 total, 10 binaries).
+
+- **The §4 preference order is a tested contract.** A `QMimeData` carrying both
+  `image/png` and a URL — exactly what a browser's *Copy Image* produces —
+  resolves to the image. Paste is intercepted in `QPlainTextEdit` itself, which
+  would otherwise drop the image and paste the URL alongside it.
+- **Invariant 6 end to end:** the blob is written to a temp file, fsynced, the
+  containing directory fsynced, atomically renamed, and only then does the row
+  commit. A crash leaves an orphan blob, never a dangling reference.
+- **Invariant 7:** rows commit before any unlink, and `reconcileBlobs()` at
+  startup reclaims orphans, deletes `.tmp` files from interrupted writes, and
+  *reports* rows whose blob has vanished rather than rendering them silently
+  blank — a missing image draws a visible placeholder.
+- Thumbnails are scaled during decode, so a 4000×3000 photo never lands in
+  memory whole, and are cached on disk plus in `QPixmapCache`.
+- Migration v1 → v2 verified against a real v1 database: rows preserved, image
+  rows backfilled to `image/png`.
+
+Storing an image into an open empty draft promotes it in place rather than
+creating a second buffer — the draft invariant survives contact with images.
 
 **Phase 5 — Search.** FTS5, buffer-level roll-up, inline filtering, highlighting,
 and the persistent header search field adopted from the §7 mockup review.

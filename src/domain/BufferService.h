@@ -55,6 +55,9 @@ public:
     // not already deleted.
     int purgeExpiredTrash();
 
+    // Empties the trash now, at the user's explicit request.
+    int emptyTrash();
+
     // Buffers older than this belong in the collapsed OLDER section.
     static Timestamp olderThanCutoff();
 

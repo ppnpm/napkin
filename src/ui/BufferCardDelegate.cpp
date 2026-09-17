@@ -1,6 +1,7 @@
 #include "BufferCardDelegate.h"
 #include "BufferListModel.h"
 #include "Icons.h"
+#include "../media/Thumbnailer.h"
 #include "../domain/Clock.h"
 #include "../domain/TimeFormat.h"
 
@@ -138,8 +139,37 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
         glyphRight = card.right() - kPadding - x + g;
     }
 
+    // --- thumbnail -------------------------------------------------------------
+    QRect content = contentRect(option.rect, index).adjusted(0, 0, -glyphRight, 0);
+    const QString thumbHash = index.data(BufferListModel::ThumbHashRole).toString();
+    if (thumbnailer_ && !thumbHash.isEmpty()) {
+        const QRect box(content.left(), content.top(), kThumbSize, kThumbSize);
+        const QPixmap pixmap = thumbnailer_->forBlob(
+            thumbHash, index.data(BufferListModel::ThumbMimeRole).toString(), kThumbSize * 2);
+
+        if (pixmap.isNull()) {
+            // The blob is gone. Say so visibly rather than drawing nothing —
+            // silently blank content is indistinguishable from empty content.
+            QColor c = dimmed(pal, 60);
+            p->fillRect(box, c);
+            p->setPen(dimmed(pal, 140));
+            p->drawText(box, Qt::AlignCenter, QStringLiteral("?"));
+        } else {
+            QPixmap scaled = pixmap.scaled(box.size(), Qt::KeepAspectRatioByExpanding,
+                                           Qt::SmoothTransformation);
+            QPainterPath clip;
+            clip.addRoundedRect(QRectF(box), 4, 4);
+            p->save();
+            p->setClipPath(clip);
+            p->drawPixmap(box, scaled, QRect(QPoint((scaled.width() - box.width()) / 2,
+                                                    (scaled.height() - box.height()) / 2),
+                                             box.size()));
+            p->restore();
+        }
+        content.setLeft(box.right() + 12);
+    }
+
     // --- content ---------------------------------------------------------------
-    const QRect content = contentRect(option.rect, index).adjusted(0, 0, -glyphRight, 0);
     const QFontMetrics fm(option.font);
     const QFontMetrics tfm(timestampFont(option.font));
 

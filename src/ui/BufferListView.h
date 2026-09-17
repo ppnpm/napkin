@@ -5,6 +5,7 @@
 namespace napkin {
 
 class BufferCardDelegate;
+class Thumbnailer;
 class InlineEditor;
 
 // The buffer stack. Virtualized by QListView; the one expanded row gets a real
@@ -15,6 +16,7 @@ class BufferListView : public QListView {
 public:
     explicit BufferListView(QWidget* parent = nullptr);
 
+    void setThumbnailer(Thumbnailer* thumbnailer);
     void expandRow(int row, const QString& initialText);
     void collapse();
 
@@ -33,6 +35,8 @@ signals:
     void keepToggleRequested(int row);
     void trashRequested(int row);
     void contextMenuRequested(int row, const QPoint& globalPos);
+    void imageActivated(int row);
+    void imagePasted(const QByteArray& bytes, const QString& mime);
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
