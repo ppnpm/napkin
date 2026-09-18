@@ -11,6 +11,9 @@ namespace napkin::icons {
 void drawPin(QPainter* p, const QRect& box, const QColor& colour);
 void drawKeep(QPainter* p, const QRect& box, const QColor& colour);
 
+// Two offset sheets: the universal copy glyph.
+void drawCopy(QPainter* p, const QRect& box, const QColor& colour);
+
 inline constexpr int kGlyphSize = 13;
 
 }  // namespace napkin::icons

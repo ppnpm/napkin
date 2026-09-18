@@ -56,4 +56,22 @@ void drawKeep(QPainter* p, const QRect& box, const QColor& colour)
     p->restore();
 }
 
+// Two offset sheets, which is what every toolbar in the world means by copy.
+void drawCopy(QPainter* p, const QRect& box, const QColor& colour)
+{
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    const QRectF r(box);
+    const qreal w = r.width(), h = r.height();
+    QPen pen(colour, std::max(1.0, w * 0.085));
+    pen.setJoinStyle(Qt::RoundJoin);
+    p->setPen(pen);
+    p->setBrush(Qt::NoBrush);
+    p->drawRoundedRect(QRectF(r.left() + w * 0.06, r.top() + w * 0.06,
+                              w * 0.62, h * 0.62), w * 0.10, w * 0.10);
+    p->drawRoundedRect(QRectF(r.left() + w * 0.32, r.top() + w * 0.32,
+                              w * 0.62, h * 0.62), w * 0.10, w * 0.10);
+    p->restore();
+}
+
 }  // namespace napkin::icons

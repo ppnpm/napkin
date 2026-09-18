@@ -3,33 +3,25 @@
 #include <QWidget>
 
 class QLabel;
-
 class QPlainTextEdit;
 
 namespace napkin {
 
 class BlobStore;
+class CardFooter;
 class Thumbnailer;
 
-// One item in the canvas, as a selectable object.
+// One item on the board, as a card.
 //
-// The hard part of this layout is that a text block must be BOTH a selectable
-// object and an editable field. The resolution:
+// Selection is uniform — every item answers a click the same way, so "click it,
+// then delete it" works on a paragraph exactly as it works on a picture:
 //
-//   single click       -> SELECT the block, whatever it is
+//   single click       -> select
 //   double click       -> edit it (text) or open the lightbox (image)
 //   Enter on selected  -> edit it
 //   Ctrl/Shift+click   -> extend the selection
-//   Esc while editing  -> leave the text, keep the block selected
-//   click empty canvas -> clear the selection, focus the composer
-//
-// Selection is uniform: every item answers a click the same way, so "click it,
-// then delete it" works on text exactly as it works on an image. An earlier
-// build put the caret straight into text on a single click, which made a text
-// block the one thing in the canvas the mouse could not select or delete.
-//
-// The trailing composer is the exception: it is empty and has no row, so
-// selecting it would mean nothing. Clicking it just starts writing.
+//   Esc while editing  -> stop editing, keep the card selected
+//   click empty board  -> clear the selection
 class ItemCard : public QWidget {
     Q_OBJECT
 public:
@@ -37,42 +29,44 @@ public:
 
     ItemId itemId() const { return item_.id; }
     const Item& item() const { return item_; }
+    bool isComposer() const { return item_.id == kNoItem; }
 
     bool isSelected() const { return selected_; }
     void setSelected(bool selected);
 
     virtual QString asPlainText() const { return {}; }
 
-    // Natural height at this column width, capped. A card shows its content
-    // whole when it fits; past the cap it clips with a fade and opens on
-    // double-click, which is honest about there being more.
-    virtual int heightForColumn(int width) const = 0;
+    // Natural height at this column width, clamped between the minimum a card
+    // is allowed to be and the maximum it may grow to. A card's size depends
+    // only on its own content — never on what its neighbours are doing.
+    int heightForColumn(int width) const;
     bool isClipped() const { return clipped_; }
+
+    virtual bool hasEditFocus() const { return false; }
 
 signals:
     void selectRequested(ItemId id, Qt::KeyboardModifiers modifiers);
     void activated(ItemId id);
     void escaped();
-
-public:
-    // True while a caret is inside this block, which is a different state from
-    // "selected" and must look different.
-    virtual bool hasEditFocus() const { return false; }
+    void copyRequested(ItemId id);
 
 protected:
+    // Subclasses call this once, with the widget that fills the content area.
+    void setContent(QWidget* content, const QString& copyLabel);
+    virtual int contentHeightForWidth(int innerWidth) const = 0;
+
     void mousePressEvent(QMouseEvent* e) override;
     void paintEvent(QPaintEvent* e) override;
     void enterEvent(QEnterEvent* e) override;
     void leaveEvent(QEvent* e) override;
 
     Item item_;
+    mutable bool clipped_ = false;
 
 private:
+    CardFooter* footer_ = nullptr;
     bool selected_ = false;
     bool hovered_ = false;
-
-protected:
-    mutable bool clipped_ = false;
 };
 
 class TextItemCard : public ItemCard {
@@ -89,23 +83,17 @@ public:
     void beginEditing();
     void focusTextInteraction();
     void endEditing();
-    bool isComposer() const { return itemId() == kNoItem; }
-    int heightForColumn(int width) const override;
     bool textHasFocus() const;
-    // Editing MODE, not window focus: a block being edited must still look
-    // edited when the window is inactive, and window focus is not something a
-    // headless test can grant.
     bool hasEditFocus() const override;
 
 signals:
     void edited();
     void imagePasted(const QByteArray& bytes, const QString& mime);
     void heightChanged();
-
-signals:
     void editingStarted(ItemId id);
 
 protected:
+    int contentHeightForWidth(int innerWidth) const override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* e) override;
 
@@ -121,19 +109,18 @@ public:
                   QWidget* parent = nullptr);
 
     QString asPlainText() const override;
-    int heightForColumn(int width) const override;
 
 protected:
+    int contentHeightForWidth(int innerWidth) const override;
     void mouseDoubleClickEvent(QMouseEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
 
 private:
     void rescale();
 
-    Thumbnailer& thumbs_;
-    QPixmap      source_;
-    QLabel*      view_ = nullptr;
-    QLabel*      caption_ = nullptr;
+    QPixmap source_;
+    QLabel* view_ = nullptr;
+    QLabel* caption_ = nullptr;
 };
 
 }  // namespace napkin

@@ -24,10 +24,12 @@ ItemCanvas::ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
 {
     setWidgetResizable(true);
     setFrameShape(QFrame::NoFrame);
-    // Both panes sit on Base and the gutters on Window: the canvas is one large
-    // sheet of paper, the list cards are small sheets, both on the same desk.
-    setBackgroundRole(QPalette::Base);
+    // The board is the desk; the cards are paper on it. Cards carry their own
+    // Base fill and an edge, so the surface behind them has to differ or they
+    // have nothing to sit against.
+    setBackgroundRole(QPalette::Window);
     viewport()->setAutoFillBackground(true);
+    viewport()->setBackgroundRole(QPalette::Window);
     setFocusPolicy(Qt::StrongFocus);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
@@ -91,6 +93,13 @@ void ItemCanvas::showNothingSelected()
 
 void ItemCanvas::addCard(ItemCard* card, int index)
 {
+    connect(card, &ItemCard::copyRequested, this, [this](ItemId id) {
+        // One-click copy of exactly this card, independent of the selection.
+        const auto keep = selected_;
+        selected_ = {id};
+        copySelection();
+        selected_ = keep;
+    });
     if (auto* text = qobject_cast<TextItemCard*>(card)) {
         // Only one block edits at a time: starting one ends the others, so the
         // canvas never has two carets or an ambiguous Ctrl+C.

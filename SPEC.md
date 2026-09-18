@@ -429,6 +429,8 @@ canvas.
 
 ### A board of cards, not a page
 
+Reference: `docs/UI_cards_reference.png`.
+
 Napkin is temporary storage, not an editor. The canvas is a **masonry board**:
 uniform column width, each card its own height, newest first.
 
@@ -461,14 +463,25 @@ which are text and get no exemption. **126** is the floor for a non-text
 affordance carrying meaning; anything at or below 90 is decorative and never the
 sole indicator of a state.
 
-- **Text cards have no border and no fill at rest.** A text item must not look
-  like a form field, because it is not one — it is the content. What makes a
-  borderless card read as an *object* is a 3px **gutter rail**, empty at rest and
-  solid when selected or being edited. Editing deliberately has no fill: a wash
-  behind text you are actively reading degrades it. Every state changes exactly
-  two things, never three.
-- **Both panes sit on `Base`; the gutters sit on `Window`.** The board is a desk;
-  the cards are pieces of paper on it. No tint difference, no gradient, no shadow.
+- **A card is a card.** Own surface (`Base`), own edge (`Text` α62, α104 on
+  hover), 16px inset, 10px radius. An earlier build drew text cards with no
+  border and no fill on the reasoning that "a text item is content, not a
+  widget" — which was true about the *content* and wrong about the *card*. The
+  board read as loose text rather than as things you can pick up, and that is
+  what the user was reacting to. A gutter rail was standing in for the edge; with
+  a real edge it is redundant chrome, and it is gone.
+- **The board is `Window`; the cards are `Base`.** The desk, and paper on it. A
+  card needs something to sit against, so the two cannot both be `Base`. Still no
+  gradient and no shadow anywhere.
+- **Every card carries a footer**: a one-click *Copy text* / *Copy image* on the
+  left, the item's age on the right. The button duplicates `Ctrl+C` deliberately
+  — `Ctrl+C` acts on the *selection*, so it needs a selection first, while the
+  footer is the one-click path for "give me that one thing". Two mechanisms for
+  two intents, not one job done twice. Using it does not disturb the selection.
+- **Sizes are per-card and absolute.** Min 92px tall so a two-word paste is still
+  something you can aim at, max 420px so one screenshot cannot own the board,
+  columns 280–400px wide. A card's height is computed from its own content and
+  nothing else — a tall neighbour never stretches or shrinks it.
 - Images draw at the column width, **never upscaled**, with one caption line:
   filename or format, dimensions, size, and *animated* when it moves.
 

@@ -1,6 +1,7 @@
 #include "GuiFixture.h"
 #include "../src/media/BlobGc.h"
 #include "../src/ui/Tokens.h"
+#include "../src/ui/CardFooter.h"
 
 #include <QApplication>
 #include <QBuffer>
@@ -476,6 +477,88 @@ private slots:
         f.canvas()->selectAll();
         f.canvas()->deleteSelection();
         QCOMPARE(f.buffers.countLive(), 0);
+    }
+
+    // --- card chrome and sizing ----------------------------------------------
+    void doubleClickingABufferDoesNotAddATextBlock()
+    {
+        GuiFixture f;
+        const auto id = f.seed("just looking");
+        f.select(id);
+        const int before = f.canvas()->findChildren<TextItemCard*>().size();
+        QCOMPARE(before, 1);   // the one real item, and no blank block
+
+        const QRect rect = f.view()->visualRect(f.model()->index(f.model()->rowForId(id), 0));
+        QTest::mouseDClick(f.view()->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
+
+        // Opening a buffer is not a request to write in it.
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), before);
+        QCOMPARE(f.items.countForBuffer(id), 1);
+    }
+
+    void everyCardHasACopyActionAndAnAge()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        const auto footers = f.canvas()->findChildren<CardFooter*>();
+        QCOMPARE(footers.size(), f.items.countForBuffer(id));
+    }
+
+    void theCardCopyActionCopiesThatCardNotTheSelection()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+        QApplication::clipboard()->clear();
+
+        // Select something else entirely, then use a different card's button.
+        auto* image = f.canvas()->findChildren<ImageItemCard*>().first();
+        QTest::mouseClick(image, Qt::LeftButton);
+
+        auto* textCard = f.canvas()->findChildren<TextItemCard*>().first();
+        emit textCard->copyRequested(textCard->itemId());
+        QCOMPARE(QApplication::clipboard()->text(), textCard->text());
+
+        // And the selection is left exactly as it was.
+        QCOMPARE(f.canvas()->selection().size(), 1);
+        QCOMPARE(f.canvas()->selection().first(), image->itemId());
+    }
+
+    void aTinyCardStillHasAMinimumSize()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("ok")));
+        f.model()->reload();
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        QVERIFY2(card->height() >= tokens::kCardMinHeight,
+                 qPrintable(QString("a two-letter card is %1px tall").arg(card->height())));
+        QVERIFY(card->width() >= tokens::kCardMinWidth);
+    }
+
+    void aCardsHeightDependsOnlyOnItsOwnContent()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("short")));
+        f.model()->reload();
+        f.select(id);
+        const int aloneHeight = f.canvas()->findChildren<TextItemCard*>().first()->height();
+
+        // Add a very tall neighbour; the short card must not change size.
+        QString huge;
+        for (int i = 0; i < 60; ++i) huge += QStringLiteral("line %1\n").arg(i);
+        f.service.appendTo(id, Item::makeText(huge));
+        f.select(id);
+        f.window.selectBuffer(f.model()->rowForId(id));
+
+        for (auto* card : f.canvas()->findChildren<TextItemCard*>())
+            if (card->text() == QStringLiteral("short"))
+                QCOMPARE(card->height(), aloneHeight);
     }
 
     // --- the board model -----------------------------------------------------

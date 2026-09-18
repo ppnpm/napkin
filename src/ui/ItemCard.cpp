@@ -1,19 +1,21 @@
 #include "ItemCard.h"
+#include "CardFooter.h"
+#include "Tokens.h"
 #include "../domain/Preview.h"
 #include "../media/BlobStore.h"
 #include "../media/ClipboardContent.h"
+#include "../media/ImageFormats.h"
 #include "../media/Thumbnailer.h"
-#include "Tokens.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QFile>
 #include <QImageReader>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QLinearGradient>
 #include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QTextDocument>
@@ -25,18 +27,17 @@ namespace {
 
 using namespace tokens;
 
-// "image/png" -> "PNG", for a pasted image that has no filename of its own.
-QString formats_upper(const QString& mime)
+// "image/png" -> "PNG", for a pasted image with no filename of its own.
+QString formatLabel(const QString& mime)
 {
     const int slash = mime.indexOf(QLatin1Char('/'));
     QString suffix = slash >= 0 ? mime.mid(slash + 1) : mime;
     if (suffix.startsWith(QLatin1String("svg"))) suffix = QStringLiteral("svg");
     return suffix.toUpper();
 }
-constexpr int kCardPadding = 10;
 
-// QPlainTextEdit would otherwise drop an image and paste whatever text came
-// alongside it — the exact inversion of the §4 preference order.
+// QPlainTextEdit would otherwise drop an image on the floor and paste whatever
+// text came alongside it — the exact inversion of the §4 preference order.
 class PasteAwareTextEdit : public QPlainTextEdit {
 public:
     using QPlainTextEdit::QPlainTextEdit;
@@ -61,6 +62,23 @@ protected:
 ItemCard::ItemCard(const Item& item, QWidget* parent) : QWidget(parent), item_(item)
 {
     setFocusPolicy(Qt::StrongFocus);
+    setAttribute(Qt::WA_Hover, true);
+}
+
+void ItemCard::setContent(QWidget* content, const QString& copyLabel)
+{
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(kCardPad, kCardPad, kCardPad, kCardPad - 6);
+    layout->setSpacing(kGapTight);
+    layout->addWidget(content, 1);
+
+    if (!isComposer()) {
+        footer_ = new CardFooter(copyLabel, this);
+        footer_->setTimestamp(item_.modifiedAt ? item_.modifiedAt : item_.createdAt);
+        connect(footer_, &CardFooter::actionTriggered, this,
+                [this] { emit copyRequested(item_.id); });
+        layout->addWidget(footer_);
+    }
 }
 
 void ItemCard::setSelected(bool selected)
@@ -70,20 +88,25 @@ void ItemCard::setSelected(bool selected)
     update();
 }
 
+int ItemCard::heightForColumn(int width) const
+{
+    const int inner = std::max(40, width - kCardPad * 2);
+    const int chrome = kCardPad * 2 - 6 + (footer_ ? kCardFooterH + kGapTight : 0);
+    const int natural = contentHeightForWidth(inner) + chrome;
+
+    clipped_ = natural > kCardMaxHeight;
+    return std::clamp(natural, kCardMinHeight, kCardMaxHeight);
+}
+
 void ItemCard::mousePressEvent(QMouseEvent* e)
 {
     emit selectRequested(item_.id, e->modifiers());
     // Accept it. QWidget::mousePressEvent ignores the event, which would let it
-    // bubble up to the canvas — whose own handler clears the selection this
-    // click just made.
+    // bubble up to the canvas — whose handler clears the selection this click
+    // just made.
     e->accept();
 }
 
-// A text item must not look like a form field, because it is not one — it is the
-// content. So there is no border and no fill at rest; the block is just text on
-// the paper. What makes a borderless block read as an *object* is the gutter
-// rail: a 3px mark to the left, empty at rest, solid when the block is selected
-// or being edited. Nothing else in the canvas uses that gutter.
 void ItemCard::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
@@ -91,47 +114,37 @@ void ItemCard::paintEvent(QPaintEvent*)
     const QPalette& pal = palette();
     const bool editing = hasEditFocus();
 
-    const QRect body = rect().adjusted(kRailOffset, 0, 0, 0);
+    const QRectF box = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
     QPainterPath path;
-    path.addRoundedRect(QRectF(body).adjusted(0.5, 0.5, -0.5, -0.5),
-                        kRadiusSelection, kRadiusSelection);
+    path.addRoundedRect(box, kCardRadius, kCardRadius);
 
-    // Editing deliberately has no fill: a wash behind text you are reading and
-    // typing degrades it, and the rail, border and caret are three signals
-    // already.
-    if (selected_ && !editing)
-        p.fillPath(path, highlight(pal, isLightTheme(pal) ? kFillSelectedLight
-                                                          : kFillSelectedDark));
-    else if (hovered_)
-        p.fillPath(path, text(pal, 10));
+    // A card is a piece of paper on the desk: its own surface, its own edge.
+    // An earlier build drew text cards with no border and no fill at all, which
+    // made the board read as loose text rather than as things you can pick up.
+    p.fillPath(path, pal.color(QPalette::Base));
 
-    if (editing)        p.setPen(QPen(highlight(pal, kBorderEditing), 1));
-    else if (selected_) p.setPen(QPen(highlight(pal, kBorderSelected), 1));
-    else if (hovered_)  p.setPen(QPen(text(pal, kItemHover), 1));
-    else                p.setPen(Qt::NoPen);
-    if (p.pen() != Qt::NoPen) p.drawPath(path);
+    if (selected_ || editing)
+        p.fillPath(path, highlight(pal, isLightTheme(pal) ? 20 : 34));
 
-    if (clipped_) {
-        // Fade the last few lines rather than cutting them mid-stroke, so it
-        // reads as "there is more" instead of "this is broken".
-        QLinearGradient fade(0, height() - 34, 0, height() - 2);
-        QColor base = pal.color(QPalette::Base);
-        base.setAlpha(0);
-        fade.setColorAt(0.0, base);
-        base.setAlpha(255);
-        fade.setColorAt(1.0, base);
-        p.fillRect(QRect(kRailOffset + 1, height() - 34, width() - kRailOffset - 2, 32), fade);
-    }
+    QColor border = selected_ || editing ? highlight(pal, editing ? kBorderEditing
+                                                                 : kBorderSelected)
+                  : hovered_             ? text(pal, kCardBorderHover)
+                                         : text(pal, kCardBorder);
+    p.setPen(QPen(border, selected_ || editing ? 1.6 : 1.0));
+    p.drawPath(path);
 
-    // Each state changes exactly two things, never three.
-    if (selected_ || editing || hovered_) {
-        const QColor rail = (selected_ || editing) ? highlight(pal, 255)
-                                                   : text(pal, kRailHover);
-        QPainterPath railPath;
-        railPath.addRoundedRect(QRectF(0, 3, kRailWidth, std::max(0, height() - 6)),
-                                kRailWidth / 2.0, kRailWidth / 2.0);
-        p.fillPath(railPath, rail);
-    }
+    if (!clipped_) return;
+
+    // Fade the last lines rather than cutting them mid-stroke, so it reads as
+    // "there is more" instead of "this is broken".
+    const int fadeTop = height() - (footer_ ? kCardFooterH + kCardPad : kCardPad) - 30;
+    QLinearGradient fade(0, fadeTop, 0, fadeTop + 30);
+    QColor base = pal.color(QPalette::Base);
+    base.setAlpha(0);
+    fade.setColorAt(0.0, base);
+    base.setAlpha(255);
+    fade.setColorAt(1.0, base);
+    p.fillRect(QRect(2, fadeTop, width() - 4, 30), fade);
 }
 
 void ItemCard::enterEvent(QEnterEvent* e)
@@ -152,10 +165,6 @@ void ItemCard::leaveEvent(QEvent* e)
 
 TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, parent)
 {
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(kRailOffset + kSelectionBleed, kCardPadding,
-                               kSelectionBleed, kCardPadding);
-
     auto* edit = new PasteAwareTextEdit;
     edit->setPlainText(item.text);
     edit->moveCursor(QTextCursor::End);
@@ -163,15 +172,13 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
     edit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     edit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     edit->setPlaceholderText(tr("Write something…"));
-    // The canvas is content and the list is chrome; two points of size is the
-    // cheapest way to say so (SPEC.md §7: content must dominate).
-    QFont body = scaled(edit->font(), 2.0);
-    edit->setFont(body);
-    QTextOption option = edit->document()->defaultTextOption();
-    edit->document()->setDefaultTextOption(option);
     edit->setTabChangesFocus(true);
     edit->viewport()->setAutoFillBackground(false);
     edit->setStyleSheet(QStringLiteral("QPlainTextEdit { background: transparent; }"));
+    edit->document()->setDocumentMargin(0);
+    // Read-only until you ask to edit, so a click lands on the card rather than
+    // in the text. The composer is born editable: it has nothing to select.
+    edit->setTextInteractionFlags(Qt::NoTextInteraction);
     edit->onPaste = [this](const QMimeData* source) {
         const auto content = readClipboard(source);
         if (content.kind != ClipboardContent::Kind::Image) return false;
@@ -179,10 +186,8 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
         return true;
     };
     edit_ = edit;
-    // Read-only until you ask to edit, so a click lands on the block rather than
-    // in the text. The composer is born editable: it has nothing to select.
-    edit_->setTextInteractionFlags(Qt::NoTextInteraction);
-    layout->addWidget(edit_);
+
+    setContent(edit_, tr("Copy text"));
 
     connect(edit_, &QPlainTextEdit::textChanged, this, [this] {
         dirty_ = true;
@@ -196,50 +201,34 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
 QString TextItemCard::text() const { return edit_->toPlainText(); }
 bool TextItemCard::textHasFocus() const { return edit_->hasFocus(); }
 
+// Editing MODE, not window focus: a card being edited must still look edited
+// when the window is inactive, and window focus is not something a headless
+// test can grant.
 bool TextItemCard::hasEditFocus() const
 {
     return edit_->textInteractionFlags() & Qt::TextEditorInteraction;
 }
 
-void TextItemCard::focusText()
+void TextItemCard::focusTextInteraction()
 {
     edit_->setTextInteractionFlags(Qt::TextEditorInteraction);
+}
+
+void TextItemCard::focusText()
+{
+    focusTextInteraction();
     edit_->setFocus(Qt::OtherFocusReason);
     edit_->moveCursor(QTextCursor::End);
 }
 
-int TextItemCard::heightForColumn(int width) const
-{
-    // QPlainTextDocumentLayout reports documentSize().height() in LINES, not
-    // pixels — a quirk of the plain-text layout that an earlier version took at
-    // face value, which is why short notes were being clipped after two lines.
-    const int inner = std::max(40, width - (kRailOffset + kSelectionBleed * 2));
-    QTextDocument* doc = edit_->document();
-    doc->setTextWidth(inner);
-
-    const int lines = std::max(1, int(doc->size().height()));
-    const int lineHeight = edit_->fontMetrics().lineSpacing();
-    const int docMargin = int(doc->documentMargin()) * 2;
-
-    const int natural = lines * lineHeight + docMargin + kCardPadding * 2 + 2;
-    clipped_ = natural > kCardMaxHeight;
-    return std::min(natural, kCardMaxHeight);
-}
-
 void TextItemCard::beginEditing()
 {
-    if (edit_->textInteractionFlags() & Qt::TextEditorInteraction) return;
-    edit_->setTextInteractionFlags(Qt::TextEditorInteraction);
+    if (hasEditFocus()) return;
+    focusTextInteraction();
     edit_->setFocus(Qt::MouseFocusReason);
     edit_->moveCursor(QTextCursor::End);
     emit editingStarted(itemId());
     update();
-}
-
-// The composer is born editable: there is nothing there to select.
-void TextItemCard::focusTextInteraction()
-{
-    edit_->setTextInteractionFlags(Qt::TextEditorInteraction);
 }
 
 void TextItemCard::endEditing()
@@ -247,6 +236,17 @@ void TextItemCard::endEditing()
     if (isComposer()) return;   // the composer is always ready to be written in
     edit_->setTextInteractionFlags(Qt::NoTextInteraction);
     update();
+}
+
+int TextItemCard::contentHeightForWidth(int innerWidth) const
+{
+    // QPlainTextDocumentLayout reports documentSize().height() in LINES, not
+    // pixels — a quirk of the plain-text layout that an earlier version took at
+    // face value, which is why short notes were clipped after two lines.
+    QTextDocument* doc = edit_->document();
+    doc->setTextWidth(innerWidth);
+    const int lines = std::max(1, int(doc->size().height()));
+    return lines * edit_->fontMetrics().lineSpacing() + 2;
 }
 
 void TextItemCard::mouseDoubleClickEvent(QMouseEvent* e)
@@ -257,22 +257,17 @@ void TextItemCard::mouseDoubleClickEvent(QMouseEvent* e)
 
 bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
 {
-    if (event->type() == QEvent::MouseButtonDblClick) {
-        beginEditing();
-        return true;
-    }
+    if (event->type() == QEvent::MouseButtonDblClick) { beginEditing(); return true; }
     if (event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);
         // While read-only the press means "select me"; once editing, it belongs
         // to the caret.
-        if (!(edit_->textInteractionFlags() & Qt::TextEditorInteraction)) {
+        if (!hasEditFocus()) {
             emit selectRequested(itemId(), mouse->modifiers());
             return true;
         }
     }
     if (watched == edit_ && event->type() == QEvent::KeyPress) {
-        // Esc leaves the text and selects the block it belongs to, so a block
-        // is always reachable as an object without a special hit target.
         if (static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
             endEditing();
             emit escaped();
@@ -286,29 +281,27 @@ bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
 
 ImageItemCard::ImageItemCard(const Item& item, Thumbnailer& thumbs, BlobStore& blobs,
                              QWidget* parent)
-    : ItemCard(item, parent), thumbs_(thumbs)
+    : ItemCard(item, parent)
 {
     setToolTip(tr("Double-click to view full size"));
 
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(kRailOffset + kSelectionBleed, kCardPadding,
-                               kSelectionBleed, kCardPadding);
-    layout->setSpacing(kGapTight);
-    layout->setAlignment(Qt::AlignLeft);
+    auto* holder = new QWidget;
+    auto* layout = new QVBoxLayout(holder);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
 
     view_ = new QLabel;
-    view_->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    view_->setMinimumHeight(60);
+    view_->setAlignment(Qt::AlignCenter);
 
     const QString path = blobs.pathFor(item.blobHash, item.mime);
     if (QFile::exists(path)) {
         QImageReader reader(path);
         reader.setAutoTransform(true);
-        // Decode at a sane ceiling: the canvas never shows more than this, and
-        // a 100-megapixel HEIC should not land in memory whole to be shrunk.
+        // Decode size-aware: a 100-megapixel HEIC should not land in memory
+        // whole just to be shrunk into a 400px card.
         if (const QSize full = reader.size(); full.isValid()) {
             QSize target = full;
-            target.scale(2200, kCardMaxHeight * 2, Qt::KeepAspectRatio);
+            target.scale(kCardMaxWidth * 2, kCardMaxHeight * 2, Qt::KeepAspectRatio);
             if (target.width() < full.width()) reader.setScaledSize(target);
         }
         source_ = QPixmap::fromImage(reader.read());
@@ -318,30 +311,26 @@ ImageItemCard::ImageItemCard(const Item& item, Thumbnailer& thumbs, BlobStore& b
         // indistinguishable from empty content.
         view_->setText(tr("This image is no longer on disk."));
         view_->setEnabled(false);
-        view_->setMinimumHeight(120);
     }
     layout->addWidget(view_);
 
-    // One tertiary line is not dense metadata; it is what a person who pastes
-    // screenshots actually needs: which one is this, how big, can I use it.
     QStringList facts;
-    if (!item.sourceName.isEmpty()) facts << item.sourceName;
-    else facts << formats_upper(item.mime);
+    facts << (item.sourceName.isEmpty() ? formatLabel(item.mime) : item.sourceName);
     if (item.width > 0 && item.height > 0)
         facts << QStringLiteral("%1 × %2").arg(item.width).arg(item.height);
     if (item.byteSize > 0) facts << formatBytes(item.byteSize);
     if (item.animated) facts << tr("animated");
 
     caption_ = new QLabel(facts.join(QStringLiteral(" · ")));
-    QPalette pal = caption_->palette();
-    pal.setColor(QPalette::WindowText, text(palette(), kTextTertiary));   // measured AA floor
-    caption_->setPalette(pal);
     caption_->setFont(scaled(caption_->font(), -1.5));
+    QPalette capPal = caption_->palette();
+    capPal.setColor(QPalette::WindowText, text(palette(), kTextTertiary));
+    caption_->setPalette(capPal);
     layout->addWidget(caption_);
 
+    setContent(holder, tr("Copy image"));
     setAccessibleName(item.sourceName.isEmpty() ? tr("Image") : item.sourceName);
     setAccessibleDescription(facts.join(QStringLiteral(", ")));
-    rescale();
 }
 
 QString ImageItemCard::asPlainText() const
@@ -349,33 +338,28 @@ QString ImageItemCard::asPlainText() const
     return item_.sourceName.isEmpty() ? tr("[image]") : item_.sourceName;
 }
 
-int ImageItemCard::heightForColumn(int width) const
+int ImageItemCard::contentHeightForWidth(int innerWidth) const
 {
-    const int captionH = caption_ ? caption_->sizeHint().height() : 0;
-    const int chrome = captionH + kCardPadding * 2 + kGapTight;
-    if (source_.isNull()) return 140 + chrome;
+    const int captionH = caption_ ? caption_->sizeHint().height() + 6 : 0;
+    if (source_.isNull()) return 96 + captionH;
 
-    // Draw at the column width, never upscaled, and never taller than a card is
-    // allowed to be — otherwise one phone screenshot owns the whole board.
-    const int available = std::max(60, width - kRailOffset - kSelectionBleed * 2);
-    const int drawn = source_.height() * std::min(available, source_.width())
+    // Never upscaled: a 200x140 favicon draws at 200x140. Stretching a small
+    // image to fill a column is the fastest way to make a UI look cheap.
+    const int drawn = source_.height() * std::min(innerWidth, source_.width())
                       / std::max(1, source_.width());
-    const int capped = std::min(drawn, kCardMaxHeight - chrome);
-    clipped_ = drawn > capped;
-    return capped + chrome;
+    return drawn + captionH;
 }
 
 void ImageItemCard::rescale()
 {
     if (source_.isNull()) return;
-    const int available = std::max(80, width() - kRailOffset - kSelectionBleed * 2);
-    // Never upscaled. A 200x140 favicon draws at 200x140; stretching a small
-    // image to fill a column is the fastest way to make a UI look cheap.
-    const QSize target = source_.size()
-                             .scaled(available, kCardMaxHeight, Qt::KeepAspectRatio)
+    const int available = std::max(60, width() - kCardPad * 2);
+    const int captionH = caption_ ? caption_->sizeHint().height() + 6 : 0;
+    const int room = std::max(60, height() - kCardPad * 2 - kCardFooterH - kGapTight - captionH);
+
+    const QSize target = source_.size().scaled(available, room, Qt::KeepAspectRatio)
                              .boundedTo(source_.size());
     view_->setPixmap(source_.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    view_->setFixedHeight(target.height());
 }
 
 void ImageItemCard::resizeEvent(QResizeEvent* e)

@@ -3,6 +3,7 @@
 #include "BufferListModel.h"
 #include "BufferListView.h"
 #include "ItemCanvas.h"
+#include "Tokens.h"
 #include "Lightbox.h"
 #include "UndoToast.h"
 
@@ -95,7 +96,7 @@ void MainWindow::buildUi()
     splitter_->setChildrenCollapsible(false);
     view_->setMinimumWidth(260);
     view_->setMaximumWidth(520);
-    canvas_->setMinimumWidth(320);
+    canvas_->setMinimumWidth(tokens::kCardMinWidth + tokens::kPadX * 2);
     splitter_->setSizes({340, 660});
 
     stack_ = new QStackedWidget;
@@ -717,13 +718,14 @@ void MainWindow::selectBuffer(int row)
     canvas_->setItems(id == kNoBuffer ? std::vector<Item>{} : items_.listForBuffer(id));
 }
 
-// Enter or a double-click puts the caret in the canvas, which is the "open it
-// and start typing" gesture now that the pane is always visible.
+// Enter or a double-click on a buffer moves focus to its board. It does NOT
+// start a text card: opening a buffer is not a request to write in it, and
+// double-clicking one used to silently add a blank block.
 void MainWindow::openRow(int row)
 {
     if (view_->currentIndex().row() != row)
         view_->setCurrentIndex(model_->index(row, 0));
-    canvas_->addPendingTextCard();
+    canvas_->setFocus(Qt::OtherFocusReason);
 }
 
 void MainWindow::removeItems(const QList<ItemId>& ids)

@@ -44,6 +44,18 @@ inline constexpr int kCardMaxWidth = 400;
 // a card would own the board, so it clips with a fade and opens on double-click.
 inline constexpr int kCardMaxHeight = 420;
 
+// A card is never shorter than this, so a one-word paste is still a card you can
+// aim at rather than a sliver. Every card's size depends only on its own
+// content: nothing here is derived from what the neighbours are doing.
+inline constexpr int kCardMinHeight = 92;
+
+// Card chrome.
+inline constexpr int kCardPad      = 16;   // content inset
+inline constexpr int kCardFooterH  = 30;   // the copy action and the timestamp
+inline constexpr int kCardRadius   = 10;
+inline constexpr int kCardBorder   = 62;   // alpha: quiet, but a card reads as an object
+inline constexpr int kCardBorderHover = 104;
+
 inline constexpr int kRailOffset     = 26;
 inline constexpr int kRailWidth      = 3;
 inline constexpr int kSelectionBleed = 12;   // so the text never moves between states
