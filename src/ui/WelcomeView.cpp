@@ -1,0 +1,165 @@
+#include "WelcomeView.h"
+#include "Tokens.h"
+
+#include <QEvent>
+#include <QGuiApplication>
+#include <QHBoxLayout>
+#include <QIcon>
+#include <QLabel>
+#include <QPushButton>
+#include <QVBoxLayout>
+
+namespace napkin {
+namespace {
+
+using namespace tokens;
+
+constexpr int kLogoSize = 112;
+constexpr int kKeyColumn = 128;   // wide enough for Ctrl+Shift+I without wrapping
+constexpr int kWhatColumn = 230;  // fixed, so the block is a block and not a ragged edge
+
+QPixmap loadMark()
+{
+    // The installed theme icon if there is one, otherwise the copies compiled
+    // into the binary — so this works from a build directory too.
+    QIcon icon = QIcon::fromTheme(QStringLiteral("napkin"));
+    if (icon.isNull()) {
+        for (const char* size : {"128", "256", "64"})
+            icon.addFile(QStringLiteral(":/resources/icons/%1x%1/napkin.png").arg(size));
+    }
+    return icon.pixmap(kLogoSize, kLogoSize);
+}
+
+}  // namespace
+
+WelcomeView::WelcomeView(QWidget* parent) : QWidget(parent)
+{
+    auto* outer = new QVBoxLayout(this);
+    outer->setAlignment(Qt::AlignCenter);
+    outer->setSpacing(0);
+
+    auto* column = new QVBoxLayout;
+    column->setAlignment(Qt::AlignHCenter);
+    column->setSpacing(0);
+
+    logo_ = new QLabel;
+    logo_->setPixmap(loadMark());
+    logo_->setAlignment(Qt::AlignCenter);
+    column->addWidget(logo_);
+    column->addSpacing(18);
+
+    name_ = new QLabel(tr("Napkin"));
+    name_->setAlignment(Qt::AlignCenter);
+    QFont nameFont = scaled(font(), 14.0, QFont::Medium);
+    nameFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
+    name_->setFont(nameFont);
+    column->addWidget(name_);
+    column->addSpacing(8);
+
+    tagline_ = new QLabel(tr("A persistent scratch surface for your computer"));
+    tagline_->setAlignment(Qt::AlignCenter);
+    tagline_->setFont(scaled(font(), 1.5));
+    column->addWidget(tagline_);
+    column->addSpacing(4);
+
+    instruction_ = new QLabel(tr("Paste or dump text and images here."));
+    instruction_->setAlignment(Qt::AlignCenter);
+    column->addWidget(instruction_);
+    column->addSpacing(34);
+
+    // Only the keys that get you started. A wall of every binding would be a
+    // reference card, and nobody reads a reference card on first run.
+    column->addWidget(buildShortcutRow(tr("Ctrl+N"), tr("New buffer"),
+                                       SIGNAL(newBufferRequested())), 0, Qt::AlignHCenter);
+    column->addWidget(buildShortcutRow(tr("Ctrl+V"), tr("Paste text or an image"),
+                                       SIGNAL(pasteRequested())), 0, Qt::AlignHCenter);
+    column->addWidget(buildShortcutRow(tr("Ctrl+T"), tr("Write a note"),
+                                       SIGNAL(newTextRequested())), 0, Qt::AlignHCenter);
+    column->addWidget(buildShortcutRow(tr("Ctrl+Shift+I"), tr("Add an image from a file"),
+                                       SIGNAL(addImageRequested())), 0, Qt::AlignHCenter);
+    column->addWidget(buildShortcutRow(tr("Ctrl+F"), tr("Search everything"),
+                                       SIGNAL(searchRequested())), 0, Qt::AlignHCenter);
+
+    column->addSpacing(34);
+    footer_ = new QLabel(tr("Nothing here needs a name, a folder or a tag.\n"
+                            "Everything stays on this machine."));
+    footer_->setAlignment(Qt::AlignCenter);
+    footer_->setFont(scaled(font(), -1.0));
+    column->addWidget(footer_);
+
+    outer->addLayout(column);
+    applyPalette();
+}
+
+QWidget* WelcomeView::buildShortcutRow(const QString& keys, const QString& what,
+                                       const char* signalName)
+{
+    // A row, not a label: reading what a key does and pressing it should be the
+    // same gesture on the screen that exists to teach you the keys.
+    auto* row = new QPushButton;
+    row->setFlat(true);
+    row->setCursor(Qt::PointingHandCursor);
+    row->setAccessibleName(QStringLiteral("%1 — %2").arg(keys, what));
+    row->setFocusPolicy(Qt::TabFocus);
+
+    auto* layout = new QHBoxLayout(row);
+    layout->setContentsMargins(10, 5, 10, 5);
+    layout->setSpacing(0);
+
+    auto* key = new QLabel(keys);
+    key->setFixedWidth(kKeyColumn);
+    QFont keyFont = row->font();
+    keyFont.setFamilies({QStringLiteral("monospace")});
+    key->setFont(keyFont);
+    key->setObjectName(QStringLiteral("shortcutKey"));
+
+    auto* text = new QLabel(what);
+    text->setFixedWidth(kWhatColumn);
+    text->setObjectName(QStringLiteral("shortcutWhat"));
+
+    layout->addWidget(key);
+    layout->addWidget(text);
+
+    // Sized to its content rather than stretched: a row that expands to the
+    // window width cannot be centred with the title above it, and the block
+    // ended up hard against the left edge.
+    row->setFixedWidth(kKeyColumn + kWhatColumn + 20);
+
+    connect(row, SIGNAL(clicked()), this, signalName);
+    return row;
+}
+
+void WelcomeView::applyPalette()
+{
+    const QPalette pal = QGuiApplication::palette();
+    auto tint = [&](QLabel* label, int alpha) {
+        if (!label) return;
+        QPalette p = label->palette();
+        p.setColor(QPalette::WindowText, text(pal, alpha));
+        label->setPalette(p);
+    };
+
+    tint(name_, kTextPrimary);
+    tint(tagline_, kTextSecondary);
+    tint(instruction_, kTextSecondary);
+    tint(footer_, kTextTertiary);
+
+    // The key is the thing the eye should land on; its description is quieter.
+    for (QLabel* label : findChildren<QLabel*>(QStringLiteral("shortcutKey")))
+        tint(label, kTextPrimary);
+    for (QLabel* label : findChildren<QLabel*>(QStringLiteral("shortcutWhat")))
+        tint(label, kTextSecondary);
+}
+
+void WelcomeView::changeEvent(QEvent* e)
+{
+    // Colours captured here would otherwise go stale on a theme change, exactly
+    // as they did on the cards.
+    if (e->type() == QEvent::PaletteChange || e->type() == QEvent::ApplicationPaletteChange) {
+        logo_->setPixmap(loadMark());
+        applyPalette();
+    }
+    QWidget::changeEvent(e);
+}
+
+}  // namespace napkin

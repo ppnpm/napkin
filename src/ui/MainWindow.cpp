@@ -6,6 +6,7 @@
 #include "Tokens.h"
 #include "Lightbox.h"
 #include "SettingsDialog.h"
+#include "WelcomeView.h"
 #include "SweepDialog.h"
 #include "UndoToast.h"
 
@@ -60,35 +61,35 @@ void MainWindow::buildUi()
     view_  = new BufferListView(thumbs_, blobs_);
     view_->setModel(model_);
 
-    // --- empty state (SPEC.md §7) -------------------------------------------
-    auto* empty = new QWidget;
-    auto* emptyLayout = new QVBoxLayout(empty);
-    emptyLayout->setAlignment(Qt::AlignCenter);
+    // --- the start page ------------------------------------------------------
+    welcome_ = new WelcomeView;
+    connect(welcome_, &WelcomeView::newBufferRequested, this, &MainWindow::newDraft);
+    connect(welcome_, &WelcomeView::pasteRequested, this, &MainWindow::pasteFromClipboard);
+    connect(welcome_, &WelcomeView::newTextRequested, this, [this] {
+        newDraft();
+        canvas_->addPendingTextCard();
+    });
+    connect(welcome_, &WelcomeView::addImageRequested, this, &MainWindow::addImageFromFile);
+    connect(welcome_, &WelcomeView::searchRequested, this, [this] {
+        search_->setFocus(Qt::ShortcutFocusReason);
+    });
 
-    auto* title = new QLabel(tr("Napkin"));
-    QFont tf = title->font();
-    tf.setPointSizeF(tf.pointSizeF() + 9);
-    title->setFont(tf);
-    title->setAlignment(Qt::AlignCenter);
-
-    auto* line1 = new QLabel(tr("Put something here."));
-    line1->setAlignment(Qt::AlignCenter);
-
-    auto* line2 = new QLabel(tr("Ctrl+N to begin"));
-    line2->setAlignment(Qt::AlignCenter);
-    QPalette dim = line2->palette();
-    QColor c = dim.color(QPalette::Text);
-    c.setAlpha(130);
-    dim.setColor(QPalette::WindowText, c);
-    line2->setPalette(dim);
-
-    emptyLayout->addWidget(title);
-    emptyLayout->addSpacing(10);
-    emptyLayout->addWidget(line1);
-    emptyLayout->addSpacing(4);
-    emptyLayout->addWidget(line2);
-
-    emptyTitle_ = title; emptyLine1_ = line1; emptyLine2_ = line2;
+    // A terser screen for the states that are not "you have nothing yet": an
+    // empty trash or a search with no hits should not be greeted like a first
+    // run.
+    auto* message = new QWidget;
+    auto* messageLayout = new QVBoxLayout(message);
+    messageLayout->setAlignment(Qt::AlignCenter);
+    emptyLine1_ = new QLabel;
+    emptyLine1_->setAlignment(Qt::AlignCenter);
+    emptyLine2_ = new QLabel;
+    emptyLine2_->setAlignment(Qt::AlignCenter);
+    QPalette dim = emptyLine2_->palette();
+    dim.setColor(QPalette::WindowText, tokens::text(palette(), tokens::kTextTertiary));
+    emptyLine2_->setPalette(dim);
+    messageLayout->addWidget(emptyLine1_);
+    messageLayout->addSpacing(4);
+    messageLayout->addWidget(emptyLine2_);
 
     canvas_ = new ItemCanvas(thumbs_, blobs_);
 
@@ -174,8 +175,9 @@ void MainWindow::buildUi()
     splitter_->setSizes({340, 660});
 
     stack_ = new QStackedWidget;
-    stack_->addWidget(splitter_);
-    stack_->addWidget(empty);
+    stack_->addWidget(splitter_);   // 0: the app
+    stack_->addWidget(welcome_);    // 1: nothing here yet
+    stack_->addWidget(message);     // 2: empty trash, or a search with no hits
 
     auto* central = new QWidget;
     auto* rootLayout = new QVBoxLayout(central);
@@ -772,21 +774,23 @@ void MainWindow::showContextMenu(int row, const QPoint& globalPos)
 
 void MainWindow::updateEmptyState()
 {
-    const bool empty = model_->rowCount() == 0;
-    stack_->setCurrentIndex(empty ? 1 : 0);
-    if (!empty) return;
+    if (model_->rowCount() > 0) { stack_->setCurrentIndex(0); return; }
 
     if (model_->isSearching()) {
-        emptyTitle_->setVisible(false);
         emptyLine1_->setText(tr("Nothing matches “%1”.").arg(model_->query()));
         emptyLine2_->setText(tr("Search looks at your text and your filenames."));
+        stack_->setCurrentIndex(2);
         return;
     }
-    const bool trash = model_->mode() == BufferListModel::Mode::Trash;
-    emptyTitle_->setVisible(!trash);
-    emptyLine1_->setText(trash ? tr("Nothing in the trash.") : tr("Put something here."));
-    emptyLine2_->setText(trash ? tr("Deleted buffers stay here for %1 days.").arg(kTrashRetentionDays)
-                               : tr("Ctrl+N to begin, or Ctrl+V to paste"));
+    if (model_->mode() == BufferListModel::Mode::Trash) {
+        emptyLine1_->setText(tr("Nothing in the trash."));
+        emptyLine2_->setText(tr("Deleted buffers stay here for %1 days.")
+                                 .arg(BufferService::trashRetentionDays()));
+        stack_->setCurrentIndex(2);
+        return;
+    }
+    // Genuinely nothing yet — the one screen that has to explain the app.
+    stack_->setCurrentIndex(1);
 }
 
 void MainWindow::reportProblem(const QString& title, const QString& detail)

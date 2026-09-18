@@ -11,6 +11,9 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QPushButton>
+#include "../src/ui/WelcomeView.h"
+
+#include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QSplitter>
@@ -706,6 +709,71 @@ private slots:
         QVERIFY(card->hasEditFocus());
         QVERIFY(!card->isSelected());
         QVERIFY(!f.canvas()->hasSelection());
+    }
+
+    // --- the start page ------------------------------------------------------
+    void anEmptyNapkinExplainsItself()
+    {
+        GuiFixture f;
+        auto* welcome = f.window.findChild<WelcomeView*>();
+        QVERIFY(welcome);
+        QVERIFY(welcome->isVisible());
+
+        // Napkin has no menus to explore on first run and no document to open;
+        // this is the one screen that has to say what it is for.
+        QStringList shown;
+        for (auto* label : welcome->findChildren<QLabel*>()) shown << label->text();
+        const QString all = shown.join(QLatin1Char('|'));
+        QVERIFY(all.contains(QStringLiteral("Napkin")));
+        QVERIFY(all.contains(QStringLiteral("scratch surface")));
+        QVERIFY(all.contains(QStringLiteral("Ctrl+N")));
+        QVERIFY(all.contains(QStringLiteral("Ctrl+V")));
+
+        // And the logo actually loaded, rather than leaving an empty label.
+        bool hasMark = false;
+        for (auto* label : welcome->findChildren<QLabel*>())
+            if (!label->pixmap().isNull()) hasMark = true;
+        QVERIFY2(hasMark, "the start page has no logo");
+    }
+
+    void aShortcutRowDoesTheThingItDescribes()
+    {
+        GuiFixture f;
+        auto* welcome = f.window.findChild<WelcomeView*>();
+        QVERIFY(welcome);
+
+        // Reading what a key does and pressing it should be the same gesture on
+        // the screen that exists to teach you the keys.
+        QPushButton* newBuffer = nullptr;
+        for (auto* row : welcome->findChildren<QPushButton*>())
+            if (row->accessibleName().contains(QStringLiteral("New buffer"))) newBuffer = row;
+        QVERIFY(newBuffer);
+
+        newBuffer->click();
+        QCOMPARE(f.model()->rowCount(), 1);      // a draft card is showing
+        QCOMPARE(f.buffers.countLive(), 0);      // and invariant 5 still holds
+    }
+
+    void theStartPageGivesWayAsSoonAsThereIsContent()
+    {
+        GuiFixture f;
+        QVERIFY(f.window.findChild<WelcomeView*>()->isVisible());
+
+        QApplication::clipboard()->setText(QStringLiteral("first thing"));
+        f.trigger("pasteAction");
+
+        QVERIFY(!f.window.findChild<WelcomeView*>()->isVisible());
+    }
+
+    void anEmptyTrashIsNotGreetedLikeAFirstRun()
+    {
+        GuiFixture f;
+        f.seed("something");
+        f.window.showTrash(true);
+
+        // An empty trash and a search with no hits are not "you have nothing
+        // yet", and should not be met with the whole start page.
+        QVERIFY(!f.window.findChild<WelcomeView*>()->isVisible());
     }
 
     // --- structural changes must not be deferred -----------------------------

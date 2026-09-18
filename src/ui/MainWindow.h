@@ -24,6 +24,7 @@ class BufferListView;
 class ItemCanvas;
 class BufferRepository;
 class BufferService;
+class WelcomeView;
 class BlobStore;
 class Database;
 class ItemRepository;
@@ -131,7 +132,7 @@ private:
     QWidget*         sweepNudge_ = nullptr;
     QLabel*          sweepLabel_ = nullptr;
     bool             nudgeDismissed_ = false;
-    QLabel*          emptyTitle_ = nullptr;
+    WelcomeView*     welcome_ = nullptr;
     QLabel*          emptyLine1_ = nullptr;
     QLabel*          emptyLine2_ = nullptr;
 

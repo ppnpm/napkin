@@ -69,14 +69,14 @@ qt_add_library(napkin_ui STATIC
   src/ui/Lightbox.cpp
   src/ui/SweepDialog.cpp
   src/ui/SettingsDialog.cpp
+  src/ui/WelcomeView.cpp
   src/app/SingleInstance.cpp
   src/app/Application.cpp
 )
-target_link_libraries(napkin_ui PUBLIC napkin_core napkin_media Qt6::Widgets Qt6::Network)
-
-# --- application --------------------------------------------------------------
-qt_add_executable(napkin src/main.cpp)
-qt_add_resources(napkin "icons" PREFIX "/" FILES
+# The icons belong to the UI library, not the executable: WelcomeView draws the
+# logo, so anything that uses the UI — including the tests — needs them. Compiled
+# into the executable they were invisible to everything else.
+qt_add_resources(napkin_ui "icons" PREFIX "/" FILES
   resources/icons/16x16/napkin.png
   resources/icons/32x32/napkin.png
   resources/icons/48x48/napkin.png
@@ -84,6 +84,10 @@ qt_add_resources(napkin "icons" PREFIX "/" FILES
   resources/icons/128x128/napkin.png
   resources/icons/256x256/napkin.png
 )
+target_link_libraries(napkin_ui PUBLIC napkin_core napkin_media Qt6::Widgets Qt6::Network)
+
+# --- application --------------------------------------------------------------
+qt_add_executable(napkin src/main.cpp)
 target_link_libraries(napkin PRIVATE napkin_ui)
 
 # --- installation -------------------------------------------------------------
