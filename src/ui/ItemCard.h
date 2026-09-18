@@ -131,6 +131,7 @@ signals:
 
 protected:
     int contentHeightForWidth(int innerWidth) const override;
+    void applyPalette() override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* e) override;
 

@@ -1,5 +1,6 @@
 #include "../src/ui/SettingsDialog.h"
 #include "../src/ui/Tokens.h"
+#include "../src/ui/ItemCanvas.h"
 #include "GuiFixture.h"
 
 #include <QLabel>
@@ -194,6 +195,44 @@ private slots:
                      qPrintable(QStringLiteral("“%1” is %2:1 against the window")
                                     .arg(label->text().left(30)).arg(ratio, 0, 'f', 2)));
         }
+    }
+
+    void switchingThemeRecoloursTextAlreadyOnScreen()
+    {
+        // A theme change has to reach cards that are already built. It did not:
+        // the editor carried a stylesheet, which makes Qt resolve a palette onto
+        // the widget once and then stop following the application's — so card
+        // text stayed the old theme's colour, black on a dark card, until
+        // something rebuilt the card. Clicking another buffer did that, which is
+        // why it looked like a refresh problem rather than a colour one.
+        QSettings().setValue(QStringLiteral("appearance/theme"),
+                             int(SettingsDialog::Theme::Light));
+        SettingsDialog::applyAppearance();
+
+        GuiFixture f;
+        const auto id = f.seed("words the user actually wrote");
+        f.select(id);
+        auto* editor = f.canvas()->findChildren<TextItemCard*>().value(0)
+                           ->findChild<QPlainTextEdit*>();
+        QVERIFY(editor);
+
+        QSettings().setValue(QStringLiteral("appearance/theme"),
+                             int(SettingsDialog::Theme::Dark));
+        SettingsDialog::applyAppearance();
+        QCoreApplication::processEvents();
+
+        // Against the card it is drawn on, not merely "different from before":
+        // the failure mode is unreadability.
+        const QColor drawn = editor->palette().color(QPalette::Text);
+        const QColor card = QApplication::palette().color(QPalette::Base);
+        QVERIFY2(contrast(drawn, card) >= 4.5,
+                 qPrintable(QStringLiteral("text %1 on card %2 is %3:1")
+                                .arg(drawn.name(), card.name())
+                                .arg(contrast(drawn, card), 0, 'f', 2)));
+
+        QSettings().setValue(QStringLiteral("appearance/theme"),
+                             int(SettingsDialog::Theme::Light));
+        SettingsDialog::applyAppearance();
     }
 
     void theShortcutRowsKeepTheirEmphasisInsideAButton()

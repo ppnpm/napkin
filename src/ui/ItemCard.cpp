@@ -245,7 +245,15 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
     edit->setPlaceholderText(tr("Write something…"));
     edit->setTabChangesFocus(true);
     edit->viewport()->setAutoFillBackground(false);
-    edit->setStyleSheet(QStringLiteral("QPlainTextEdit { background: transparent; }"));
+    // Transparency through the palette, NOT a stylesheet.
+    //
+    // A stylesheet makes Qt set an explicitly-resolved palette on the widget,
+    // and the widget then stops following application palette changes. Switching
+    // theme left every card's text at the old theme's colour — black on a dark
+    // card — until something rebuilt the card, which is why clicking another
+    // buffer appeared to "fix" it. applyPalette() below re-derives this on every
+    // palette change, which is the same contract every other card colour has.
+    edit->setAttribute(Qt::WA_StyledBackground, false);
     edit->document()->setDocumentMargin(1);
     // Read-only until you ask to edit, so a click lands on the card rather than
     // in the text. NoFocus while read-only matters for more than tab order: the
@@ -307,6 +315,7 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
     // are marked all the time, so there is always something to highlight.
     highlighter_ = new MatchHighlighter(edit_->document());
 
+    applyPalette();   // the editor starts transparent, not merely becomes it
     edit_->installEventFilter(this);
     edit_->viewport()->installEventFilter(this);
 }
@@ -393,6 +402,22 @@ void TextItemCard::endEditing()
     update();
     emit heightChanged();
     emit editingFinished(itemId(), text().trimmed().isEmpty());
+}
+
+// Everything this card derived from the palette, re-derived. The editor is the
+// important one: it holds the user's own words, and it is the widget a stale
+// palette makes unreadable rather than merely wrong.
+void TextItemCard::applyPalette()
+{
+    QPalette pal = QGuiApplication::palette();
+    pal.setColor(QPalette::Base, Qt::transparent);
+    pal.setColor(QPalette::Window, Qt::transparent);
+    edit_->setPalette(pal);
+    edit_->viewport()->setPalette(pal);
+
+    // The highlighter picks its colours when it runs, so marks laid down under
+    // the old theme keep the old theme's accent until it runs again.
+    if (highlighter_) highlighter_->rehighlight();
 }
 
 QString TextItemCard::linkUrl() const

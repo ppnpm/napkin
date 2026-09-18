@@ -564,6 +564,21 @@ while 1280px gave 417px columns. Columns are now aimed at `kCardTargetWidth`
 (360) and then widened to fill, so 1920px gives four columns of ~364px. A board
 is for reading, and a wide screen should not be punished for being wide.
 
+### A stylesheet freezes a widget's palette
+
+`QPlainTextEdit` inside a text card used to get its transparency from
+`setStyleSheet("background: transparent")`. Applying a stylesheet makes Qt
+resolve a palette onto that widget once and the widget then stops following
+application palette changes — so switching theme left every card's text at the
+old theme's colour, measured at **1.10:1**, black on a dark card. Clicking
+another buffer rebuilt the cards and appeared to fix it, which made it look like
+a refresh problem rather than a colour one.
+
+Transparency now comes from the palette, and `TextItemCard::applyPalette()`
+re-derives it on every palette change like every other colour in the app. The
+rule: **no stylesheets on anything that has to follow the theme.** If a widget
+needs one, it also needs an `applyPalette()` that puts the colours back.
+
 ### The visual system
 
 Tokenised in `src/ui/Tokens.h` rather than scattered as literals, so contrast is
