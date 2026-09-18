@@ -54,6 +54,10 @@ inline constexpr int kCardMaxHeight = 420;
 // the board lie about how much is in it.
 inline constexpr int kCardMinHeight = 88;
 
+// Enough characters to overflow kCardMaxHeight at any column width we allow, so
+// measuring beyond this cannot change a card's height.
+inline constexpr int kMeasureLimit = 2048;
+
 // Card chrome.
 inline constexpr int kCardPad      = 16;   // content inset
 inline constexpr int kCardFooterH  = 28;   // the copy action and the timestamp

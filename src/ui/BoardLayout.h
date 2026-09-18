@@ -1,5 +1,6 @@
 #pragma once
 #include "../domain/Item.h"
+#include <QHash>
 #include <QRect>
 #include <QSize>
 #include <vector>
@@ -36,6 +37,18 @@ public:
 
 private:
     int heightFor(const Item& item, int columnWidth, bool* clipped) const;
+
+    // Measuring a thousand documents to open a buffer is a real cost, and the
+    // same buffer gets reopened constantly. Keyed on what can actually change
+    // the answer: the item, its last edit, and the column width.
+    struct MeasureKey {
+        ItemId id;
+        Timestamp modifiedAt;
+        int width;
+        bool operator==(const MeasureKey&) const = default;
+    };
+    struct Measurement { int height; bool clipped; };
+    mutable QHash<ItemId, std::pair<MeasureKey, Measurement>> cache_;
 
     std::vector<Slot> placements_;
     int viewportWidth_ = 0;

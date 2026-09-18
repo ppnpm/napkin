@@ -31,6 +31,15 @@ void BoardLayout::setFont(const QFont& body)
 
 int BoardLayout::heightFor(const Item& item, int columnWidth, bool* clipped) const
 {
+    const MeasureKey key{item.id, item.modifiedAt, columnWidth};
+    if (item.id != kNoItem) {
+        const auto it = cache_.constFind(item.id);
+        if (it != cache_.constEnd() && it->first == key) {
+            if (clipped) *clipped = it->second.clipped;
+            return it->second.height;
+        }
+    }
+
     const int inner = std::max(40, columnWidth - kCardPad * 2);
     const int chrome = kCardPad * 2 - 6 + kCardFooterH + kGapTight;
 
@@ -38,9 +47,14 @@ int BoardLayout::heightFor(const Item& item, int columnWidth, bool* clipped) con
     if (item.type == ItemType::Text) {
         QTextDocument& doc = scratch();
         if (body_) doc.setDefaultFont(*body_);
-        doc.setPlainText(item.text);
+        // Only as much text as can still change the answer. A card caps at
+        // kCardMaxHeight, and this many characters overflows that at any column
+        // width we allow — so laying out the rest of a pasted log would be work
+        // whose result is already known.
+        doc.setPlainText(item.text.left(kMeasureLimit));
         doc.setTextWidth(inner);
         content = int(std::ceil(doc.size().height())) + 2;
+        if (item.text.size() > kMeasureLimit) content = kCardMaxHeight;   // certainly over
     } else {
         // From the stored dimensions: no file is opened and no image decoded
         // just to find out how tall a card is.
@@ -55,8 +69,16 @@ int BoardLayout::heightFor(const Item& item, int columnWidth, bool* clipped) con
         }
     }
     const int natural = content + chrome;
-    if (clipped) *clipped = natural > kCardMaxHeight;
-    return std::clamp(natural, kCardMinHeight, kCardMaxHeight);
+    const Measurement measured{std::clamp(natural, kCardMinHeight, kCardMaxHeight),
+                               natural > kCardMaxHeight};
+    if (item.id != kNoItem) {
+        // Bounded: a buffer nobody is looking at should not pin its measurements
+        // for the life of the process.
+        if (cache_.size() > 4000) cache_.clear();
+        cache_.insert(item.id, {key, measured});
+    }
+    if (clipped) *clipped = measured.clipped;
+    return measured.height;
 }
 
 void BoardLayout::rebuild(const std::vector<Item>& items)

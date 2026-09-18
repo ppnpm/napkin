@@ -1026,6 +1026,28 @@ private slots:
                      qPrintable(QString("card is %1px wide").arg(card->width())));
     }
 
+    void aHugePasteIsNotFullyMeasuredJustToFindItsHeight()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        QString huge;
+        for (int i = 0; i < 20000; ++i) huge += QStringLiteral("line %1\n").arg(i);
+        f.service.appendTo(id, Item::makeText(huge));
+        f.model()->reload();
+
+        QElapsedTimer t;
+        t.start();
+        f.select(id);
+        const qint64 ms = t.elapsed();
+
+        // A card caps at kCardMaxHeight, so laying out the rest of a 140 KB
+        // paste is work whose result is already known.
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        QVERIFY(card->isClipped());
+        QCOMPARE(card->height(), tokens::kCardMaxHeight);
+        QVERIFY2(ms < 250, qPrintable(QString("opening took %1 ms").arg(ms)));
+    }
+
     void aVeryLongTextCardIsCappedRatherThanOwningTheBoard()
     {
         GuiFixture f;
