@@ -12,6 +12,7 @@
 #include <QBuffer>
 #include <QDir>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -481,6 +482,28 @@ private slots:
         // Colours captured at construction went stale on a theme change: card
         // text stayed the old colour until the buffer was reopened.
         QVERIFY(caption->palette().color(QPalette::WindowText) != before);
+    }
+
+    void highlightingSearchTermsDoesNotMarkCardsAsEdited()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("restart nginx now")));
+        f.service.appendTo(id, Item::makeText(QStringLiteral("nginx config path")));
+        f.seed("unrelated");
+        f.model()->reload();
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("nginx"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.canvas()->isFiltered(), 2000);
+        QTest::qWait(400);
+
+        // The highlighter reformats the whole document, which emits
+        // textChanged — and marked every visible card dirty, autosaved it, and
+        // flashed "Saved" on cards nobody had touched.
+        for (auto* card : f.canvas()->findChildren<TextItemCard*>())
+            QVERIFY2(!card->isDirty(), "a highlighted card was marked as edited");
+        QVERIFY(f.canvas()->dirtyText().empty());
     }
 
     void thePreviewCacheIsBounded()

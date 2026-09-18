@@ -1,5 +1,6 @@
 #include "ItemCard.h"
 #include "CardFooter.h"
+#include "MatchHighlighter.h"
 #include "Tokens.h"
 #include "../domain/Clock.h"
 #include "../domain/Preview.h"
@@ -255,7 +256,16 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
 
     setContent(edit_, tr("Copy text"));
 
+    lastText_ = edit_->toPlainText();
     connect(edit_, &QPlainTextEdit::textChanged, this, [this] {
+        // textChanged also fires for formatting-only changes, and the search
+        // highlighter reformats the whole document — which marked every visible
+        // card dirty, autosaved it, and flashed "Saved" on cards nobody had
+        // touched. Only a change to the actual characters is an edit.
+        const QString now = edit_->toPlainText();
+        if (now == lastText_) return;
+        lastText_ = now;
+
         dirty_ = true;
         updateAccessibleName();
         emit edited();
@@ -267,6 +277,13 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
 }
 
 QString TextItemCard::text() const { return edit_->toPlainText(); }
+
+void TextItemCard::setSearchTerms(const QStringList& terms)
+{
+    if (terms.isEmpty() && !highlighter_) return;
+    if (!highlighter_) highlighter_ = new MatchHighlighter(edit_->document());
+    highlighter_->setTerms(terms);
+}
 
 // A screen reader gets the same thing a sighted user does: the first line, and
 // when it happened. Six of nine cards announced nothing at all before this.

@@ -10,6 +10,7 @@
 #include <QMimeData>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QSplitter>
 #include <QtTest>
 
@@ -571,6 +572,91 @@ private slots:
         // just-written item is invisible to search.
         QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching(), 2000);
         QCOMPARE(f.model()->rowCount(), 1);
+    }
+
+    void searchNarrowsTheBoardToTheItemsThatMatched()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("restart nginx now")));
+        f.service.appendTo(id, Item::makeText(QStringLiteral("unrelated thought")));
+        f.service.appendTo(id, Item::makeText(QStringLiteral("nginx config path")));
+        f.service.appendTo(id, Item::makeText(QStringLiteral("another unrelated one")));
+        f.seed("a different buffer entirely");
+        f.model()->reload();
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("nginx"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching(), 2000);
+
+        // Finding which buffer matched and then having to re-find the item
+        // inside it is half an answer.
+        QVERIFY(f.canvas()->isFiltered());
+        QCOMPARE(f.canvas()->matchCount(), 2);
+        QCOMPARE(f.canvas()->totalCount(), 4);
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), 2);
+        for (auto* card : f.canvas()->findChildren<TextItemCard*>())
+            QVERIFY(card->text().contains(QStringLiteral("nginx")));
+    }
+
+    void showAllRestoresTheRestOfTheBuffer()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("nginx here")));
+        f.service.appendTo(id, Item::makeText(QStringLiteral("context that matters")));
+        f.seed("other");
+        f.model()->reload();
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("nginx"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.canvas()->isFiltered(), 2000);
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), 1);
+
+        auto* showAll = f.window.findChild<QPushButton*>(QStringLiteral("showAllButton"));
+        QVERIFY(showAll);
+        showAll->click();
+
+        // The surrounding items are often the context you actually wanted.
+        QVERIFY(!f.canvas()->isFiltered());
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), 2);
+    }
+
+    void clearingTheSearchRestoresEveryItem()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("nginx here")));
+        f.service.appendTo(id, Item::makeText(QStringLiteral("and something else")));
+        f.seed("other");
+        f.model()->reload();
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("nginx"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.canvas()->isFiltered(), 2000);
+
+        field->clear();
+        QTRY_VERIFY_WITH_TIMEOUT(!f.model()->isSearching(), 2000);
+        QTRY_COMPARE_WITH_TIMEOUT(f.canvas()->findChildren<TextItemCard*>().size(), 2, 2000);
+    }
+
+    void animageMatchesOnItsFilename()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("some notes")));
+        f.service.appendTo(id, Item::makeImage(QStringLiteral("hash"), 10, 10, 1,
+                                               QStringLiteral("wayland-clipboard.png")));
+        f.seed("other");
+        f.model()->reload();
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("wayland"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.canvas()->isFiltered(), 2000);
+
+        QCOMPARE(f.canvas()->matchCount(), 1);
+        QCOMPARE(f.canvas()->findChildren<ImageItemCard*>().size(), 1);
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), 0);
     }
 
     // --- keyboard and editing state ------------------------------------------

@@ -1005,6 +1005,17 @@ test functions.
 - **Trashed buffers are excluded**; pinned and kept ones are not. Search is for
   finding what you have.
 
+**Search narrows both panes.** The list shows the buffers that matched; the
+board then shows only the *items* that matched, with the term marked inside the
+card text by a `QSyntaxHighlighter`. Finding which buffer matched and then having
+to re-read it hunting for the word is half an answer.
+
+A banner says what is hidden — *"2 of 4 items match ‘nginx’"* — with **Show all**
+beside it, because the surrounding items are often the context you actually
+wanted, and a board that silently hid two thirds of a buffer would look like the
+buffer had lost them. Changing or clearing the query keeps you on the buffer you
+are looking at rather than throwing you to the top of the restored list.
+
 **5 ms across 2000 buffers**, so it runs on every keystroke behind a 120 ms
 debounce that only exists to stop a fast typist re-querying mid-word.
 

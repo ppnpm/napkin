@@ -1,5 +1,6 @@
 #pragma once
 #include "../domain/Item.h"
+#include <QStringList>
 #include <QWidget>
 
 class QLabel;
@@ -107,6 +108,7 @@ public:
     bool textHasFocus() const;
     bool hasEditFocus() const override;
     void updateAccessibleName();
+    void setSearchTerms(const QStringList& terms);
 
 signals:
     void edited();
@@ -122,7 +124,9 @@ protected:
 
 private:
     QPlainTextEdit* edit_ = nullptr;
+    class MatchHighlighter* highlighter_ = nullptr;
     bool dirty_ = false;
+    QString lastText_;   // to tell a real edit from a reformat
 
     // Measuring happens against our own document, not the editor's. See the
     // note on contentHeightForWidth.

@@ -13,6 +13,7 @@
 #include "../domain/BufferService.h"
 #include "../domain/Clock.h"
 #include "../domain/Preview.h"
+#include "../domain/Search.h"
 #include "../domain/TimeFormat.h"
 #include "../app/Paths.h"
 #include "../media/BlobGc.h"
@@ -88,17 +89,53 @@ void MainWindow::buildUi()
 
     canvas_ = new ItemCanvas(thumbs_, blobs_);
 
+    // Says what the board is hiding and offers the way back. Filtering without
+    // saying so would make a buffer look like it had lost its contents.
+    filterBanner_ = new QWidget;
+    auto* bannerRow = new QHBoxLayout(filterBanner_);
+    bannerRow->setContentsMargins(tokens::kPadX, 8, tokens::kPadX, 8);
+    filterLabel_ = new QLabel;
+    auto* showAll = new QPushButton(tr("Show all"));
+    showAll->setFlat(true);
+    showAll->setCursor(Qt::PointingHandCursor);
+    showAll->setObjectName(QStringLiteral("showAllButton"));
+    connect(showAll, &QPushButton::clicked, this, [this] { canvas_->setShowAll(true); });
+    bannerRow->addWidget(filterLabel_);
+    bannerRow->addStretch();
+    bannerRow->addWidget(showAll);
+    filterBanner_->hide();
+
+    auto* canvasSide = new QWidget;
+    auto* canvasColumn = new QVBoxLayout(canvasSide);
+    canvasColumn->setContentsMargins(0, 0, 0, 0);
+    canvasColumn->setSpacing(0);
+    canvasColumn->addWidget(filterBanner_);
+    canvasColumn->addWidget(canvas_, 1);
+
+    connect(canvas_, &ItemCanvas::filterChanged, this, [this, showAll] {
+        const bool filtered = canvas_->isFiltered();
+        const bool searching = model_->isSearching() && canvas_->matchCount() > 0;
+        filterBanner_->setVisible(searching);
+        showAll->setVisible(filtered);
+        filterLabel_->setText(
+            filtered ? tr("%1 of %2 items match “%3”")
+                           .arg(canvas_->matchCount()).arg(canvas_->totalCount())
+                           .arg(model_->query())
+                     : tr("Showing every item; %1 match “%2”")
+                           .arg(canvas_->matchCount()).arg(model_->query()));
+    });
+
     // The list keeps its own width; the canvas takes the rest. Below ~820px the
     // splitter lets the user collapse either side rather than cramming both.
     splitter_ = new QSplitter(Qt::Horizontal);
     splitter_->addWidget(view_);
-    splitter_->addWidget(canvas_);
+    splitter_->addWidget(canvasSide);
     splitter_->setStretchFactor(0, 0);
     splitter_->setStretchFactor(1, 1);
     splitter_->setChildrenCollapsible(false);
     view_->setMinimumWidth(260);
     view_->setMaximumWidth(520);
-    canvas_->setMinimumWidth(tokens::kCardMinWidth + tokens::kPadX * 2);
+    canvasSide->setMinimumWidth(tokens::kCardMinWidth + tokens::kPadX * 2);
     splitter_->setSizes({340, 660});
 
     stack_ = new QStackedWidget;
@@ -164,10 +201,19 @@ void MainWindow::buildUi()
     searchDebounce_->setInterval(120);
     connect(searchDebounce_, &QTimer::timeout, this, [this] {
         canvas_->commitEditing();
+        // Stay on the buffer you are looking at if it survives the change.
+        // Clearing a search used to throw you onto whatever was top of the
+        // restored list, which loses your place for no reason.
+        const BufferId wasOn = editingBuffer_;
         model_->setQuery(search_->text());
         updateEmptyState();
-        if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
-        else                        selectBuffer(-1);
+
+        if (model_->rowCount() == 0) { selectBuffer(-1); return; }
+        const int keep = wasOn == kNoBuffer ? -1 : model_->rowForId(wasOn);
+        view_->setCurrentIndex(model_->index(keep >= 0 ? keep : 0, 0));
+        // currentRowChanged does not fire when the row index is unchanged, so
+        // the board is refreshed explicitly for the new query.
+        selectBuffer(view_->currentIndex().row());
     });
     connect(search_, &QLineEdit::textChanged, this,
             [this] { searchDebounce_->start(); });
@@ -780,6 +826,13 @@ void MainWindow::selectBuffer(int row)
 
     editingBuffer_ = id;
     canvas_->setItems(id == kNoBuffer ? std::vector<Item>{} : items_.listForBuffer(id));
+
+    // A search narrows the board as well as the list: seeing which buffer
+    // matched and then having to re-find the item inside it is half an answer.
+    if (id != kNoBuffer && model_->isSearching())
+        canvas_->setSearch(model_->query(), matchingItems(db_, id, model_->query()));
+    else
+        canvas_->setSearch(QString(), {});
 }
 
 // Enter or a double-click on a buffer moves focus to its board. It does NOT

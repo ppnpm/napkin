@@ -118,6 +118,8 @@ private:
     QToolButton*     overflowButton_ = nullptr;
     QLineEdit*       search_ = nullptr;
     QTimer*          searchDebounce_ = nullptr;
+    QWidget*         filterBanner_ = nullptr;
+    QLabel*          filterLabel_ = nullptr;
     QLabel*          emptyTitle_ = nullptr;
     QLabel*          emptyLine1_ = nullptr;
     QLabel*          emptyLine2_ = nullptr;

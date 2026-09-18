@@ -58,6 +58,7 @@ qt_add_library(napkin_ui STATIC
   src/ui/BufferCardDelegate.cpp
   src/ui/ItemCanvas.cpp
   src/ui/ItemCard.cpp
+  src/ui/MatchHighlighter.cpp
   src/ui/CardFooter.cpp
   src/ui/MasonryLayout.cpp
   src/ui/BoardLayout.cpp

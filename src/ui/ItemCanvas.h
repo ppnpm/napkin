@@ -31,6 +31,16 @@ public:
     // selectIndex: which item to leave selected afterwards, so a delete does
     // not dump the user back to nothing selected. -1 selects none.
     void setItems(const std::vector<Item>& items, int selectIndex = -1);
+
+    // Narrows the board to the items that matched, and marks the term inside
+    // them. An empty query restores everything. `showAll` keeps the filter's
+    // marking but stops hiding the rest, for when the surrounding items are the
+    // context you actually wanted.
+    void setSearch(const QString& query, const std::vector<ItemId>& matching);
+    void setShowAll(bool showAll);
+    bool isFiltered() const { return !query_.isEmpty() && !showAll_; }
+    int  matchCount() const { return int(matching_.size()); }
+    int  totalCount() const { return int(allItems_.size()); }
     int  indexOf(ItemId id) const;
     // Board order, newest first. Not the same as the widget tree order, which
     // is creation order.
@@ -105,6 +115,7 @@ signals:
     void imageActivated(ItemId id);
     void removeRequested(const QList<ItemId>& ids);
     void selectionChanged();
+    void filterChanged();
 
 protected:
     void mousePressEvent(QMouseEvent* e) override;
@@ -121,13 +132,18 @@ private:
     // 1000 text items used to construct 1000 live QPlainTextEdits: 365 MB peak
     // and 270 ms on every resize event. Only what you can see exists.
     void syncVisibleCards();
+    void applyFilter();
     ItemCard* cardFor(const Item& item);
 
     Thumbnailer& thumbs_;
     BlobStore&   blobs_;
     QWidget*     body_ = nullptr;
     BoardLayout    board_;
-    std::vector<Item> items_;                 // every item; widgets only for some
+    std::vector<Item> allItems_;              // everything in the buffer
+    std::vector<Item> items_;                 // what the board is showing
+    QString           query_;
+    QSet<ItemId>      matching_;
+    bool              showAll_ = false;
     QHash<ItemId, ItemCard*> live_;           // the cards that currently exist
     QLabel*      placeholder_ = nullptr;
 

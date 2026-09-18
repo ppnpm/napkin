@@ -240,6 +240,9 @@ void ItemCanvas::syncVisibleCards()
         const auto& slot = board_.placements()[size_t(i)];
         const Item& item = items_[size_t(i)];
         ItemCard* card = cardFor(item);
+        if (auto* asText = qobject_cast<TextItemCard*>(card))
+            asText->setSearchTerms(query_.simplified().split(QLatin1Char(' '),
+                                                            Qt::SkipEmptyParts));
         card->setGeometry(slot.rect);
         card->setClipped(slot.clipped);
         card->setSelected(selected_.contains(item.id));
@@ -255,8 +258,8 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
     if (items.empty()) { showEmptyBuffer(); return; }
     placeholder_->hide();
 
-    items_ = items;
-    relayout();
+    allItems_ = items;
+    applyFilter();
 
     if (selectIndex >= 0 && !items_.empty()) {
         const int target = std::min(selectIndex, int(items_.size()) - 1);
@@ -269,6 +272,55 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
         setFocus(Qt::OtherFocusReason);
         emit selectionChanged();
     }
+}
+
+void ItemCanvas::setSearch(const QString& query, const std::vector<ItemId>& matching)
+{
+    query_ = query.trimmed();
+    matching_.clear();
+    for (ItemId id : matching) matching_.insert(id);
+    showAll_ = false;
+    applyFilter();
+}
+
+void ItemCanvas::setShowAll(bool showAll)
+{
+    if (showAll_ == showAll) return;
+    showAll_ = showAll;
+    applyFilter();
+}
+
+void ItemCanvas::applyFilter()
+{
+    const QStringList terms = query_.simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+
+    items_.clear();
+    for (const auto& item : allItems_) {
+        // An unwritten composer is never filtered away — it is where you are
+        // typing, not a search result.
+        if (isFiltered() && item.id != kNoItem && !matching_.contains(item.id)) continue;
+        items_.push_back(item);
+    }
+
+    // Rebuild rather than reuse: the filter changes which ids exist on the
+    // board, and a stale card would be bound to a row that is no longer shown.
+    live_.clear();
+    cards_.clear();
+    textCards_.clear();
+    const QObjectList children = body_->children();
+    for (QObject* child : children) {
+        auto* w = qobject_cast<QWidget*>(child);
+        if (!w || w == placeholder_) continue;
+        w->hide();
+        w->setParent(nullptr);
+        w->deleteLater();
+    }
+    cursor_ = -1;
+    selected_.clear();
+
+    relayout();
+    for (auto* card : textCards_) card->setSearchTerms(terms);
+    emit filterChanged();
 }
 
 void ItemCanvas::relayout()
