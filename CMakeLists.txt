@@ -10,7 +10,36 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS Gui Widgets Network Test)
-find_package(SQLite3 REQUIRED)
+
+# --- SQLite -------------------------------------------------------------------
+# Napkin links SQLite3::SQLite3, and how that target comes into being is not
+# something every environment agrees on. CI found the library and then failed to
+# generate, on both platforms:
+#
+#   Found SQLite3: /usr/include (found version "3.45.1")
+#   Target "napkin_core" links to SQLite3::SQLite3 but the target was not found.
+#
+# CMake's own FindSQLite3 defines the target; vcpkg ships a config package that
+# defines unofficial::sqlite3::sqlite3 instead; and a Find module reached
+# through another prefix may define neither and only set the variables. So this
+# takes whichever it is handed and guarantees the one name the rest of the file
+# uses, rather than assuming a shape and failing at generate time.
+find_package(SQLite3 QUIET)
+if(NOT TARGET SQLite3::SQLite3)
+  find_package(unofficial-sqlite3 CONFIG QUIET)
+  if(TARGET unofficial::sqlite3::sqlite3)
+    add_library(SQLite3::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
+  elseif(SQLite3_FOUND OR SQLite3_INCLUDE_DIRS OR SQLite3_LIBRARIES)
+    add_library(SQLite3::SQLite3 UNKNOWN IMPORTED)
+    set_target_properties(SQLite3::SQLite3 PROPERTIES
+      IMPORTED_LOCATION "${SQLite3_LIBRARIES}"
+      INTERFACE_INCLUDE_DIRECTORIES "${SQLite3_INCLUDE_DIRS}")
+  else()
+    message(FATAL_ERROR
+      "SQLite3 was not found. Install the development package "
+      "(libsqlite3-dev on Debian/Ubuntu, sqlite on Arch, vcpkg install sqlite3 on Windows).")
+  endif()
+endif()
 
 qt_standard_project_setup()
 add_compile_options(-Wall -Wextra -Wpedantic)
