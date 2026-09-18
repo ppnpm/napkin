@@ -37,11 +37,39 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build libsqlite3-dev
 
+      # What the runner actually gave us. Configure failed on both platforms on
+      # the first three runs and the job log is not readable without admin
+      # rights on the repository, so the facts needed to diagnose it have to
+      # reach somewhere that is: ::error:: lines become annotations, and
+      # annotations are public.
+      - name: Show the toolchain
+        run: |
+          echo "QT_ROOT_DIR=${QT_ROOT_DIR:-unset}"
+          echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-unset}"
+          echo "qmake: $(command -v qmake || echo none)"
+          echo "cmake: $(cmake --version | head -1)"
+          ls "${QT_ROOT_DIR:-/nonexistent}/lib/cmake" 2>/dev/null | head -20 || echo "no Qt cmake dir"
+
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        run: |
+          set -o pipefail
+          # CMAKE_PREFIX_PATH explicitly: find_package(Qt6) only searches it,
+          # and whether install-qt-action exports it has changed between
+          # versions of that action.
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}" 2>&1 | tee configure.log || {
+              echo "::error title=CMake configure failed::$(tail -c 3000 configure.log | tr '\n' ' ' | tr -s ' ')"
+              exit 1
+            }
 
       - name: Build
-        run: cmake --build build --parallel
+        run: |
+          set -o pipefail
+          cmake --build build --parallel 2>&1 | tee build.log || {
+            echo "::error title=Build failed::$(grep -E 'error|Error' build.log | head -20 | tr '\n' ' ')"
+            exit 1
+          }
 
       # The GUI suites set QT_QPA_PLATFORM=offscreen themselves (CMakeLists),
       # so nothing here needs a display server.
@@ -96,13 +124,36 @@ jobs:
 
       - uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Show the toolchain
+        run: |
+          echo "QT_ROOT_DIR=$env:QT_ROOT_DIR"
+          echo "VCPKG_INSTALLATION_ROOT=$env:VCPKG_INSTALLATION_ROOT"
+          cmake --version
+
       - name: Configure
-        run: >
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        shell: pwsh
+        run: |
+          $out = cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" 2>&1
+          $out | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            $msg = ($out | Select-Object -Last 25) -join ' '
+            Write-Host "::error title=Windows configure failed::$msg"
+            exit 1
+          }
 
       - name: Build
-        run: cmake --build build --parallel
+        shell: pwsh
+        run: |
+          $out = cmake --build build --parallel 2>&1
+          $out | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            $msg = ($out | Select-String -Pattern 'error' | Select-Object -First 25) -join ' '
+            Write-Host "::error title=Windows build failed::$msg"
+            exit 1
+          }
 
       - name: Test
         run: ctest --test-dir build --output-on-failure --parallel 2
