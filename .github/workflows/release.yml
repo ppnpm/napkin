@@ -44,8 +44,8 @@ jobs:
       - name: Stage the install tree
         run: |
           cmake --install build --prefix AppDir/usr
-          desktop-file-validate AppDir/usr/share/applications/io.github.ppnpm.Napkin.desktop
-          appstreamcli validate --no-net AppDir/usr/share/metainfo/io.github.ppnpm.Napkin.metainfo.xml
+          desktop-file-validate AppDir/usr/share/applications/io.github.sudomonas.Napkin.desktop
+          appstreamcli validate --no-net AppDir/usr/share/metainfo/io.github.sudomonas.Napkin.metainfo.xml
 
       - name: Build the AppImage
         run: |
@@ -58,8 +58,8 @@ jobs:
           # or SVG and WebP silently stop working inside the bundle.
           export EXTRA_QT_PLUGINS="imageformats;svg"
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
-            --desktop-file AppDir/usr/share/applications/io.github.ppnpm.Napkin.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/io.github.ppnpm.Napkin.png
+            --desktop-file AppDir/usr/share/applications/io.github.sudomonas.Napkin.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/io.github.sudomonas.Napkin.png
           mv Napkin*.AppImage napkin-${{ github.ref_name }}-x86_64.AppImage
 
       # Proves the bundle actually starts and can load its own Qt, rather than

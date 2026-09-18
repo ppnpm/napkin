@@ -52,7 +52,7 @@ jobs:
         run: |
           set -eux
           cmake --install build --prefix "$PWD/staging"
-          APPID=io.github.ppnpm.Napkin
+          APPID=io.github.sudomonas.Napkin
           test -x "staging/bin/napkin"
           test -f "staging/share/applications/$APPID.desktop"
           test -f "staging/share/metainfo/$APPID.metainfo.xml"

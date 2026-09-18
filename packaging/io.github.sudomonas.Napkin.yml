@@ -5,7 +5,7 @@
 # else. In particular there is no --share=network and no filesystem access
 # beyond the app's own data: a scratch surface that could reach the network
 # would be a different product.
-id: io.github.ppnpm.Napkin
+id: io.github.sudomonas.Napkin
 runtime: org.kde.Platform
 runtime-version: '6.8'
 sdk: org.kde.Sdk

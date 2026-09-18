@@ -1431,7 +1431,7 @@ content-addressed blob store does whenever the same image is pasted twice; and
 `QFile::setPermissions` maps to the read-only flag rather than an ACL, so §11's
 0700/0600 promise would be quietly untrue there.
 
-**One identity ✅.** The application id is `io.github.ppnpm.Napkin`, and the
+**One identity ✅.** The application id is `io.github.sudomonas.Napkin`, and the
 `.desktop` file, every icon and the metainfo are named after it. AppStream and
 Flathub treat the id, the desktop basename and the icon name as one thing; a
 mismatch means the listing and the launcher are unrelated objects. It is
@@ -1439,7 +1439,7 @@ mismatch means the listing and the launcher are unrelated objects. It is
 domain and Flathub checks it — naming it after a domain nobody here controls
 would be a claim that is simply untrue.
 
-**Flatpak manifest written, not yet built.** `packaging/io.github.ppnpm.Napkin.yml`.
+**Flatpak manifest written, not yet built.** `packaging/io.github.sudomonas.Napkin.yml`.
 No `--share=network` and no `--filesystem=host`: §11 says everything stays on
 this machine, and a sandbox that granted either would make that a matter of
 trust rather than of fact. File chooser and export go through the portal, which

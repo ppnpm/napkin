@@ -29,10 +29,10 @@ QPixmap loadMark()
 {
     // The installed theme icon if there is one, otherwise the copies compiled
     // into the binary — so this works from a build directory too.
-    QIcon icon = QIcon::fromTheme(QStringLiteral("io.github.ppnpm.Napkin"));
+    QIcon icon = QIcon::fromTheme(QStringLiteral("io.github.sudomonas.Napkin"));
     if (icon.isNull()) {
         for (const char* size : {"128", "256", "64"})
-            icon.addFile(QStringLiteral(":/resources/icons/%1x%1/io.github.ppnpm.Napkin.png").arg(size));
+            icon.addFile(QStringLiteral(":/resources/icons/%1x%1/io.github.sudomonas.Napkin.png").arg(size));
     }
     return icon.pixmap(kLogoSize, kLogoSize);
 }

@@ -15,10 +15,10 @@ TrayIcon::TrayIcon(QObject* parent) : QObject(parent)
     // The installed theme icon if there is one, otherwise the copies compiled
     // into the binary — the same fallback the window icon uses, so a build run
     // out of the source tree still has a tray icon rather than a blank square.
-    QIcon art = QIcon::fromTheme(QStringLiteral("io.github.ppnpm.Napkin"));
+    QIcon art = QIcon::fromTheme(QStringLiteral("io.github.sudomonas.Napkin"));
     if (art.isNull())
         for (const char* size : {"22", "32", "48"})
-            art.addFile(QStringLiteral(":/resources/icons/%1x%1/io.github.ppnpm.Napkin.png")
+            art.addFile(QStringLiteral(":/resources/icons/%1x%1/io.github.sudomonas.Napkin.png")
                             .arg(size));
 
     menu_ = new QMenu;

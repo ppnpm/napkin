@@ -10,8 +10,8 @@
   a claim that is simply untrue.
 -->
 <component type="desktop-application">
-  <id>io.github.ppnpm.Napkin</id>
-  <launchable type="desktop-id">io.github.ppnpm.Napkin.desktop</launchable>
+  <id>io.github.sudomonas.Napkin</id>
+  <launchable type="desktop-id">io.github.sudomonas.Napkin.desktop</launchable>
 
   <name>Napkin</name>
   <summary>A persistent scratch surface for your computer</summary>
@@ -19,12 +19,12 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
 
-  <developer id="io.github.ppnpm">
-    <name>ppnpm</name>
+  <developer id="io.github.sudomonas">
+    <name>sudomonas</name>
   </developer>
 
-  <url type="homepage">https://github.com/ppnpm/napkin</url>
-  <url type="bugtracker">https://github.com/ppnpm/napkin/issues</url>
+  <url type="homepage">https://github.com/sudomonas/napkin</url>
+  <url type="bugtracker">https://github.com/sudomonas/napkin/issues</url>
 
   <description>
     <p>

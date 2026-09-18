@@ -82,12 +82,12 @@ qt_add_library(napkin_ui STATIC
 # logo, so anything that uses the UI — including the tests — needs them. Compiled
 # into the executable they were invisible to everything else.
 qt_add_resources(napkin_ui "icons" PREFIX "/" FILES
-  resources/icons/16x16/io.github.ppnpm.Napkin.png
-  resources/icons/32x32/io.github.ppnpm.Napkin.png
-  resources/icons/48x48/io.github.ppnpm.Napkin.png
-  resources/icons/64x64/io.github.ppnpm.Napkin.png
-  resources/icons/128x128/io.github.ppnpm.Napkin.png
-  resources/icons/256x256/io.github.ppnpm.Napkin.png
+  resources/icons/16x16/io.github.sudomonas.Napkin.png
+  resources/icons/32x32/io.github.sudomonas.Napkin.png
+  resources/icons/48x48/io.github.sudomonas.Napkin.png
+  resources/icons/64x64/io.github.sudomonas.Napkin.png
+  resources/icons/128x128/io.github.sudomonas.Napkin.png
+  resources/icons/256x256/io.github.sudomonas.Napkin.png
   resources/icons/trash-empty-128.png
   resources/icons/trash-empty-256.png
 )
@@ -107,7 +107,7 @@ install(TARGETS napkin RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # and Flathub both treat the id, the .desktop basename and the icon name as one
 # identity, and a mismatch means the listing and the launcher are unrelated
 # objects as far as the system is concerned.
-set(NAPKIN_APPID io.github.ppnpm.Napkin)
+set(NAPKIN_APPID io.github.sudomonas.Napkin)
 install(FILES resources/${NAPKIN_APPID}.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES resources/${NAPKIN_APPID}.metainfo.xml
