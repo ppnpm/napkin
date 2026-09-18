@@ -30,6 +30,7 @@
 #include <QMenu>
 #include <QToolButton>
 #include <QMimeData>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSplitter>
@@ -51,7 +52,7 @@ MainWindow::MainWindow(Database& db, BufferRepository& buffers, ItemRepository& 
 
 void MainWindow::buildUi()
 {
-    model_ = new BufferListModel(buffers_, items_, this);
+    model_ = new BufferListModel(db_, buffers_, items_, this);
     view_  = new BufferListView(thumbs_, blobs_);
     view_->setModel(model_);
 
@@ -156,6 +157,21 @@ void MainWindow::buildUi()
 
     connect(model_, &BufferListModel::countChanged, this, [this] { updateEmptyState(); });
 
+    // Searching on every keystroke is affordable — 5 ms across 2000 buffers —
+    // but a short debounce keeps a fast typist from re-querying mid-word.
+    searchDebounce_ = new QTimer(this);
+    searchDebounce_->setSingleShot(true);
+    searchDebounce_->setInterval(120);
+    connect(searchDebounce_, &QTimer::timeout, this, [this] {
+        canvas_->commitEditing();
+        model_->setQuery(search_->text());
+        updateEmptyState();
+        if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
+        else                        selectBuffer(-1);
+    });
+    connect(search_, &QLineEdit::textChanged, this,
+            [this] { searchDebounce_->start(); });
+
 
     // --- actions --------------------------------------------------------------
     // An action rather than a bare shortcut: it carries its own label and key
@@ -174,6 +190,16 @@ void MainWindow::buildUi()
     pasteAction->setShortcutContext(Qt::WindowShortcut);
     connect(pasteAction, &QAction::triggered, this, &MainWindow::pasteFromClipboard);
     addAction(pasteAction);
+
+    auto* findAction = new QAction(tr("Search"), this);
+    findAction->setObjectName(QStringLiteral("findAction"));
+    findAction->setShortcuts({QKeySequence::Find, QKeySequence(QStringLiteral("Ctrl+K"))});
+    findAction->setShortcutContext(Qt::WindowShortcut);
+    connect(findAction, &QAction::triggered, this, [this] {
+        search_->setFocus(Qt::ShortcutFocusReason);
+        search_->selectAll();
+    });
+    addAction(findAction);
 
     auto* addTextAction = new QAction(tr("New text block"), this);
     addTextAction->setObjectName(QStringLiteral("addTextAction"));
@@ -225,7 +251,6 @@ QWidget* MainWindow::buildHeaderWidget()
 
     // No wordmark: the window title already says Napkin, and §7 asks for
     // content to dominate. The header carries actions, not branding.
-    layout->addStretch();
 
     // Phase 5 puts the search field here, between the name and the trash
     // toggle — the placement adopted from the §7 mockup review.
@@ -236,6 +261,16 @@ QWidget* MainWindow::buildHeaderWidget()
     trashButton->setCheckable(true);
     trashButton->setCursor(Qt::PointingHandCursor);
     trashButton->setObjectName(QStringLiteral("trashToggle"));
+    search_ = new QLineEdit;
+    search_->setPlaceholderText(tr("Search"));
+    search_->setClearButtonEnabled(true);
+    search_->setObjectName(QStringLiteral("searchField"));
+    search_->setAccessibleName(tr("Search your buffers"));
+    search_->setMaximumWidth(280);
+    // Over the pane it filters, which is the only place it means anything.
+    layout->addWidget(search_);
+    layout->addStretch();
+
     // SPEC §16 justified using QAction over QShortcut because an action
     // "carries its own label and key hint" — but they were attached to no menu
     // and no button, so they were invisible shortcuts wearing a label. This
@@ -292,6 +327,7 @@ void MainWindow::showShortcuts()
         this, tr("Keyboard shortcuts"),
         tr("<table cellpadding='4'>"
            "<tr><td><b>Ctrl+N</b></td><td>New buffer</td></tr>"
+           "<tr><td><b>Ctrl+F</b></td><td>Search</td></tr>"
            "<tr><td><b>Ctrl+T</b></td><td>New text block in this buffer</td></tr>"
            "<tr><td><b>Ctrl+V</b></td><td>Paste into this buffer</td></tr>"
            "<tr><td><b>Ctrl+Shift+I</b></td><td>Add an image from a file</td></tr>"
@@ -488,11 +524,17 @@ void MainWindow::updateEmptyState()
     stack_->setCurrentIndex(empty ? 1 : 0);
     if (!empty) return;
 
+    if (model_->isSearching()) {
+        emptyTitle_->setVisible(false);
+        emptyLine1_->setText(tr("Nothing matches “%1”.").arg(model_->query()));
+        emptyLine2_->setText(tr("Search looks at your text and your filenames."));
+        return;
+    }
     const bool trash = model_->mode() == BufferListModel::Mode::Trash;
     emptyTitle_->setVisible(!trash);
     emptyLine1_->setText(trash ? tr("Nothing in the trash.") : tr("Put something here."));
     emptyLine2_->setText(trash ? tr("Deleted buffers stay here for %1 days.").arg(kTrashRetentionDays)
-                               : tr("Ctrl+N to begin"));
+                               : tr("Ctrl+N to begin, or Ctrl+V to paste"));
 }
 
 void MainWindow::reportProblem(const QString& title, const QString& detail)

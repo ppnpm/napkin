@@ -3,6 +3,8 @@
 #include "Icons.h"
 #include "../media/Thumbnailer.h"
 #include "../domain/Preview.h"
+
+#include <QRegularExpression>
 #include "../domain/Clock.h"
 #include "../domain/TimeFormat.h"
 
@@ -38,6 +40,37 @@ QColor dimmed(const QPalette& pal, int alpha = kTextSecondary)
 }  // namespace
 
 BufferCardDelegate::BufferCardDelegate(QObject* parent) : QStyledItemDelegate(parent) {}
+
+// FTS5's snippet() marks the matched term with the two control characters we
+// asked it for. Drawing the run between them at full strength is what makes a
+// result list scannable — the eye goes straight to the word it searched for.
+void BufferCardDelegate::drawSnippet(QPainter* p, const QRect& box, const QString& snippet,
+                                     const QPalette& pal) const
+{
+    const QChar open(2), close(3);
+    const QFontMetrics fm(p->font());
+    int x = box.left();
+
+    bool marked = false;
+    for (const QString& run : snippet.split(QRegularExpression(QStringLiteral("[\\x02\\x03]")),
+                                            Qt::KeepEmptyParts)) {
+        if (!run.isEmpty()) {
+            if (x > box.right()) break;
+            p->setPen(marked ? pal.color(QPalette::Text) : dimmed(pal, kTextTertiary));
+            QFont f = p->font();
+            f.setBold(marked);
+            p->setFont(f);
+            const QString shown = fm.elidedText(run, Qt::ElideRight, box.right() - x);
+            p->drawText(QRect(x, box.top(), box.right() - x, box.height()),
+                        Qt::AlignLeft | Qt::AlignVCenter, shown);
+            x += QFontMetrics(f).horizontalAdvance(shown);
+            f.setBold(false);
+            p->setFont(f);
+        }
+        marked = !marked;
+    }
+    Q_UNUSED(open); Q_UNUSED(close);
+}
 
 QFont BufferCardDelegate::timestampFont(const QFont& base) const
 {
@@ -264,9 +297,14 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     }
     y += pfm.height() + 3;
 
-    // Count and age on one line: "4 items · 2 minutes ago". A buffer holding one
-    // thing does not need telling that it holds one thing.
-    if (!isDraft) {
+    // When searching, the second line shows WHY this buffer matched rather than
+    // how many items it has. A list of results that all read "4 items · 2 days
+    // ago" tells you nothing about which one you wanted.
+    const QString snippet = index.data(BufferListModel::SnippetRole).toString();
+    if (!snippet.isEmpty()) {
+        p->setFont(timestampFont(option.font));
+        drawSnippet(p, QRect(content.left(), y, content.width(), tfm.height()), snippet, pal);
+    } else if (!isDraft) {
         QStringList meta;
         const int count = index.data(BufferListModel::ItemCountRole).toInt();
         if (count > 1) meta << QObject::tr("%1 items").arg(count);

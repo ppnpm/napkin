@@ -23,6 +23,7 @@ add_library(napkin_core STATIC
   src/domain/Clock.cpp
   src/domain/BufferService.cpp
   src/domain/Preview.cpp
+  src/domain/Search.cpp
   src/domain/TimeFormat.cpp
   src/data/Database.cpp
   src/data/Statement.cpp
@@ -102,7 +103,7 @@ target_link_libraries(napkin_spike PRIVATE Qt6::Widgets SQLite3::SQLite3)
 
 # --- tests --------------------------------------------------------------------
 enable_testing()
-foreach(t test_migrations test_invariants test_buffers test_items test_paths test_preview test_performance)
+foreach(t test_migrations test_invariants test_buffers test_items test_paths test_preview test_performance test_search)
   qt_add_executable(${t} tests/${t}.cpp)
   target_link_libraries(${t} PRIVATE napkin_core Qt6::Test)
   add_test(NAME ${t} COMMAND ${t})

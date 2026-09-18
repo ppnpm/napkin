@@ -9,6 +9,7 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QPushButton>
+#include <QLineEdit>
 #include <QSplitter>
 #include <QtTest>
 
@@ -478,6 +479,98 @@ private slots:
         f.canvas()->selectAll();
         f.canvas()->deleteSelection();
         QCOMPARE(f.buffers.countLive(), 0);
+    }
+
+    // --- search --------------------------------------------------------------
+    void typingInTheSearchFieldFiltersTheList()
+    {
+        GuiFixture f;
+        const auto wanted = f.buffers.create();
+        f.service.appendTo(wanted, Item::makeText(QStringLiteral("systemctl restart nginx")));
+        const auto other = f.buffers.create();
+        f.service.appendTo(other, Item::makeText(QStringLiteral("sudo pacman -Syu")));
+        f.model()->reload();
+        QCOMPARE(f.model()->rowCount(), 2);
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        QVERIFY(field);
+        field->setText(QStringLiteral("nginx"));
+
+        QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching(), 2000);
+        QCOMPARE(f.model()->rowCount(), 1);
+        QCOMPARE(f.model()->idAt(0), wanted);
+        QVERIFY(f.model()->isSearching());
+    }
+
+    void clearingTheSearchRestoresTheWholeList()
+    {
+        GuiFixture f;
+        f.seed("first"); f.seed("second");
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("first"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching(), 2000);
+        QCOMPARE(f.model()->rowCount(), 1);
+
+        field->clear();
+        QTRY_VERIFY_WITH_TIMEOUT(!f.model()->isSearching(), 2000);
+        QCOMPARE(f.model()->rowCount(), 2);
+        QVERIFY(!f.model()->isSearching());
+    }
+
+    void aResultCarriesTheSnippetThatExplainsIt()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(
+            QStringLiteral("the quick brown fox jumps over the lazy dog")));
+        f.seed("something else");
+        f.model()->reload();
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("brown"));
+        // Wait for the SEARCH, not for a row count that may already be right.
+        QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching(), 2000);
+        QCOMPARE(f.model()->rowCount(), 1);
+
+        // A result list that all reads "4 items · 2 days ago" says nothing
+        // about which one you wanted.
+        const QString snippet =
+            f.model()->index(0, 0).data(BufferListModel::SnippetRole).toString();
+        QVERIFY(snippet.contains(QStringLiteral("brown")));
+        QVERIFY2(snippet.contains(QChar(2)), "the matched term must be marked for the delegate");
+    }
+
+    void searchingSelectsTheBestResultSoItIsAlreadyOpen()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("findable thing")));
+        f.seed("unrelated");
+        f.model()->reload();
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("findable"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching(), 2000);
+        QCOMPARE(f.model()->rowCount(), 1);
+
+        // The board shows the top hit without a second gesture.
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), 1);
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().first()->text(),
+                 QStringLiteral("findable thing"));
+    }
+
+    void searchFindsSomethingYouJustPasted()
+    {
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral("a brand new thought"));
+        f.trigger("pasteAction");
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("brand"));
+        // The index is maintained by triggers, so there is no moment where a
+        // just-written item is invisible to search.
+        QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching(), 2000);
+        QCOMPARE(f.model()->rowCount(), 1);
     }
 
     // --- keyboard and editing state ------------------------------------------

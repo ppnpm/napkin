@@ -49,6 +49,7 @@ void Statement::exec()
 
 qint64  Statement::columnInt64(int c) const { return sqlite3_column_int64(stmt_, c); }
 int     Statement::columnInt(int c) const   { return sqlite3_column_int(stmt_, c); }
+double  Statement::columnDouble(int c) const { return sqlite3_column_double(stmt_, c); }
 bool    Statement::columnBool(int c) const  { return sqlite3_column_int(stmt_, c) != 0; }
 bool    Statement::columnIsNull(int c) const { return sqlite3_column_type(stmt_, c) == SQLITE_NULL; }
 

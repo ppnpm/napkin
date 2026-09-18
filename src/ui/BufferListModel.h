@@ -8,6 +8,7 @@
 namespace napkin {
 
 class BufferRepository;
+class Database;
 class ItemRepository;
 
 // Holds buffer *metadata* for every live buffer — roughly 48 bytes a row, so
@@ -33,17 +34,24 @@ public:
         KeptRole,
         IsDraftRole,
         SectionFirstRole,   // this row starts a section
-        SectionNameRole,    // "PINNED" / "RECENT"
+        SectionNameRole,    // "PINNED" / "RECENT" / "TRASH" / "RESULTS"
+        SnippetRole,        // why this buffer matched, when searching
     };
 
     // Live shows the stack; Trash shows what is recoverable. Same rows, same
     // delegate — only the query and the available actions differ.
     enum class Mode { Live, Trash };
 
-    BufferListModel(BufferRepository& buffers, ItemRepository& items, QObject* parent = nullptr);
+    BufferListModel(Database& db, BufferRepository& buffers, ItemRepository& items,
+                    QObject* parent = nullptr);
 
     Mode mode() const { return mode_; }
     void setMode(Mode mode);
+
+    // An empty query returns the list to whatever it was showing.
+    void setQuery(const QString& query);
+    QString query() const { return query_; }
+    bool isSearching() const { return !query_.isEmpty(); }
 
     int rowCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
@@ -94,6 +102,7 @@ public:
 private:
     void emitAllChanged();
 
+    Database&         db_;
     BufferRepository& buffers_;
     ItemRepository&   items_;
 
@@ -101,6 +110,8 @@ private:
     mutable QHash<BufferId, BufferPreview> previewCache_;
     BufferPreview draftPreview_;
     Mode mode_ = Mode::Live;
+    QString query_;
+    QHash<BufferId, QString> snippets_;
 
     bool frozen_        = false;
     bool pendingReload_ = false;

@@ -2,7 +2,9 @@
 #include "../data/BufferRepository.h"
 #include "../data/ItemRepository.h"
 #include "../domain/Clock.h"
+#include "../domain/Search.h"
 #include "../domain/TimeFormat.h"
+#include "../data/Database.h"
 
 namespace napkin {
 namespace {
@@ -12,8 +14,9 @@ constexpr int kMaxRows = 5000;
 constexpr int kPreviewCacheLimit = 400;
 }  // namespace
 
-BufferListModel::BufferListModel(BufferRepository& buffers, ItemRepository& items, QObject* parent)
-    : QAbstractListModel(parent), buffers_(buffers), items_(items)
+BufferListModel::BufferListModel(Database& db, BufferRepository& buffers,
+                                 ItemRepository& items, QObject* parent)
+    : QAbstractListModel(parent), db_(db), buffers_(buffers), items_(items)
 {
     reload();
 }
@@ -21,6 +24,15 @@ BufferListModel::BufferListModel(BufferRepository& buffers, ItemRepository& item
 int BufferListModel::rowCount(const QModelIndex& parent) const
 {
     return parent.isValid() ? 0 : int(rows_.size());
+}
+
+void BufferListModel::setQuery(const QString& query)
+{
+    const QString trimmed = query.trimmed();
+    if (query_ == trimmed) return;
+    query_ = trimmed;
+    frozen_ = false;      // a search is a deliberate reorder; nothing is being typed into
+    reload();
 }
 
 void BufferListModel::setMode(Mode mode)
@@ -36,7 +48,20 @@ void BufferListModel::reload()
     if (frozen_) { pendingReload_ = true; return; }  // see freezeOrder
 
     beginResetModel();
-    rows_ = mode_ == Mode::Live ? buffers_.listLive(kMaxRows) : buffers_.listTrash();
+    snippets_.clear();
+    if (isSearching()) {
+        // Ranked by relevance, so the order deliberately differs from the
+        // ordinary recency order.
+        rows_.clear();
+        for (const auto& hit : searchBuffers(db_, query_, kMaxRows)) {
+            if (const auto buffer = buffers_.find(hit.bufferId)) {
+                rows_.push_back(*buffer);
+                snippets_.insert(hit.bufferId, hit.snippet);
+            }
+        }
+    } else {
+        rows_ = mode_ == Mode::Live ? buffers_.listLive(kMaxRows) : buffers_.listTrash();
+    }
     previewCache_.clear();
     endResetModel();
     emit countChanged(int(rows_.size()));
@@ -97,10 +122,18 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     case KeptRole:       return b.kept;
     case IsDraftRole:    return isDraft;
     case SectionFirstRole:
+        if (isSearching()) return row == 0;
         if (mode_ == Mode::Trash) return row == 0;
         if (row == 0) return true;
         return rows_[size_t(row) - 1].pinned != b.pinned;
     case SectionNameRole:
+        if (isSearching()) {
+            // Spelled out rather than tr("%n RESULT(S)"): without a loaded
+            // translation Qt uses the source string verbatim, so the header
+            // read "3 RESULT(S)".
+            const int n = int(rows_.size());
+            return n == 1 ? tr("1 RESULT") : tr("%1 RESULTS").arg(n);
+        }
         if (mode_ == Mode::Trash) return QStringLiteral("TRASH");
         return b.pinned ? QStringLiteral("PINNED") : QStringLiteral("RECENT");
     default:
@@ -122,6 +155,7 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
         return false;
     }
     case ThumbCountRole: return int(p.thumbs.size());
+    case SnippetRole:    return snippets_.value(b.id);
     case Qt::AccessibleTextRole: {
         // Never encode state in styling alone (SPEC.md §14).
         QString label = p.primary.isEmpty() ? tr("Empty buffer") : p.primary;

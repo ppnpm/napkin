@@ -1,0 +1,93 @@
+#include "Search.h"
+#include "../data/Database.h"
+#include "../data/Statement.h"
+
+#include <QStringList>
+
+namespace napkin {
+
+QString toMatchExpression(const QString& typed)
+{
+    const QStringList words = typed.simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    if (words.isEmpty()) return {};
+
+    QStringList terms;
+    terms.reserve(words.size());
+    for (int i = 0; i < words.size(); ++i) {
+        // Quote: FTS5 reads bare AND / OR / NOT / NEAR as operators, and a
+        // lone quote or apostrophe is a syntax error rather than a search.
+        QString word = words.at(i);
+        word.replace(QLatin1Char('"'), QLatin1String("\"\""));
+        // Prefix-match the final word so results narrow while you are still
+        // typing it. Earlier words are complete by definition.
+        const bool last = i == words.size() - 1;
+        terms << (last ? QStringLiteral("\"%1\"*").arg(word)
+                       : QStringLiteral("\"%1\"").arg(word));
+    }
+    return terms.join(QLatin1Char(' '));
+}
+
+std::vector<SearchHit> searchBuffers(Database& db, const QString& typed, int limit)
+{
+    const QString match = toMatchExpression(typed);
+    if (match.isEmpty()) return {};
+
+    // Rolled up to the buffer, ranked by the best-scoring item in it, with the
+    // snippet taken from that same item. Trashed buffers are excluded: search
+    // is for finding what you have, not what you threw away.
+    // MATERIALIZED is load-bearing, not decoration. FTS5's auxiliary functions
+    // (bm25, snippet) only work when the FTS table is the direct subject of the
+    // query — and SQLite flattens an ordinary CTE into the outer join, which
+    // puts them back in a context they refuse with "unable to use function bm25
+    // in the requested context". Materialising keeps the ranking and the snippet
+    // in a query where the index is all there is.
+    //
+    // MIN(h.rank) with a bare h.snip beside it is the documented SQLite
+    // behaviour of returning the snippet from the row that produced the
+    // minimum: the snippet shown is the best-matching item's, not an arbitrary
+    // one.
+    Statement s(db,
+        "WITH hits AS MATERIALIZED ("
+        "  SELECT rowid AS item_id,"
+        "         bm25(items_fts) AS rank,"
+        "         snippet(items_fts, 0, char(2), char(3), '…', 12) AS snip"
+        "    FROM items_fts WHERE items_fts MATCH ?)"
+        "SELECT b.id, COUNT(*), h.snip, MIN(h.rank)"
+        "  FROM hits h"
+        "  JOIN items     ON items.id = h.item_id"
+        "  JOIN buffers b ON b.id = items.buffer_id"
+        " WHERE b.deleted_at IS NULL"
+        " GROUP BY b.id"
+        " ORDER BY MIN(h.rank) ASC, b.modified_at DESC"
+        " LIMIT ?");
+    s.bind(1, match).bind(2, limit);
+
+    std::vector<SearchHit> hits;
+    while (s.step()) {
+        SearchHit hit;
+        hit.bufferId = s.columnInt64(0);
+        hit.matchingItems = s.columnInt(1);
+        hit.snippet = s.columnText(2).simplified();
+        hit.rank = s.columnDouble(3);
+        hits.push_back(hit);
+    }
+    return hits;
+}
+
+std::vector<ItemId> matchingItems(Database& db, BufferId buffer, const QString& typed)
+{
+    const QString match = toMatchExpression(typed);
+    if (match.isEmpty()) return {};
+
+    Statement s(db,
+        "SELECT items.id FROM items_fts"
+        "  JOIN items ON items.id = items_fts.rowid"
+        " WHERE items_fts MATCH ? AND items.buffer_id = ?");
+    s.bind(1, match).bind(2, buffer);
+
+    std::vector<ItemId> out;
+    while (s.step()) out.push_back(s.columnInt64(0));
+    return out;
+}
+
+}  // namespace napkin

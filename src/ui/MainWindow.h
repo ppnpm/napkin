@@ -7,6 +7,7 @@
 
 class QAction;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QToolButton;
 class QStackedWidget;
@@ -115,6 +116,8 @@ private:
     QAction*         trashAction_ = nullptr;
     QPushButton*     emptyTrashButton_ = nullptr;
     QToolButton*     overflowButton_ = nullptr;
+    QLineEdit*       search_ = nullptr;
+    QTimer*          searchDebounce_ = nullptr;
     QLabel*          emptyTitle_ = nullptr;
     QLabel*          emptyLine1_ = nullptr;
     QLabel*          emptyLine2_ = nullptr;

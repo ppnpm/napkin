@@ -33,6 +33,8 @@ public:
     QRect contentRect(const QRect& itemRect, const QModelIndex& index) const;
 
     int collapsedHeight() const;
+    void drawSnippet(QPainter* p, const QRect& box, const QString& snippet,
+                     const QPalette& pal) const;
     int sectionHeight(const QModelIndex& index) const;
 
     static constexpr int kMarginX  = 16;

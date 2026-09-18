@@ -32,6 +32,7 @@ public:
 
     qint64  columnInt64(int c) const;
     int     columnInt(int c) const;
+    double  columnDouble(int c) const;
     bool    columnBool(int c) const;
     QString columnText(int c) const;
     std::optional<qint64> columnOptInt64(int c) const;

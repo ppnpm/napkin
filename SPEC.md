@@ -984,8 +984,35 @@ reconciliation sweep. 21 new test functions (91 total, 10 binaries).
 Storing an image into an open empty draft promotes it in place rather than
 creating a second buffer — the draft invariant survives contact with images.
 
-**Phase 5 — Search.** FTS5, buffer-level roll-up, inline filtering, highlighting,
-and the persistent header search field adopted from the §7 mockup review.
+**Phase 5 — Search. ✅ COMPLETE.** FTS5 with buffer-level roll-up, a persistent
+header field, ranked results and a snippet showing why each one matched. 18 new
+test functions.
+
+- **Schema v5** adds `items_fts`, an *external-content* table: FTS5 keeps only
+  the index and reads the columns back from `items`, so a pasted log is not
+  stored twice. Triggers maintain it, which is the price of external content —
+  such an index does not maintain itself. A just-pasted item is searchable
+  immediately; there is no moment where new content is invisible.
+- **`source_name` is indexed beside the text**, because looking for a filename is
+  the same act as looking for a word and nobody remembers which column their
+  memory lives in.
+- **Results roll up to the buffer**, since that is what the list shows: a hit on
+  item 3's filename surfaces the whole buffer.
+- **What the user typed is not a query language.** Every token is quoted, so
+  `AND`, `OR`, `NOT`, `NEAR`, an apostrophe or a stray quote are searched for
+  rather than executed or rejected. The final token gets a prefix wildcard, so
+  results narrow while a word is still being typed.
+- **Trashed buffers are excluded**; pinned and kept ones are not. Search is for
+  finding what you have.
+
+**5 ms across 2000 buffers**, so it runs on every keystroke behind a 120 ms
+debounce that only exists to stop a fast typist re-querying mid-word.
+
+> `MATERIALIZED` in the ranking query is load-bearing. FTS5's `bm25()` and
+> `snippet()` only work when the index is the direct subject of the query, and
+> SQLite flattens an ordinary CTE into the outer join — which puts them back
+> somewhere they refuse with *"unable to use function bm25 in the requested
+> context"*.
 
 **Phase 6 — Sweep.** Older section, nudge, review dialog, sweep-to-trash, trash purge.
 

@@ -91,6 +91,44 @@ UPDATE items SET modified_at = created_at WHERE modified_at = 0;
 CREATE INDEX idx_items_recent ON items(buffer_id, modified_at DESC);
 )SQL";
 
+// --- v5: full-text search ----------------------------------------------------
+// An external-content table: FTS5 stores only the index and reads the columns
+// back from `items`, so a pasted log is not held twice. The triggers are the
+// price of that — an external-content index does not maintain itself.
+//
+// `source_name` is indexed alongside the text because searching for a filename
+// is the same act as searching for a word, and a user does not care which
+// column their memory of it lives in.
+constexpr const char* kV5 = R"SQL(
+CREATE VIRTUAL TABLE items_fts USING fts5(
+  text,
+  source_name,
+  content = 'items',
+  content_rowid = 'id',
+  tokenize = "unicode61 remove_diacritics 2"
+);
+
+INSERT INTO items_fts(rowid, text, source_name)
+  SELECT id, COALESCE(text, ''), COALESCE(source_name, '') FROM items;
+
+CREATE TRIGGER items_fts_insert AFTER INSERT ON items BEGIN
+  INSERT INTO items_fts(rowid, text, source_name)
+    VALUES (new.id, COALESCE(new.text, ''), COALESCE(new.source_name, ''));
+END;
+
+CREATE TRIGGER items_fts_delete AFTER DELETE ON items BEGIN
+  INSERT INTO items_fts(items_fts, rowid, text, source_name)
+    VALUES ('delete', old.id, COALESCE(old.text, ''), COALESCE(old.source_name, ''));
+END;
+
+CREATE TRIGGER items_fts_update AFTER UPDATE ON items BEGIN
+  INSERT INTO items_fts(items_fts, rowid, text, source_name)
+    VALUES ('delete', old.id, COALESCE(old.text, ''), COALESCE(old.source_name, ''));
+  INSERT INTO items_fts(rowid, text, source_name)
+    VALUES (new.id, COALESCE(new.text, ''), COALESCE(new.source_name, ''));
+END;
+)SQL";
+
 struct Migration {
     int version;
     const char* sql;
@@ -101,6 +139,7 @@ constexpr std::array kMigrations{
     Migration{2, kV2},
     Migration{3, kV3},
     Migration{4, kV4},
+    Migration{5, kV5},
 };
 
 }  // namespace
