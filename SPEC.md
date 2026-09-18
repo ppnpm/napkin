@@ -1293,8 +1293,11 @@ and there was no sweep at all. The spec described an app that did not exist.
 > have made pinning a silent second Keep, which is exactly the confusion §3
 > exists to prevent. A test asserts a pinned, un-kept, old buffer is offered.
 
-**Phase 7 — Refinement.** Partly done: **menu bar and settings ✅**, link chips,
-export and a final accessibility pass outstanding.
+**Phase 7 — Refinement. ✅ COMPLETE.** Menu bar and settings; the three empty
+screens; complete-palette theming; link chips (§3, promised since the first
+draft and delivered nowhere until now); export (§13); and the accessibility
+pass (§14), which found two unlabelled controls and turned text scaling from a
+font setting into a layout rule.
 
 The menu bar is **File / Home / Trash / Settings** and carries every action the
 application has, because it is the one place a user can go to find out what the
