@@ -1,4 +1,5 @@
 #include "GuiFixture.h"
+#include "../src/media/BlobGc.h"
 
 #include <QBuffer>
 #include <QtTest>
@@ -156,7 +157,7 @@ private slots:
         QCOMPARE(f.canvas()->findChildren<ImageItemCard*>().size(), 1);
     }
 
-    void removingTheLastReferenceReclaimsTheBlob()
+    void theSweepReclaimsABlobOnceNothingReferencesIt()
     {
         GuiFixture f;
         const auto id = seedMixed(f, 1);
@@ -166,6 +167,9 @@ private slots:
         QVERIFY(f.blobs.exists(item.blobHash, item.mime));
 
         f.window.removeItems({item.id});
+        QVERIFY(f.blobs.exists(item.blobHash, item.mime));   // undo may still need it
+
+        reconcileBlobs(f.items, f.blobs, f.thumbsDir());
         QVERIFY(!f.blobs.exists(item.blobHash, item.mime));
     }
 

@@ -261,10 +261,17 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
                     Qt::AlignLeft | Qt::AlignVCenter,
                     isDraft ? QObject::tr("Type or paste something…") : QObject::tr("Empty"));
     } else {
+        // One weight step on one line is the largest "modern and sleek" return
+        // available for zero pixels and zero colour. Everything else stays 400.
+        QFont primaryFont = option.font;
+        primaryFont.setWeight(QFont::Medium);
+        p->setFont(primaryFont);
+        const QFontMetrics pfm(primaryFont);
         p->setPen(pal.color(QPalette::Text));
         p->drawText(QRect(content.left(), y, content.width(), fm.height()),
                     Qt::AlignLeft | Qt::AlignVCenter,
-                    fm.elidedText(primary, Qt::ElideRight, content.width()));
+                    pfm.elidedText(primary, Qt::ElideRight, content.width()));
+        p->setFont(option.font);
     }
     y += fm.height() + 4;
 

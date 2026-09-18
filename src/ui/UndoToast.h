@@ -1,6 +1,7 @@
 #pragma once
 #include "../domain/Types.h"
 #include <QWidget>
+#include <functional>
 
 class QLabel;
 class QPushButton;
@@ -20,26 +21,26 @@ public:
     explicit UndoToast(QWidget* parent = nullptr);
 
     // Replaces any offer already showing: the most recent delete is the one the
-    // user is most likely to have meant.
-    void offer(const QString& message, BufferId id);
+    // user is most likely to have meant. The action is a closure so buffer-level
+    // and item-level undo share one widget rather than one growing an enum.
+    void offer(const QString& message, std::function<void()> undo);
     void dismiss();
 
     // Re-centres without touching the message or restarting the countdown.
     void reposition();
 
-    BufferId pendingId() const { return pending_; }
+    bool hasOffer() const { return bool(undo_); }
 
 signals:
-    void undoRequested(BufferId id);
+    void undone();
 
 protected:
     void paintEvent(QPaintEvent* e) override;
 
 private:
     QLabel*      message_ = nullptr;
-    QPushButton* undo_    = nullptr;
     QTimer*      timer_   = nullptr;
-    BufferId     pending_ = kNoBuffer;
+    std::function<void()> undo_;
 };
 
 }  // namespace napkin

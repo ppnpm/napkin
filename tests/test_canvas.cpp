@@ -1,9 +1,11 @@
 #include "GuiFixture.h"
+#include "../src/media/BlobGc.h"
 
 #include <QApplication>
 #include <QBuffer>
 #include <QClipboard>
 #include <QMimeData>
+#include <QPushButton>
 #include <QSplitter>
 #include <QtTest>
 
@@ -216,7 +218,7 @@ private slots:
         QVERIFY(f.toast()->isVisible());     // and it is undoable
     }
 
-    void removingAnImageReclaimsItsBlob()
+    void removingAnImageKeepsItsBlobUntilTheSweep()
     {
         GuiFixture f;
         const auto id = seedMixed(f);
@@ -225,7 +227,59 @@ private slots:
         QVERIFY(f.blobs.exists(image.blobHash, image.mime));
 
         f.window.removeItems({image.id});
+
+        // Deliberately still there: a blob whose last reference just went is
+        // exactly the one the 8-second undo is about to need. Unlinking here is
+        // what made undo restore rows pointing at deleted files.
+        QVERIFY(f.blobs.exists(image.blobHash, image.mime));
+
+        // It is the startup sweep that reclaims it, once undo is no longer on
+        // offer.
+        reconcileBlobs(f.items, f.blobs, f.thumbsDir());
         QVERIFY(!f.blobs.exists(image.blobHash, image.mime));
+    }
+
+    // Removing an item hard-deletes its row and used to unlink its blob at once.
+    // If that emptied the buffer, the buffer was trashed with an undo offer —
+    // and undo handed back a buffer whose items no longer existed.
+    void undoAfterRemovingEveryItemGivesTheContentBackNotAnEmptyShell()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        const auto blobBefore = f.items.listForBuffer(id)[1];
+        f.select(id);
+
+        f.canvas()->selectAll();
+        f.canvas()->deleteSelection();
+        QCOMPARE(f.buffers.countTrash(), 1);
+
+        auto* undo = f.toast()->findChild<QPushButton*>();
+        QVERIFY(undo);
+        undo->click();
+
+        QCOMPARE(f.buffers.countLive(), 1);
+        QCOMPARE(f.items.countForBuffer(id), 4);          // the items came back
+        QVERIFY(f.blobs.exists(blobBefore.blobHash, blobBefore.mime));   // and their blobs
+    }
+
+    void undoAfterRemovingOneItemPutsItBack()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        auto* image = f.canvas()->findChildren<ImageItemCard*>().first();
+        const auto removed = *f.items.find(image->itemId());
+        QTest::mouseClick(image, Qt::LeftButton);
+        f.canvas()->deleteSelection();
+        QCOMPARE(f.items.countForBuffer(id), 3);
+
+        auto* undo = f.toast()->findChild<QPushButton*>();
+        QVERIFY(undo);
+        undo->click();
+
+        QCOMPARE(f.items.countForBuffer(id), 4);
+        QVERIFY(f.blobs.exists(removed.blobHash, removed.mime));
     }
 
     // --- editing -------------------------------------------------------------

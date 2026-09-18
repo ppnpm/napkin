@@ -427,6 +427,39 @@ Selection *is* opening: there is no expand step, so a single click both selects
 the row and fills the canvas. Enter or double-click puts the caret in the
 canvas.
 
+### The visual system
+
+Tokenised in `src/ui/Tokens.h` rather than scattered as literals, so contrast is
+a property of the system instead of a thing each call site gets right or wrong.
+Every readable alpha is a measured threshold over `QPalette::Base` against
+Breeze Light, the harsher theme: **255** body, **170** secondary (5.06:1),
+**161** tertiary — timestamps, captions, section labels **and placeholders**,
+which are text and get no exemption. **126** is the floor for a non-text
+affordance carrying meaning; anything at or below 90 is decorative and never the
+sole indicator of a state.
+
+Three deliberate moves, from a full design pass (`docs/UX_TWO_PANE.md`):
+
+- **Canvas body is two points larger than list text.** The list is chrome, the
+  canvas is content, and size is the cheapest way to say so.
+- **Text blocks have no border and no fill at rest.** A text item must not look
+  like a form field, because it is not one — it is the content. What makes a
+  borderless block read as an *object* is a 3px **gutter rail** to its left,
+  empty at rest, solid when selected or being edited. Editing deliberately has
+  no fill: a wash behind text you are actively reading degrades it, and the
+  rail, border and caret are three signals already. Every state changes exactly
+  two things, never three.
+- **Both panes sit on `Base`; the gutters sit on `Window`.** The canvas is one
+  large sheet of paper, the list cards are small sheets, both on the same desk.
+  No tint difference, no gradient, no shadow anywhere.
+
+Images draw at the pane width, **never upscaled** — a 200×140 favicon draws at
+200×140, because stretching a small image to fill a column is the fastest way to
+make a UI look cheap — and are capped at 560px tall so a phone screenshot cannot
+own the whole canvas. One caption line beneath: filename or format, dimensions,
+size, and *animated* when it moves. The filename-above-a-thumbnail row it
+replaces was a file-manager row, not a picture.
+
 ### Items are selectable objects
 
 The hard part is that a text block must be both a selectable object and an
@@ -450,6 +483,14 @@ any other selection copies as text, joined in document order.
 Deleting every item in a buffer trashes the buffer itself: an item-level delete
 that leaves an empty husk behind is just litter. That goes through the ordinary
 undo toast.
+
+> **Item removal does not unlink blobs, deliberately.** An earlier version
+> deleted the rows and reclaimed the files in one step, so undoing inside the
+> 8-second window restored a buffer whose items no longer existed — measured at
+> **0 items recovered out of 4**. Removal now captures the items, restores them
+> at their original positions on undo, and leaves the files alone; the startup
+> sweep reclaims them once undo is no longer on offer. The toast takes a closure
+> rather than a `BufferId`, so buffer-level and item-level undo share one widget.
 
 **The order freeze survives the change.** Autosave still bumps `modified_at` on
 every flush, so the list would still re-sort under the buffer being edited. The

@@ -1,6 +1,7 @@
 #include "ItemCanvas.h"
 #include "ItemCard.h"
 #include "../media/BlobStore.h"
+#include "Tokens.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -14,8 +15,7 @@
 
 namespace napkin {
 namespace {
-constexpr int kGutter  = 20;
-constexpr int kSpacing = 12;
+using namespace tokens;
 }  // namespace
 
 ItemCanvas::ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
@@ -23,13 +23,19 @@ ItemCanvas::ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
 {
     setWidgetResizable(true);
     setFrameShape(QFrame::NoFrame);
+    // Both panes sit on Base and the gutters on Window: the canvas is one large
+    // sheet of paper, the list cards are small sheets, both on the same desk.
+    setBackgroundRole(QPalette::Base);
+    viewport()->setAutoFillBackground(true);
     setFocusPolicy(Qt::StrongFocus);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     body_ = new QWidget;
     layout_ = new QVBoxLayout(body_);
-    layout_->setContentsMargins(kGutter, kGutter, kGutter, kGutter);
-    layout_->setSpacing(kSpacing);
+    // Generous bottom padding is dead space on purpose: clicking it focuses the
+    // composer, so there is always a large target for "I want to write".
+    layout_->setContentsMargins(kPadX, kPadTop, kPadX, kPadBottom);
+    layout_->setSpacing(kGapItem);
     setWidget(body_);
 
     placeholder_ = new QLabel;
@@ -60,6 +66,9 @@ void ItemCanvas::showNothingSelected()
 {
     clearItems();
     placeholder_->setText(tr("Select a buffer to see what is in it."));
+    QPalette pal = placeholder_->palette();
+    pal.setColor(QPalette::WindowText, text(pal, kTextTertiary));
+    placeholder_->setPalette(pal);
     placeholder_->setParent(body_);
     placeholder_->show();
     layout_->addWidget(placeholder_, 1);
@@ -118,7 +127,12 @@ void ItemCanvas::setItems(const std::vector<Item>& items)
 
 void ItemCanvas::relayout()
 {
+    // ~92 characters at 16px. Wide on purpose: Napkin holds pasted logs and
+    // shell commands as often as prose, and wrapping a command line is worse
+    // than a slightly long measure.
+    const int column = std::min(kTextColumn, std::max(240, viewport()->width() - kPadX * 2));
     for (auto* card : cards_) {
+        card->setMaximumWidth(column + kRailOffset + kSelectionBleed * 2);
         if (auto* text = qobject_cast<TextItemCard*>(card))
             text->setFixedHeight(text->desiredHeight());
         else if (auto* image = qobject_cast<ImageItemCard*>(card))
@@ -170,6 +184,8 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
 void ItemCanvas::mousePressEvent(QMouseEvent* e)
 {
     clearSelection();
+    // Clicking the empty paper below the last item means "I want to write".
+    if (!textCards_.empty() && e->button() == Qt::LeftButton) focusComposer();
     QScrollArea::mousePressEvent(e);
 }
 

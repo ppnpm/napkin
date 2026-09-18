@@ -69,7 +69,7 @@ private slots:
         QCOMPARE(f.buffers.countTrash(), 1);
         QVERIFY(f.buffers.find(id).has_value());        // nothing was destroyed
         QVERIFY(f.toast()->isVisible());
-        QCOMPARE(f.toast()->pendingId(), id);
+        QVERIFY(f.toast()->hasOffer());
     }
 
     void undoBringsItBack()
@@ -188,13 +188,14 @@ private slots:
         const auto second = f.seed("second");
 
         f.window.trashRow(f.model()->rowForId(first));
-        QCOMPARE(f.toast()->pendingId(), first);
+        QVERIFY(f.toast()->hasOffer());
         f.window.trashRow(f.model()->rowForId(second));
-        QCOMPARE(f.toast()->pendingId(), second);  // the most recent wins
 
+        // The most recent wins: undoing brings back the second, not the first.
         f.toast()->findChild<QPushButton*>()->click();
         QCOMPARE(f.buffers.countLive(), 1);
         QVERIFY(f.buffers.find(second)->deletedAt == std::nullopt);
+        QVERIFY(f.buffers.find(first)->inTrash());
     }
 };
 

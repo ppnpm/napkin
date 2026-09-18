@@ -111,19 +111,7 @@ void MainWindow::buildUi()
     setCentralWidget(central);
 
     toast_ = new UndoToast(central);
-    connect(toast_, &UndoToast::undoRequested, this, [this](BufferId id) {
-        service_.restore(id);
-        // Confirming the deletion of a kept buffer releases the keep. Undoing
-        // that deletion has to put the keep back, or the user recovers a buffer
-        // that has quietly lost the protection they asked for and the next
-        // sweep will offer it up.
-        if (lastTrashed_.id == id) {
-            if (lastTrashed_.kept) service_.setKept(id, true);
-            buffers_.setModifiedAt(id, lastTrashed_.modifiedAt);
-            lastTrashed_ = {};
-        }
-        reloadPreservingSelection();
-    });
+
 
     // --- autosave ------------------------------------------------------------
     autosave_ = new Autosave(this);
@@ -212,11 +200,8 @@ QWidget* MainWindow::buildHeaderWidget()
     auto* layout = new QHBoxLayout(header);
     layout->setContentsMargins(16, 10, 12, 10);
 
-    auto* name = new QLabel(tr("Napkin"));
-    QFont nf = name->font();
-    nf.setBold(true);
-    name->setFont(nf);
-    layout->addWidget(name);
+    // No wordmark: the window title already says Napkin, and §7 asks for
+    // content to dominate. The header carries actions, not branding.
     layout->addStretch();
 
     // Phase 5 puts the search field here, between the name and the trash
@@ -403,7 +388,17 @@ void MainWindow::trashRow(int row)
     }
 
     reloadPreservingSelection();
-    toast_->offer(tr("Buffer moved to trash"), id);
+
+    // Confirming the deletion of a kept buffer releases the keep, so undo has to
+    // put it back — otherwise the user recovers a buffer that quietly lost the
+    // protection they asked for, and the next sweep offers it up.
+    const auto state = lastTrashed_;
+    toast_->offer(tr("Buffer moved to trash"), [this, state] {
+        service_.restore(state.id);
+        if (state.kept) service_.setKept(state.id, true);
+        buffers_.setModifiedAt(state.id, state.modifiedAt);
+        reloadPreservingSelection();
+    });
 }
 
 void MainWindow::showContextMenu(int row, const QPoint& globalPos)
@@ -639,25 +634,52 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
 {
     if (editingBuffer_ == kNoBuffer || ids.isEmpty()) return;
 
-    for (ItemId id : ids) service_.removeItem(editingBuffer_, id);
-    reconcileBlobs(items_, blobs_, paths::thumbsDir());
+    // Capture before deleting: undo has to hand the content back, not an empty
+    // shell. An earlier version deleted the rows and unlinked the blobs at once,
+    // so undoing within the 8-second window restored a buffer with no items and
+    // rows pointing at files that were already gone.
+    std::vector<Item> removed;
+    for (ItemId id : ids)
+        if (const auto item = items_.find(id)) removed.push_back(*item);
+    if (removed.empty()) return;
 
-    // If that emptied the buffer, the buffer itself goes too: an item-level
-    // delete that leaves a husk behind is just litter.
-    if (items_.countForBuffer(editingBuffer_) == 0) {
-        const BufferId emptied = editingBuffer_;
-        if (const auto before = buffers_.find(emptied))
-            lastTrashed_ = {emptied, before->kept, before->modifiedAt};
-        if (!service_.trash(emptied)) service_.trashConfirmed(emptied);
+    const BufferId buffer = editingBuffer_;
+    for (ItemId id : ids) service_.removeItem(buffer, id);
+
+    // Deliberately NOT reconciling blobs here. A blob whose last reference has
+    // just gone is exactly the one undo is about to need. Orphans are collected
+    // by the startup sweep, which is the drift-free form anyway.
+    const bool emptied = items_.countForBuffer(buffer) == 0;
+    std::optional<Buffer> before;
+    if (emptied) {
+        before = buffers_.find(buffer);
+        // An item-level delete that leaves an empty husk behind is just litter.
+        if (!service_.trash(buffer)) service_.trashConfirmed(buffer);
         editingBuffer_ = kNoBuffer;
         canvas_->showNothingSelected();
         reloadPreservingSelection();
-        toast_->offer(tr("Buffer moved to trash"), emptied);
-        return;
+    } else {
+        canvas_->setItems(items_.listForBuffer(buffer));
+        model_->invalidatePreview(buffer);
     }
 
-    canvas_->setItems(items_.listForBuffer(editingBuffer_));
-    model_->invalidatePreview(editingBuffer_);
+    const QString message = removed.size() == 1
+        ? tr("Item deleted")
+        : tr("%n items deleted", nullptr, int(removed.size()));
+
+    toast_->offer(emptied ? tr("Buffer moved to trash") : message,
+                  [this, buffer, removed, before, emptied] {
+                      for (const auto& item : removed) items_.restoreAt(item);
+                      if (emptied) {
+                          service_.restore(buffer);
+                          if (before && before->kept) service_.setKept(buffer, true);
+                          if (before) buffers_.setModifiedAt(buffer, before->modifiedAt);
+                      }
+                      model_->invalidatePreview(buffer);
+                      reloadPreservingSelection();
+                      if (const int row = model_->rowForId(buffer); row >= 0)
+                          view_->setCurrentIndex(model_->index(row, 0));
+                  });
 }
 
 bool MainWindow::flushEditor()

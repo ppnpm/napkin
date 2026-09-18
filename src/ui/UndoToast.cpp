@@ -16,30 +16,31 @@ UndoToast::UndoToast(QWidget* parent) : QWidget(parent)
     layout->setSpacing(14);
 
     message_ = new QLabel;
-    undo_ = new QPushButton(tr("Undo"));
-    undo_->setFlat(true);
-    undo_->setCursor(Qt::PointingHandCursor);
+    auto* undo = new QPushButton(tr("Undo"));
+    undo->setFlat(true);
+    undo->setCursor(Qt::PointingHandCursor);
+    undo->setAccessibleName(tr("Undo the last deletion"));
 
     layout->addWidget(message_);
-    layout->addWidget(undo_);
+    layout->addWidget(undo);
 
     timer_ = new QTimer(this);
     timer_->setSingleShot(true);
     timer_->setInterval(kVisibleMs);
     connect(timer_, &QTimer::timeout, this, &UndoToast::dismiss);
 
-    connect(undo_, &QPushButton::clicked, this, [this] {
-        const BufferId id = pending_;
+    connect(undo, &QPushButton::clicked, this, [this] {
+        auto action = undo_;
         dismiss();
-        if (id != kNoBuffer) emit undoRequested(id);
+        if (action) { action(); emit undone(); }
     });
 
     hide();
 }
 
-void UndoToast::offer(const QString& message, BufferId id)
+void UndoToast::offer(const QString& message, std::function<void()> undo)
 {
-    pending_ = id;
+    undo_ = std::move(undo);
     message_->setText(message);
     adjustSize();
     reposition();
@@ -51,7 +52,7 @@ void UndoToast::offer(const QString& message, BufferId id)
 void UndoToast::dismiss()
 {
     timer_->stop();
-    pending_ = kNoBuffer;
+    undo_ = nullptr;
     hide();
 }
 

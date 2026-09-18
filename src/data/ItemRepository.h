@@ -15,6 +15,10 @@ public:
     // Appends at the end of the buffer. Assigns position and created_at.
     ItemId append(BufferId bufferId, Item item);
 
+    // Puts a removed item back at the position it held, so undo restores the
+    // buffer as it was rather than moving everything to the end.
+    ItemId restoreAt(const Item& item);
+
     std::optional<Item> find(ItemId id);
     std::vector<Item> listForBuffer(BufferId bufferId);
 

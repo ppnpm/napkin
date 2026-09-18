@@ -42,14 +42,22 @@ signals:
     void activated(ItemId id);
     void escaped();
 
+public:
+    // True while a caret is inside this block, which is a different state from
+    // "selected" and must look different.
+    virtual bool hasEditFocus() const { return false; }
+
 protected:
     void mousePressEvent(QMouseEvent* e) override;
     void paintEvent(QPaintEvent* e) override;
+    void enterEvent(QEnterEvent* e) override;
+    void leaveEvent(QEvent* e) override;
 
     Item item_;
 
 private:
     bool selected_ = false;
+    bool hovered_ = false;
 };
 
 class TextItemCard : public ItemCard {
@@ -65,6 +73,7 @@ public:
     void focusText();
     int desiredHeight() const;
     bool textHasFocus() const;
+    bool hasEditFocus() const override { return textHasFocus(); }
 
 signals:
     void edited();

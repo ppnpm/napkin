@@ -61,6 +61,22 @@ ItemId ItemRepository::append(BufferId bufferId, Item item)
     return db_.lastInsertId();
 }
 
+ItemId ItemRepository::restoreAt(const Item& item)
+{
+    Statement s(db_,
+        "INSERT INTO items(buffer_id, position, type, created_at, text, blob_hash,"
+        "                  source_name, width, height, byte_size, mime, animated)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+    s.bind(1, item.bufferId).bind(2, item.position).bind(3, itemTypeName(item.type))
+     .bind(4, item.createdAt);
+    if (item.type == ItemType::Text) { s.bind(5, item.text); s.bindNull(6); }
+    else                             { s.bindNull(5); s.bind(6, item.blobHash); }
+    s.bind(7, item.sourceName).bind(8, item.width).bind(9, item.height)
+     .bind(10, item.byteSize).bind(11, item.mime).bind(12, item.animated);
+    s.exec();
+    return db_.lastInsertId();
+}
+
 std::optional<Item> ItemRepository::find(ItemId id)
 {
     Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
