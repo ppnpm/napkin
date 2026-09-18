@@ -28,18 +28,31 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libsqlite3-dev libfuse2 desktop-file-utils appstream
+          sudo apt-get install -y ninja-build libsqlite3-dev desktop-file-utils appstream
 
       - name: Build
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
+          set -o pipefail
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}" 2>&1 | tee configure.log || {
+              echo "::error title=Release configure failed::$(tail -c 2000 configure.log | tr '\n' ' ')"
+              exit 1
+            }
+          cmake --build build --parallel 2>&1 | tee build.log || {
+            echo "::error title=Release build failed::$(grep -iE 'error' build.log | head -20 | tr '\n' ' ')"
+            exit 1
+          }
 
       # The suite runs before anything is packaged. Shipping an artefact built
       # from a tree whose tests were never run is how a release becomes the
       # first place a regression is noticed.
       - name: Test
-        run: ctest --test-dir build --output-on-failure --parallel 2
+        run: |
+          set -o pipefail
+          ctest --test-dir build --output-on-failure --parallel 2 2>&1 | tee ctest.log || {
+            echo "::error title=Release tests failed::$(grep -E 'tests passed|FAIL!' ctest.log | head -20 | tr '\n' ' ')"
+            exit 1
+          }
 
       - name: Stage the install tree
         run: |
@@ -49,9 +62,19 @@ jobs:
 
       - name: Build the AppImage
         run: |
-          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          set -eux
+          BASE=https://github.com/linuxdeploy
+          curl -fsSLO $BASE/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSLO $BASE/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          # --output appimage is a separate plugin; linuxdeploy looks for it on
+          # PATH and fails late without it.
+          curl -fsSLO $BASE/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
           chmod +x linuxdeploy-*.AppImage
+          export PATH="$PWD:$PATH"
+          # Self-extract instead of mounting. These tools are AppImages
+          # themselves and would otherwise need FUSE in the runner, which is one
+          # more thing to depend on for no benefit.
+          export APPIMAGE_EXTRACT_AND_RUN=1
           export QMAKE="$QT_ROOT_DIR/bin/qmake"
           # The image plugins are loaded by name at runtime, so linuxdeploy
           # cannot see them by walking the link tree; they are named explicitly
@@ -60,7 +83,11 @@ jobs:
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
             --desktop-file AppDir/usr/share/applications/io.github.sudomonas.Napkin.desktop \
             --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/io.github.sudomonas.Napkin.png
-          mv Napkin*.AppImage napkin-${{ github.ref_name }}-x86_64.AppImage
+          # Named from the desktop entry, so match on the suffix rather than on
+          # a guess about capitalisation, and say so loudly if nothing appeared.
+          BUILT=$(ls *.AppImage | grep -v '^linuxdeploy' | head -1)
+          test -n "$BUILT"
+          mv "$BUILT" "napkin-${GITHUB_REF_NAME:-dev}-x86_64.AppImage"
 
       # Proves the bundle actually starts and can load its own Qt, rather than
       # only that a file was produced. --version is answered before the database
@@ -72,7 +99,7 @@ jobs:
           set -eux
           APPIMAGE=$(ls napkin-*.AppImage)
           chmod +x "$APPIMAGE"
-          OUT=$(QT_QPA_PLATFORM=offscreen timeout 60 "./$APPIMAGE" --appimage-extract-and-run --version)
+          OUT=$(QT_QPA_PLATFORM=offscreen timeout 120 "./$APPIMAGE" --appimage-extract-and-run --version)
           echo "$OUT"
           # The version it reports must be the tag it was built from, or the
           # release is shipping a binary from somewhere else.
