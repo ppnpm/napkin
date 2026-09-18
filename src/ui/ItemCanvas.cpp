@@ -373,14 +373,15 @@ void ItemCanvas::markClean()
     for (auto* card : textCards_) card->markClean();
 }
 
-bool ItemCanvas::rebindTextIds(const std::vector<Item>& items)
+bool ItemCanvas::bindComposer(ItemId newId)
 {
-    std::vector<ItemId> ids;
-    for (const auto& item : items)
-        if (item.type == ItemType::Text) ids.push_back(item.id);
-    if (ids.size() > textCards_.size()) return false;
-    for (size_t i = 0; i < ids.size(); ++i) textCards_[i]->setItemId(ids[i]);
-    return true;
+    if (newId == kNoItem) return false;
+    for (auto* card : textCards_) {
+        if (!card->isComposer()) continue;
+        card->setItemId(newId);
+        return true;
+    }
+    return false;
 }
 
 

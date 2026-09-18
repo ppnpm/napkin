@@ -1,9 +1,15 @@
 #include "GuiFixture.h"
 #include "../src/media/BlobGc.h"
 #include "../src/media/ImageFormats.h"
+#include "../src/ui/ItemCanvas.h"
+#include "../src/ui/ItemCard.h"
 
 #include <QBuffer>
 #include <QDir>
+#include <QMenu>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QToolButton>
 #include <QtTest>
 
 using namespace napkin;
@@ -188,6 +194,97 @@ private slots:
             f.model()->index(row, 0).data(BufferListModel::SectionFirstRole);
         }
         QCOMPARE(f.statementCount(), before);   // not one query
+    }
+
+// --- third audit ------------------------------------------------------------
+    void editingAnOlderCardThenAppendingMustNotRebindTheOthers()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        for (const char* t : {"AAA", "BBB", "CCC"})
+            f.service.appendTo(id, Item::makeText(QString::fromUtf8(t)));
+        f.model()->reload();
+        f.select(id);
+
+        // Edit the OLDEST card. That bumps its modified_at, so the database
+        // order changes while the widget order deliberately does not.
+        TextItemCard* oldest = nullptr;
+        for (auto* c : f.canvas()->findChildren<TextItemCard*>())
+            if (c->text() == QStringLiteral("AAA")) oldest = c;
+        QVERIFY(oldest);
+        oldest->beginEditing();
+        QTest::keyClicks(oldest->findChild<QPlainTextEdit*>(), "-edited");
+        QTest::qWait(600);
+
+        // Now append a new card, which is what triggers the rebind.
+        QTest::keyClicks(f.newTextCard(), "NEW");
+        QTest::qWait(600);
+
+        // Every widget must still be bound to the row whose text it shows.
+        for (auto* c : f.canvas()->findChildren<TextItemCard*>()) {
+            if (c->isComposer()) continue;
+            const auto row = f.items.find(c->itemId());
+            QVERIFY(row.has_value());
+            QCOMPARE(c->text(), row->text);
+        }
+    }
+
+    void theOverflowMenuActuallyListsTheActions()
+    {
+        GuiFixture f;
+        auto* button = f.window.findChild<QToolButton*>(QStringLiteral("overflowButton"));
+        QVERIFY(button);
+        QVERIFY(button->menu());
+        QStringList labels;
+        for (auto* a : button->menu()->actions())
+            if (!a->isSeparator()) labels << a->text();
+        // Ctrl+T is the only way to make a text card; it must be findable.
+        QVERIFY2(labels.filter(QStringLiteral("text")).size() > 0,
+                 qPrintable("menu had: " + labels.join(", ")));
+        QVERIFY(labels.size() >= 4);
+    }
+
+    void aFailingReadDuringARowClickDoesNotTerminate()
+    {
+        GuiFixture f;
+        f.seed("one"); f.seed("two");
+        f.db.exec("DROP TABLE items");
+
+        bool threw = false;
+        try { f.window.selectBuffer(0); } catch (...) { threw = true; }
+        QVERIFY2(threw, "selectBuffer still throws — the boundary must be at notify()");
+    }
+
+    void theSweepDoesNotDestroyABlobUndoStillNeeds()
+    {
+        GuiFixture f;
+        QImage img(40, 30, QImage::Format_RGB32); img.fill(Qt::red);
+        QByteArray png; QBuffer buf(&png); buf.open(QIODevice::WriteOnly);
+        img.save(&buf, "PNG");
+
+        const auto stored = f.blobs.store(png);
+        const auto keep = f.buffers.create();
+        f.service.appendTo(keep, Item::makeText(QStringLiteral("still here")));
+        const auto doomed = f.buffers.create();
+        f.service.appendTo(doomed, Item::makeImage(stored.hash, 40, 30, stored.byteSize,
+                                                   {}, stored.mime));
+        f.model()->reload();
+
+        f.select(doomed);
+        f.canvas()->selectAll();
+        f.canvas()->deleteSelection();
+        QVERIFY(f.toast()->hasOffer());
+
+        // Any sweep inside the eight-second window used to destroy the blob the
+        // offer depends on. Run one directly.
+        reconcileBlobs(f.items, f.blobs, f.thumbsDir(), f.window.undoProtectedBlobsForTest());
+
+        if (f.toast()->hasOffer()) {
+            f.toast()->findChild<QPushButton*>()->click();
+            for (const auto& item : f.items.allImageItems())
+                QVERIFY2(f.blobs.exists(item.blobHash, item.mime),
+                         "undo restored a row whose blob had been swept away");
+        }
     }
 
     void thePreviewCacheIsBounded()

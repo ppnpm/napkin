@@ -1,3 +1,4 @@
+#include "app/Application.h"
 #include "app/Paths.h"
 #include "app/SingleInstance.h"
 #include "data/BufferRepository.h"
@@ -16,7 +17,7 @@ using namespace napkin;
 
 int main(int argc, char** argv)
 {
-    QApplication app(argc, argv);
+    Application app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("napkin"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     QGuiApplication::setDesktopFileName(QStringLiteral("napkin"));

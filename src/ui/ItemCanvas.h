@@ -46,7 +46,16 @@ public:
     };
     std::vector<DirtyText> dirtyText() const;
     void markClean();
-    bool rebindTextIds(const std::vector<Item>& items);
+    // Binds the one unwritten card to the row that was just created for it.
+    //
+    // NOT by position. An earlier version paired textCards_[i] with the i-th
+    // text row of listForBuffer, which assumes widget order equals database
+    // order — and editing any card that is not the newest bumps its
+    // modified_at, changing the database order while the board deliberately
+    // stays put. The next append then rebound every card one slot out, so
+    // typing into one note silently overwrote another. There is only ever one
+    // composer, so identity is unambiguous and position is never consulted.
+    bool bindComposer(ItemId newId);
 
     QList<ItemId> selection() const;
     bool hasSelection() const { return !selected_.isEmpty(); }

@@ -52,8 +52,13 @@ void UndoToast::offer(const QString& message, std::function<void()> undo)
 void UndoToast::dismiss()
 {
     timer_->stop();
+    const bool had = bool(undo_);
     undo_ = nullptr;
     hide();
+    // Expiring releases whatever the offer was holding, exactly as taking it up
+    // would. Without this the blobs an abandoned offer protected are pinned
+    // until the next delete.
+    if (had) emit expired();
 }
 
 void UndoToast::reposition()

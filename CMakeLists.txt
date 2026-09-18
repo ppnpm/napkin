@@ -65,6 +65,7 @@ qt_add_library(napkin_ui STATIC
   src/ui/UndoToast.cpp
   src/ui/Lightbox.cpp
   src/app/SingleInstance.cpp
+  src/app/Application.cpp
 )
 target_link_libraries(napkin_ui PUBLIC napkin_core napkin_media Qt6::Widgets Qt6::Network)
 

@@ -1,12 +1,14 @@
 #pragma once
 #include "../domain/Types.h"
 #include <QList>
+#include <QSet>
 #include <functional>
 #include <QMainWindow>
 
 class QAction;
 class QLabel;
 class QPushButton;
+class QToolButton;
 class QStackedWidget;
 class QMenu;
 class QSplitter;
@@ -46,6 +48,7 @@ public slots:
     void restoreRow(int row);
     void showShortcuts();
     void emptyTrashForTest();
+    QSet<QString> undoProtectedBlobsForTest() const { return undoProtectedBlobs_; }
     // The undo path normally runs from the toast; tests drive it directly.
     void undoLastTrashForTest(BufferId id, bool wasKept, Timestamp modifiedAt);
     void emptyTrash();
@@ -105,10 +108,13 @@ private:
     // it back as it was rather than as a stripped copy of itself.
     struct TrashedState { BufferId id = kNoBuffer; bool kept = false; Timestamp modifiedAt = 0; };
     TrashedState lastTrashed_;
+    // Blobs whose rows are gone but which the live undo offer would restore.
+    QSet<QString> undoProtectedBlobs_;
     int saveFailures_ = 0;
     QTimer*          timeRefresh_ = nullptr;
     QAction*         trashAction_ = nullptr;
     QPushButton*     emptyTrashButton_ = nullptr;
+    QToolButton*     overflowButton_ = nullptr;
     QLabel*          emptyTitle_ = nullptr;
     QLabel*          emptyLine1_ = nullptr;
     QLabel*          emptyLine2_ = nullptr;

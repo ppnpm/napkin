@@ -620,195 +620,6 @@ Migrations from commit one, via `user_version`. Forward-only.
 
 ---
 
-## 6. Lifecycle — the decision v1 never made
-
-v1 was contradictory: it declared at length that kept buffers survive "automatic
-cleanup," while also showing cleanup as a manual dialog and promising to tolerate
-5000 buffers forever. The unanswered question — *does anything ever delete
-without being asked?* — made the whole cleanup phase unbuildable.
-
-**Decision: Napkin never auto-deletes a live buffer. There is no expiry.**
-
-Instead, age changes *visibility*, not existence:
-
-```
-PINNED    pinned buffers, newest first
-RECENT    everything modified within the last 30 days
-OLDER     collapsed section, dimmed, still searchable, still there
-```
-
-Cleanup ("Sweep") is always user-initiated, surfaced by a quiet inline nudge
-once the buffer count crosses a threshold:
-
-```
-┌──────────────────────────────────────────────┐
-│ 83 buffers · 61 older than 30 days           │
-│  4 kept — excluded                Review  ✕  │
-└──────────────────────────────────────────────┘
-```
-
-Sweep moves buffers to **trash**, it does not erase them. `kept` buffers are
-excluded from the sweep's default selection, permanently — that is what Keep
-buys you: you decide once, and never re-decide on any future sweep.
-
-### Trash and undo
-
-v1 had no undo anywhere, while also declaring "never silently discard user
-content." For an app whose premise is *throw things in without thinking*,
-accidental deletion is the single fastest way to lose a user forever.
-
-- Delete is a soft delete (`deleted_at`), always, for every path.
-- An **Undo** toast appears for ~8 seconds after any delete or sweep.
-- Trash is browsable and restorable, and can be emptied on demand — a confirmed,
-  irreversible action, which then reclaims the blobs those buffers held.
-- Trash purges items older than 30 days on startup. **This is the only automatic
-  hard delete in Napkin, and it only ever touches things the user already deleted.**
-  Emptying the trash skips any buffer still marked kept, which is the safe failure.
-- Deleting a `kept` buffer requires explicit confirmation, even into trash.
-
----
-
-## 7. UI
-
-Single window. One vertical stack. Virtualized from day one — §12 promises 5000
-buffers, and retrofitting virtualization into a card list is miserable.
-
-### Editing: inline expansion
-
-v1 specified a card stack and separately specified "focus moves to an editor,"
-and never connected them. **Decision: cards expand in place.**
-
-```
-click                →  selects only
-double-click / Enter →  expands into an editable region, list position frozen
-Esc                  →  collapses, list re-sorts
-```
-
-> **Selection and opening are separate gestures.** An earlier build opened a
-> buffer on a single click, which made a card impossible to merely *select* —
-> so pinning, keeping or deleting one with the mouse meant opening it first and
-> closing it after. Opening is the deliberate second gesture.
-
-### The expanded card shows every item
-
-A buffer is a screenshot *and* a command *and* a URL kept together; an editor
-that shows only a text box makes that concept a lie. Expanding renders the
-buffer's items in order:
-
-- **text items** as editable regions, each autosaved independently;
-- **image items** as a thumbnail with name, dimensions, size and an *animated*
-  marker, double-clicked for the lightbox, with a remove control;
-- a **trailing composer** — always somewhere to type at the end, costing nothing
-  until it has content (invariant 5).
-
-A collapsed card shows up to three thumbnails and an overflow count, so a buffer
-holding several images does not pretend to hold one.
-
-No modal, no second pane, no navigation model to learn. This matches the "pieces
-of paper on a desk" metaphor better than master-detail, and it means there is
-exactly one screen in the entire application.
-
-> **Reviewed against a master-detail mockup and upheld** (`docs/UI_suggestion.png`).
-> A two-pane proposal
-> (narrow list rail, large preview pane) was considered and rejected. The cost
-> is not aesthetic: two panes add a navigation model — which pane has focus, two
-> scroll positions, focus ping-pong on every interaction — to an application
-> whose entire premise is zero friction.
->
-> The specific losses in that layout were: every row elided to a single
-> truncated line; **timestamps absent entirely**, on a surface organized by
-> recency; no home for the PINNED/RECENT split, which makes pinning invisible;
-> and a list that read as one row per *item* rather than per *buffer*, which
-> would delete the concept that lets a screenshot, a command and a URL stay
-> together as one thought.
->
-> Three ideas from it were adopted: a **persistent search field** in the header
-> rather than a hidden `Ctrl+K` (Phase 5); **thumbnails in the card** (Phase 4);
-> and the legitimate problem it exposed — a 2560×1440 screenshot is cramped in a
-> card — solved by the **lightbox** already planned for Phase 4, which buys the
-> full-size view without making every text buffer pay for a permanent pane.
-
-### Two latent bugs from v1, fixed here
-
-**Sort thrash.** Recent buffers sort by `modified_at`, and autosave updates
-`modified_at` continuously — so the buffer you are typing into would jump to the
-top of the list as you type. *Fix: list position is frozen while a buffer is
-expanded; re-sort happens on collapse.*
-
-**Empty buffers.** v1 said abandoned empty buffers "can be discarded," without
-defining abandonment. *Fix: `Ctrl+N` creates an in-memory **draft**. No row is
-written until the first non-empty content exists (invariant 5).* An abandoned
-draft evaporates because it never existed. No cleanup rule needed.
-
-### Search
-
-`Ctrl+K` filters the same list in place rather than opening a separate screen.
-One mental model, one widget, matches are highlighted inline.
-
-### Keyboard
-
-v1's shortcuts collided with the editor and with OS conventions (`Ctrl+P` is
-Print everywhere; `Ctrl+D` for Delete sat next to `Ctrl+N` with no undo). Scoped
-model instead:
-
-| Scope | Key | Action |
-|---|---|---|
-| Global | `Ctrl+N` | New draft |
-| Global | `Ctrl+K` | Search |
-| Global | `Ctrl+Shift+I` | Add image… |
-| Global | `Esc` | Collapse / clear search |
-| Editor | `Ctrl+V` | Paste |
-| List focus | `Enter` | Expand |
-| List focus | `p` | Pin / unpin |
-| List focus | `k` | Keep / release |
-| List focus | `Delete` | Move to trash |
-| List focus | `/` | Search |
-
-Bare letters only fire with list focus, so they can never conflict with typing.
-`Delete` rather than `Ctrl+D` — standard, and much harder to hit by accident.
-
-### Visual direction
-
-The visual language should communicate: **minimal, quiet, tactile, temporary,
-useful.** Think paper, desk, scratchpad — but avoid literal skeuomorphism. The
-name Napkin does not require a napkin graphic anywhere. A restrained modern UI
-carries the metaphor on its own.
-
-Buffers may resemble cards, but must not look like modern dashboard cards.
-
-| Avoid | Use |
-|---|---|
-| Heavy shadows | Whitespace |
-| Large corner radii | Subtle separators |
-| Gradients, colorful fills | Restrained borders |
-| Oversized icons | Clear typography |
-| Dense metadata | Quiet hover states |
-| Decorative chrome | Small pin/keep indicators |
-
-> **The buffer is content, not a UI widget.** The content must visually dominate.
-
-Themes: Light, Dark, System. Nothing more elaborate. Avoid pure black and pure
-white; prioritize text contrast, focus visibility, readable timestamps.
-
-### Empty state
-
-```text
-+---------------------------------------------+
-|                                             |
-|                  Napkin                     |
-|                                             |
-|           Put something here.               |
-|                                             |
-|             Ctrl+N to begin                 |
-|                                             |
-+---------------------------------------------+
-```
-
-No onboarding sequence, no tour, no sample content. The empty state disappears
-the moment the first buffer has content.
-
----
-
 ## 8. Persistence and durability
 
 v1 said "debounced persistence" and separately demanded survival of `kill -9`.
@@ -1163,8 +974,11 @@ tray mode, and the global capture hotkey (see below).
 
 **Phase 9 — Windows and macOS.** Only after Linux is genuinely good.
 
-Packaging is wired up in Phase 0 and stays green throughout. It is never a phase
-you arrive at.
+Packaging **was supposed to be** wired up in Phase 0 and kept green. It was not:
+there is no `.desktop` file, no icon, no `install()` rule and no CI, and
+`resources/` is empty. `main.cpp` calls `setDesktopFileName("napkin")`, promising
+the compositor a file that does not exist. This is Phase 8 work that has not
+started, and the claim that it was done in Phase 0 was false.
 
 ---
 
@@ -1245,11 +1059,17 @@ Two rules now hold, and both are tested:
 
 1. **`currentBufferIsLive()` is checked before any write.** If the row has gone,
    the canvas lets go of it and the next capture starts a new buffer.
-2. **No slot may let an exception reach the event loop.** Every database-writing
-   slot runs through `guarded()`, which turns a failure into a message. This was
-   latent everywhere, not only in paste — a disk error during pin, keep, trash,
-   restore, empty-trash or undo would have terminated the process just as
-   readily.
+2. **No exception may reach the event loop.** `napkin::Application` overrides
+   `QCoreApplication::notify()` and catches everything, because every event in a
+   Qt program passes through there.
+
+> **An earlier version of this section claimed "every database-writing slot runs
+> through `guarded()`". That was false**, and a later audit reproduced two
+> `SIGABRT`s to prove it — one of them on the *Delete key*. Wrapping individual
+> write calls could never have been enough: a failing **read** during a row
+> click, a query issued from inside `paint()`, and `MainWindow`'s own
+> construction were all outside every wrapper. The boundary has to be under
+> everything, not sprinkled over the paths someone remembered.
 
 > The lesson generalises past these two: a `DbError` escaping a Qt slot is always
 > a crash, never an error dialog. The type has existed since Phase 1 and the

@@ -33,6 +33,7 @@ public:
 
 signals:
     void undone();
+    void expired();
 
 protected:
     void paintEvent(QPaintEvent* e) override;

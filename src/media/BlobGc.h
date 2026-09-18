@@ -1,4 +1,5 @@
 #pragma once
+#include <QSet>
 #include <QString>
 #include <vector>
 
@@ -18,7 +19,13 @@ struct GcResult {
     std::vector<QString> missingBlobs;  // referenced hashes with no file
 };
 
+// `protectedHashes` are blobs a live undo offer still depends on: their rows are
+// already deleted, so the sweep would see them as orphans and reclaim the very
+// files undo is about to restore. Relying on every caller to dismiss the offer
+// first is not a guarantee — one forgotten call site destroys user data — so the
+// protection travels with the sweep instead.
 GcResult reconcileBlobs(ItemRepository& items, BlobStore& blobs,
-                        const QString& thumbnailDir = {});
+                        const QString& thumbnailDir = {},
+                        const QSet<QString>& protectedHashes = {});
 
 }  // namespace napkin

@@ -112,6 +112,9 @@ void MainWindow::buildUi()
     setCentralWidget(central);
 
     toast_ = new UndoToast(central);
+    // Once the offer is gone — taken or expired — the blobs it held are free.
+    connect(toast_, &UndoToast::undone, this, [this] { undoProtectedBlobs_.clear(); });
+    connect(toast_, &UndoToast::expired, this, [this] { undoProtectedBlobs_.clear(); });
 
 
     // --- autosave ------------------------------------------------------------
@@ -182,6 +185,8 @@ void MainWindow::buildUi()
     connect(view_, &BufferListView::restoreRequested,    this, &MainWindow::restoreRow);
     connect(view_, &BufferListView::contextMenuRequested, this, &MainWindow::showContextMenu);
 
+    if (overflowButton_) overflowButton_->setMenu(buildOverflowMenu());
+
     // Relative labels go stale silently, so repaint them on a slow tick.
     timeRefresh_ = new QTimer(this);
     timeRefresh_->setInterval(kTimeRefreshMs);
@@ -241,7 +246,10 @@ QWidget* MainWindow::buildHeaderWidget()
     menuButton->setObjectName(QStringLiteral("overflowButton"));
     menuButton->setToolTip(tr("More actions"));
     menuButton->setAccessibleName(tr("More actions"));
-    menuButton->setMenu(buildOverflowMenu());
+    // Populated later: buildHeaderWidget runs before the actions are created,
+    // so building the menu here iterated an empty action list and shipped a
+    // menu containing nothing but "Keyboard shortcuts…".
+    overflowButton_ = menuButton;
     layout->addWidget(menuButton);
 
     emptyTrashButton_ = new QPushButton(tr("Empty trash"));
@@ -388,7 +396,7 @@ void MainWindow::trashRow(int row)
 
         if (!guarded(tr("Could not delete that buffer"), [&] {
                 buffers_.hardDeleteEvenIfKept(id);
-                reconcileBlobs(items_, blobs_, paths::thumbsDir());
+                reconcileBlobs(items_, blobs_, paths::thumbsDir(), undoProtectedBlobs_);
             }))
             return;
         reloadPreservingSelection();
@@ -668,7 +676,7 @@ void MainWindow::emptyTrash()
     editingBuffer_ = kNoBuffer;
     canvas_->showNothingSelected();
     service_.emptyTrash();
-    reconcileBlobs(items_, blobs_, paths::thumbsDir());  // reclaim blobs AND thumbnails
+    reconcileBlobs(items_, blobs_, paths::thumbsDir(), undoProtectedBlobs_);  // reclaim blobs AND thumbnails
     reloadPreservingSelection();
     emptyTrashButton_->setVisible(model_->rowCount() > 0);
 }
@@ -770,6 +778,12 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
         model_->invalidatePreview(buffer);
     }
 
+    // Hold the blobs this offer would put back, so no sweep can reclaim them
+    // while it is still on screen.
+    undoProtectedBlobs_.clear();
+    for (const auto& item : removed)
+        if (!item.blobHash.isEmpty()) undoProtectedBlobs_.insert(item.blobHash);
+
     const QString message = removed.size() == 1
         ? tr("Item deleted")
         : tr("%n items deleted", nullptr, int(removed.size()));
@@ -816,10 +830,12 @@ bool MainWindow::flushEditor()
             if (editingBuffer_ == kNoBuffer) return true;
 
             model_->promoteDraft(editingBuffer_);
-            // Rebind ids rather than rebuilding: the user may still be typing,
-            // and recreating the widgets would move the caret to the start.
-            if (!editor->rebindTextIds(items_.listForBuffer(editingBuffer_)))
-                editor->setItems(items_.listForBuffer(editingBuffer_));
+            // Bind the composer to its new row rather than rebuilding: the user
+            // may still be typing, and recreating the widgets would move the
+            // caret to the start.
+            const auto head = items_.listForBuffer(editingBuffer_);
+            if (!head.empty() && !editor->bindComposer(head.front().id))
+                editor->setItems(head);
         } else {
             for (const auto& d : dirty) {
                 if (d.id != kNoItem) {
@@ -829,10 +845,13 @@ bool MainWindow::flushEditor()
                     if (d.text.trimmed().isEmpty()) { emptied.push_back(d.id); continue; }
                     service_.updateTextItem(editingBuffer_, d.id, d.text);
                 } else if (!d.text.trimmed().isEmpty()) {
-                    service_.appendTo(editingBuffer_, Item::makeText(d.text));
-                    if (!editor->rebindTextIds(items_.listForBuffer(editingBuffer_)))
-                        editor->setItems(items_.listForBuffer(editingBuffer_));
-                    break;   // ids shifted; the rest of this pass is stale
+                    // appendTo hands back the id, so the composer is bound by
+                    // identity. Nothing else on the board is touched.
+                    const ItemId created =
+                        service_.appendTo(editingBuffer_, Item::makeText(d.text));
+                    if (!editor->bindComposer(created)) editor->setItems(
+                        items_.listForBuffer(editingBuffer_));
+                    break;
                 }
             }
         }

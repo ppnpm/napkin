@@ -1,3 +1,11 @@
+> **SUPERSEDED in part.** This document designed the two-pane layout, which
+> shipped. Its *keyboard model* (§3.3), *focus model* (§3.5) and
+> single-click-enters-text-mode semantics (§3.2) were **not** built — the
+> shipped app uses click-to-select / double-click-to-edit, and the canvas
+> has no keyboard selection at all, which a later audit recorded as a
+> critical gap. Read SPEC.md for what exists; read this for why the layout
+> is what it is.
+
 # Napkin — Two-Pane Layout: interaction and visual specification
 
 > Status: design spec, ready to build. Supersedes SPEC.md §7's "inline expansion"

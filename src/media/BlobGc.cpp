@@ -10,11 +10,12 @@
 
 namespace napkin {
 
-GcResult reconcileBlobs(ItemRepository& items, BlobStore& blobs, const QString& thumbnailDir)
+GcResult reconcileBlobs(ItemRepository& items, BlobStore& blobs, const QString& thumbnailDir,
+                        const QSet<QString>& protectedHashes)
 {
     GcResult result;
 
-    QSet<QString> referenced;
+    QSet<QString> referenced = protectedHashes;
     for (const auto& hash : items.allBlobHashes()) referenced.insert(hash);
 
     QDirIterator it(blobs.rootDir(), QDir::Files, QDirIterator::Subdirectories);
