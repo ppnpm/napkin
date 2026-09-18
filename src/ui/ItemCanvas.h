@@ -26,7 +26,10 @@ class ItemCanvas : public QScrollArea {
 public:
     ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent = nullptr);
 
-    void setItems(const std::vector<Item>& items);
+    // selectIndex: which item to leave selected afterwards, so a delete does
+    // not dump the user back to nothing selected. -1 selects none.
+    void setItems(const std::vector<Item>& items, int selectIndex = -1);
+    int  indexOf(ItemId id) const;
     void showNothingSelected();
     void clearItems();
 

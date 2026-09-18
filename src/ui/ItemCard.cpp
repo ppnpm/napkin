@@ -166,6 +166,9 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
         return true;
     };
     edit_ = edit;
+    // Read-only until you ask to edit, so a click lands on the block rather than
+    // in the text. The composer is born editable: it has nothing to select.
+    edit_->setTextInteractionFlags(Qt::NoTextInteraction);
     layout->addWidget(edit_);
 
     connect(edit_, &QPlainTextEdit::textChanged, this, [this] {
@@ -180,8 +183,14 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
 QString TextItemCard::text() const { return edit_->toPlainText(); }
 bool TextItemCard::textHasFocus() const { return edit_->hasFocus(); }
 
+bool TextItemCard::hasEditFocus() const
+{
+    return edit_->textInteractionFlags() & Qt::TextEditorInteraction;
+}
+
 void TextItemCard::focusText()
 {
+    edit_->setTextInteractionFlags(Qt::TextEditorInteraction);
     edit_->setFocus(Qt::OtherFocusReason);
     edit_->moveCursor(QTextCursor::End);
 }
@@ -192,21 +201,55 @@ int TextItemCard::desiredHeight() const
     return std::max(34, int(doc)) + kCardPadding * 2 + 6;
 }
 
+void TextItemCard::beginEditing()
+{
+    if (edit_->textInteractionFlags() & Qt::TextEditorInteraction) return;
+    edit_->setTextInteractionFlags(Qt::TextEditorInteraction);
+    edit_->setFocus(Qt::MouseFocusReason);
+    edit_->moveCursor(QTextCursor::End);
+    emit editingStarted(itemId());
+    update();
+}
+
+// The composer is born editable: there is nothing there to select.
+void TextItemCard::focusTextInteraction()
+{
+    edit_->setTextInteractionFlags(Qt::TextEditorInteraction);
+}
+
+void TextItemCard::endEditing()
+{
+    if (isComposer()) return;   // the composer is always ready to be written in
+    edit_->setTextInteractionFlags(Qt::NoTextInteraction);
+    update();
+}
+
+void TextItemCard::mouseDoubleClickEvent(QMouseEvent* e)
+{
+    beginEditing();
+    e->accept();
+}
+
 bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
 {
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        beginEditing();
+        return true;
+    }
     if (event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);
-        // A modified click means "select this block", not "put the caret here".
-        if (mouse->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)) {
+        // While read-only the press means "select me"; once editing, it belongs
+        // to the caret.
+        if (!(edit_->textInteractionFlags() & Qt::TextEditorInteraction)) {
             emit selectRequested(itemId(), mouse->modifiers());
             return true;
         }
-        emit selectRequested(itemId(), Qt::NoModifier);
     }
     if (watched == edit_ && event->type() == QEvent::KeyPress) {
         // Esc leaves the text and selects the block it belongs to, so a block
         // is always reachable as an object without a special hit target.
         if (static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+            endEditing();
             emit escaped();
             return true;
         }

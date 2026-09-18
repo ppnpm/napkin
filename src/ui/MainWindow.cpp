@@ -161,6 +161,13 @@ void MainWindow::buildUi()
     connect(pasteAction, &QAction::triggered, this, &MainWindow::pasteFromClipboard);
     addAction(pasteAction);
 
+    auto* addTextAction = new QAction(tr("New text block"), this);
+    addTextAction->setObjectName(QStringLiteral("addTextAction"));
+    addTextAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+T")));
+    addTextAction->setShortcutContext(Qt::WindowShortcut);
+    connect(addTextAction, &QAction::triggered, this, [this] { appendTextBlock(); });
+    addAction(addTextAction);
+
     auto* addImageAction = new QAction(tr("Add image…"), this);
     addImageAction->setObjectName(QStringLiteral("addImageAction"));
     addImageAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+I")));
@@ -266,10 +273,18 @@ void MainWindow::showShortcuts()
         this, tr("Keyboard shortcuts"),
         tr("<table cellpadding='4'>"
            "<tr><td><b>Ctrl+N</b></td><td>New buffer</td></tr>"
-           "<tr><td><b>Ctrl+V</b></td><td>Paste text or an image</td></tr>"
+           "<tr><td><b>Ctrl+T</b></td><td>New text block in this buffer</td></tr>"
+           "<tr><td><b>Ctrl+V</b></td><td>Paste into this buffer</td></tr>"
            "<tr><td><b>Ctrl+Shift+I</b></td><td>Add an image from a file</td></tr>"
-           "<tr><td><b>Enter</b> / double-click</td><td>Open the selected buffer</td></tr>"
-           "<tr><td><b>Esc</b></td><td>Close the open buffer</td></tr>"
+           "<tr><td colspan='2'>&nbsp;</td></tr>"
+           "<tr><td colspan='2'><i>In the canvas:</i></td></tr>"
+           "<tr><td><b>Click</b></td><td>Select an item</td></tr>"
+           "<tr><td><b>Double-click</b></td><td>Edit text, or open an image</td></tr>"
+           "<tr><td><b>Ctrl</b> / <b>Shift</b> + click</td><td>Extend the selection</td></tr>"
+           "<tr><td><b>Ctrl+A</b></td><td>Select every item</td></tr>"
+           "<tr><td><b>Ctrl+C</b> / <b>Ctrl+X</b> / <b>Delete</b></td>"
+           "<td>Copy, cut or delete the selection</td></tr>"
+           "<tr><td><b>Esc</b></td><td>Stop editing, then clear the selection</td></tr>"
            "<tr><td colspan='2'>&nbsp;</td></tr>"
            "<tr><td colspan='2'><i>With the list focused:</i></td></tr>"
            "<tr><td><b>P</b></td><td>Pin — keeps it at the top</td></tr>"
@@ -499,30 +514,49 @@ bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
 
 void MainWindow::pasteFromClipboard()
 {
-    // While an editor is focused the editor handles its own paste, so this
-    // only fires for a paste onto the stack itself.
-
+    if (model_->mode() != BufferListModel::Mode::Live) return;
 
     const auto content = readClipboard(QApplication::clipboard()->mimeData());
-    switch (content.kind) {
-    case ClipboardContent::Kind::Image:
+    if (content.kind == ClipboardContent::Kind::None) return;
+
+    // One rule for everything on the clipboard: a paste goes into the buffer
+    // you are looking at, and makes a new one only when you are looking at
+    // nothing. Text used to always create a buffer while images appended to the
+    // current one, which meant the same gesture did two different things
+    // depending on what you had copied.
+    if (editingBuffer_ == kNoBuffer && !model_->hasDraft()) newDraft();
+
+    if (content.kind == ClipboardContent::Kind::Image) {
         addImageToCurrent(content.imageBytes, content.imageMime, QString());
-        break;
-    case ClipboardContent::Kind::Text: {
-        if (model_->mode() != BufferListModel::Mode::Live) return;
+        return;
+    }
+    appendTextBlock(content.text);
+}
+
+// Ctrl+T, and the path every pasted text block takes.
+void MainWindow::appendTextBlock(const QString& text)
+{
+    if (model_->mode() != BufferListModel::Mode::Live) return;
+    if (editingBuffer_ == kNoBuffer && !model_->hasDraft()) { newDraft(); }
+
+    if (!flushAndReportFailure()) return;
+
+    if (editingBuffer_ == kNoBuffer) {
+        if (text.trimmed().isEmpty()) { canvas_->focusComposer(); return; }
         Draft draft;
-        draft.setText(content.text);
-        const BufferId id = service_.commitDraft(draft);
-        if (id == kNoBuffer) return;
-        model_->reload();
-        if (const int row = model_->rowForId(id); row >= 0)
-            view_->setCurrentIndex(model_->index(row, 0));
-        updateEmptyState();
-        break;
+        draft.setText(text);
+        editingBuffer_ = service_.commitDraft(draft);
+        if (editingBuffer_ == kNoBuffer) return;
+        if (model_->hasDraft()) model_->promoteDraft(editingBuffer_);
+        else                    reloadPreservingSelection();
+    } else if (!text.trimmed().isEmpty()) {
+        service_.appendTo(editingBuffer_, Item::makeText(text));
     }
-    case ClipboardContent::Kind::None:
-        break;  // nothing usable; say nothing rather than nag
-    }
+
+    canvas_->setItems(items_.listForBuffer(editingBuffer_));
+    model_->invalidatePreview(editingBuffer_);
+    canvas_->focusComposer();
+    updateEmptyState();
 }
 
 void MainWindow::addImageFromFile()
@@ -644,6 +678,7 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
     if (removed.empty()) return;
 
     const BufferId buffer = editingBuffer_;
+    const int firstRemovedIndex = canvas_->indexOf(ids.first());
     for (ItemId id : ids) service_.removeItem(buffer, id);
 
     // Deliberately NOT reconciling blobs here. A blob whose last reference has
@@ -659,7 +694,9 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
         canvas_->showNothingSelected();
         reloadPreservingSelection();
     } else {
-        canvas_->setItems(items_.listForBuffer(buffer));
+        // Keep working where you were: land on whatever now occupies the first
+        // removed slot, or the last item if you deleted off the end.
+        canvas_->setItems(items_.listForBuffer(buffer), firstRemovedIndex);
         model_->invalidatePreview(buffer);
     }
 

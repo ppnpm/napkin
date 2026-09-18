@@ -195,9 +195,11 @@ private slots:
         const auto id = seedMixed(f, 0);
         f.select(id);
 
-        auto* edit = f.canvas()->findChildren<TextItemCard*>()[0]
-                         ->findChild<QPlainTextEdit*>();
-        QTest::keyClicks(edit, " - amended");
+        // A block is read-only until you ask to edit it, so that a click can
+        // select it. Double-click is the gesture; this is its keyboard twin.
+        auto* card = f.canvas()->findChildren<TextItemCard*>()[0];
+        card->beginEditing();
+        QTest::keyClicks(card->findChild<QPlainTextEdit*>(), " - amended");
         QTest::qWait(600);
 
         QCOMPARE(f.items.countForBuffer(id), 1);   // updated in place

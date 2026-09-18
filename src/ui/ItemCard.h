@@ -16,14 +16,20 @@ class Thumbnailer;
 // The hard part of this layout is that a text block must be BOTH a selectable
 // object and an editable field. The resolution:
 //
-//   click on text        -> place the caret (edit)
-//   click on an image    -> select the block (images are not editable)
-//   Ctrl/Shift+click     -> select the block, never place a caret
-//   Esc while editing    -> leave the text, select the block
-//   click empty canvas   -> clear the selection
+//   single click       -> SELECT the block, whatever it is
+//   double click       -> edit it (text) or open the lightbox (image)
+//   Enter on selected  -> edit it
+//   Ctrl/Shift+click   -> extend the selection
+//   Esc while editing  -> leave the text, keep the block selected
+//   click empty canvas -> clear the selection, focus the composer
 //
-// So a bare click always does the obvious thing for what is under it, and
-// selection of a text block is always reachable without a special target.
+// Selection is uniform: every item answers a click the same way, so "click it,
+// then delete it" works on text exactly as it works on an image. An earlier
+// build put the caret straight into text on a single click, which made a text
+// block the one thing in the canvas the mouse could not select or delete.
+//
+// The trailing composer is the exception: it is empty and has no row, so
+// selecting it would mean nothing. Clicking it just starts writing.
 class ItemCard : public QWidget {
     Q_OBJECT
 public:
@@ -71,17 +77,28 @@ public:
     void markClean() { dirty_ = false; }
     void setItemId(ItemId id) { item_.id = id; }
     void focusText();
+    void beginEditing();
+    void focusTextInteraction();
+    void endEditing();
+    bool isComposer() const { return itemId() == kNoItem; }
     int desiredHeight() const;
     bool textHasFocus() const;
-    bool hasEditFocus() const override { return textHasFocus(); }
+    // Editing MODE, not window focus: a block being edited must still look
+    // edited when the window is inactive, and window focus is not something a
+    // headless test can grant.
+    bool hasEditFocus() const override;
 
 signals:
     void edited();
     void imagePasted(const QByteArray& bytes, const QString& mime);
     void heightChanged();
 
+signals:
+    void editingStarted(ItemId id);
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
 
 private:
     QPlainTextEdit* edit_ = nullptr;

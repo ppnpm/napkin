@@ -76,6 +76,15 @@ void ItemCanvas::showNothingSelected()
 
 void ItemCanvas::addCard(ItemCard* card)
 {
+    if (auto* text = qobject_cast<TextItemCard*>(card)) {
+        // Only one block edits at a time: starting one ends the others, so the
+        // canvas never has two carets or an ambiguous Ctrl+C.
+        connect(text, &TextItemCard::editingStarted, this, [this](ItemId id) {
+            for (auto* other : textCards_)
+                if (other->itemId() != id) other->endEditing();
+            clearSelection();
+        });
+    }
     connect(card, &ItemCard::selectRequested, this, &ItemCanvas::applySelection);
     connect(card, &ItemCard::activated, this, &ItemCanvas::imageActivated);
     connect(card, &ItemCard::escaped, this, [this, card] {
@@ -96,6 +105,7 @@ void ItemCanvas::addComposer()
     Item blank;
     blank.type = ItemType::Text;
     auto* card = new TextItemCard(blank, body_);
+    card->focusTextInteraction();
     connect(card, &TextItemCard::edited, this, &ItemCanvas::edited);
     connect(card, &TextItemCard::imagePasted, this, &ItemCanvas::imagePasted);
     connect(card, &TextItemCard::heightChanged, this, &ItemCanvas::relayout);
@@ -103,7 +113,14 @@ void ItemCanvas::addComposer()
     textCards_.push_back(card);
 }
 
-void ItemCanvas::setItems(const std::vector<Item>& items)
+int ItemCanvas::indexOf(ItemId id) const
+{
+    for (size_t i = 0; i < cards_.size(); ++i)
+        if (cards_[i]->itemId() == id) return int(i);
+    return -1;
+}
+
+void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
 {
     clearItems();
     placeholder_->hide();
@@ -123,6 +140,18 @@ void ItemCanvas::setItems(const std::vector<Item>& items)
     addComposer();
     layout_->addStretch();
     relayout();
+
+    if (selectIndex < 0) return;
+    // Clamp: deleting the last item should land on the new last, not nowhere.
+    const int real = int(cards_.size()) - 1;   // the composer is never selectable
+    const int target = std::min(selectIndex, real - 1);
+    if (target >= 0 && target < int(cards_.size())
+        && cards_[size_t(target)]->itemId() != kNoItem) {
+        selected_ = {cards_[size_t(target)]->itemId()};
+        anchor_ = *selected_.begin();
+        cards_[size_t(target)]->setSelected(true);
+        emit selectionChanged();
+    }
 }
 
 void ItemCanvas::relayout()
@@ -166,15 +195,9 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
                     selected_.insert(cards_[size_t(i)]->itemId());
         }
     } else {
-        selected_.clear();
+        // Uniform: a single click selects, whatever the item is.
+        selected_ = {id};
         anchor_ = id;
-        // A bare click on an IMAGE selects it — an image is not editable, so
-        // there is no caret the click could mean instead. A bare click on text
-        // places the caret; that block is the anchor but not a selection the
-        // verbs act on, because Ctrl+C there should copy the selected words.
-        for (auto* card : cards_)
-            if (card->itemId() == id && !qobject_cast<TextItemCard*>(card))
-                selected_.insert(id);
     }
 
     for (auto* card : cards_) card->setSelected(selected_.contains(card->itemId()));
@@ -271,6 +294,13 @@ void ItemCanvas::keyPressEvent(QKeyEvent* e)
         return;
     }
     if (e->key() == Qt::Key_Escape) { clearSelection(); return; }
+    // Enter on a single selected text block starts editing it, the keyboard
+    // equivalent of the double-click.
+    if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
+        && selected_.size() == 1) {
+        for (auto* card : textCards_)
+            if (card->itemId() == *selected_.begin()) { card->beginEditing(); return; }
+    }
     QScrollArea::keyPressEvent(e);
 }
 

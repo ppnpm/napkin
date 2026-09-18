@@ -282,6 +282,120 @@ private slots:
         QVERIFY(f.blobs.exists(removed.blobHash, removed.mime));
     }
 
+    // --- the four inconsistencies the user reported --------------------------
+    void pastingTextGoesIntoTheSelectedBufferJustLikeAnImage()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+        QApplication::clipboard()->setText(QStringLiteral("pasted note"));
+
+        f.trigger("pasteAction");
+
+        // Text used to always make a NEW buffer while images appended to the
+        // selected one: the same gesture doing two different things.
+        QCOMPARE(f.buffers.countLive(), 1);
+        QCOMPARE(f.items.countForBuffer(id), 5);
+        QCOMPARE(f.items.listForBuffer(id).back().text, QStringLiteral("pasted note"));
+    }
+
+    void pastingTextWithNothingSelectedMakesOneBuffer()
+    {
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral("a stray thought"));
+
+        f.trigger("pasteAction");
+
+        QCOMPARE(f.buffers.countLive(), 1);
+        QCOMPARE(f.items.countForBuffer(f.buffers.listLive(10).front().id), 1);
+    }
+
+    void deletingAnItemLeavesTheNextOneSelected()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);   // text, image, image, text
+        f.select(id);
+
+        const auto items = f.items.listForBuffer(id);
+        auto* second = f.canvas()->findChildren<ImageItemCard*>().first();
+        QTest::mouseClick(second, Qt::LeftButton);
+        f.canvas()->deleteSelection();
+
+        // Selection lands on whatever now occupies that slot, so a run of
+        // deletes does not require re-aiming the mouse each time.
+        QCOMPARE(f.canvas()->selection().size(), 1);
+        QCOMPARE(f.canvas()->selection().first(), items[2].id);
+    }
+
+    void deletingTheLastItemSelectsTheNewLast()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        const auto items = f.items.listForBuffer(id);
+        const int last = f.canvas()->indexOf(items.back().id);
+        QVERIFY(last >= 0);
+        f.window.removeItems({items.back().id});
+
+        QCOMPARE(f.canvas()->selection().size(), 1);
+        QCOMPARE(f.canvas()->selection().first(), items[items.size() - 2].id);
+    }
+
+    void aSingleClickSelectsATextBlockRatherThanEditingIt()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        auto* text = f.canvas()->findChildren<TextItemCard*>().first();
+        QTest::mouseClick(text->findChild<QPlainTextEdit*>(), Qt::LeftButton);
+
+        QCOMPARE(f.canvas()->selection().size(), 1);
+        QCOMPARE(f.canvas()->selection().first(), text->itemId());
+        QVERIFY(!text->hasEditFocus());
+    }
+
+    void aSelectedTextBlockCanBeDeletedWithTheMouseAlone()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+        const int before = f.items.countForBuffer(id);
+
+        auto* text = f.canvas()->findChildren<TextItemCard*>().first();
+        QTest::mouseClick(text->findChild<QPlainTextEdit*>(), Qt::LeftButton);
+        f.canvas()->deleteSelection();
+
+        QCOMPARE(f.items.countForBuffer(id), before - 1);
+    }
+
+    void doubleClickingATextBlockStartsEditingIt()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        auto* text = f.canvas()->findChildren<TextItemCard*>().first();
+        QTest::mouseDClick(text->findChild<QPlainTextEdit*>(), Qt::LeftButton);
+
+        QVERIFY(text->hasEditFocus());
+        QVERIFY(!f.canvas()->hasSelection());   // editing and selecting are exclusive
+    }
+
+    void ctrlTAddsATextBlockToTheSelectedBuffer()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        f.trigger("addTextAction");
+        QTest::keyClicks(f.editor(), "written after Ctrl+T");
+        QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == 5, 2000);
+        QCOMPARE(f.items.listForBuffer(id).back().text,
+                 QStringLiteral("written after Ctrl+T"));
+    }
+
     // --- editing -------------------------------------------------------------
     void typingIntoTheComposerAppendsANewTextItem()
     {

@@ -53,6 +53,7 @@ public slots:
     void openRow(int row);
     void selectBuffer(int row);
     void removeItems(const QList<ItemId>& ids);
+    void appendTextBlock(const QString& text = {});
 
 protected:
     void closeEvent(QCloseEvent* e) override;

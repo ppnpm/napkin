@@ -468,12 +468,24 @@ is under it:
 
 | Gesture | Meaning |
 |---|---|
-| Click on text | place the caret (edit) |
-| Click on an image | select the block — an image has no caret to mean instead |
-| Ctrl / Shift + click | select the block, never place a caret |
-| `Esc` while editing | leave the text, select its block |
-| Click empty canvas | clear the selection |
+| Single click | **select** the item, whatever it is |
+| Double click | edit it (text), or open the lightbox (image) |
+| `Enter` on a selected block | edit it |
+| Ctrl / Shift + click | extend the selection |
+| `Esc` while editing | stop editing, keep the block selected |
+| Click empty canvas | clear the selection, focus the composer |
 | `Ctrl+A` | select every item (not the unwritten composer) |
+
+> **Corrected.** An earlier build put the caret straight into text on a single
+> click, on the reasoning that typing is the primary act. That made a text block
+> the one thing in the canvas the mouse could not select or delete — you could
+> click an image and press Delete, but not a paragraph. Selection is now
+> uniform: a block is read-only until you ask to edit it, so "click it, then
+> delete it" works on text exactly as it works on an image. Only one block edits
+> at a time, so the canvas never has two carets or an ambiguous `Ctrl+C`.
+>
+> The trailing composer is the single exception: it is empty and has no row, so
+> selecting it would mean nothing. Clicking it just starts writing.
 
 `Ctrl+C`, `Ctrl+X` and `Delete` act on the selection when the canvas has focus,
 and never while a caret is in a text block — there, they mean what they always
@@ -483,6 +495,20 @@ any other selection copies as text, joined in document order.
 Deleting every item in a buffer trashes the buffer itself: an item-level delete
 that leaves an empty husk behind is just litter. That goes through the ordinary
 undo toast.
+
+**A delete leaves the next item selected**, clamping to the new last item when
+you delete off the end — so a run of deletes does not require re-aiming the
+mouse between each one.
+
+### One rule for paste
+
+A paste goes into the buffer you are looking at, and makes a new one only when
+you are looking at nothing. This holds for text and images alike.
+
+> **Corrected.** Text used to always create a new buffer while an image appended
+> to the selected one, so the same gesture did two different things depending on
+> what you had copied. `Ctrl+T` adds an empty text block to the current buffer
+> by the same rule, and is the keyboard route to what pasting text does.
 
 > **Item removal does not unlink blobs, deliberately.** An earlier version
 > deleted the rows and reclaimed the files in one step, so undoing inside the
