@@ -295,6 +295,40 @@ A query, not a counter — so no refcount drift is possible.
 Directory mode `0700`, DB file `0600`. A scratch surface *will* contain tokens
 and passwords in practice.
 
+### Theming
+
+Three choices: follow the system, Light, Dark. The two explicit ones build a
+**complete** palette — every role a widget can draw with, plus the Disabled
+group — rather than patching a few roles onto the platform's.
+
+Patching was the original design and it was wrong in a way that only showed up
+when the user's desktop disagreed with their choice. `applyTheme()` set Window,
+Base, Text and WindowText and inherited the other sixteen roles, so a dark
+desktop with Light selected kept `ButtonText` at white: the menu bar, the header
+buttons and the start page's shortcut rows were white text on a light window,
+measured at 1.00:1. The mirror-image fault applied to Dark under a light
+desktop. A palette is every role or it is none of them.
+
+The one thing still inherited is `QPalette::Highlight` — the accent belongs to
+the user, and a saturated accent reads against either background. Its partner
+`HighlightedText` is chosen here rather than inherited, because a light theme's
+highlighted-text colour carried into a dark theme is how selected text
+disappears.
+
+**Tint the role a widget paints with, not the one you assume it paints with.**
+A `QLabel` inherits its parent's foreground role, so the labels inside the
+start page's clickable shortcut rows draw with `ButtonText`, not `WindowText`.
+`applyPalette()` set `WindowText` on them, which was a silent no-op — the rows
+took whatever the platform's `ButtonText` happened to be, and the emphasis
+difference between a key and its description was lost even when both were
+legible. Both `WelcomeView` and `EmptyStateView` now write to
+`label->foregroundRole()`.
+
+`tests/test_theme.cpp` pins both faults, starting from a deliberately dark
+platform palette: one test measures WCAG contrast for every paired role in both
+themes, the other asserts the emphasis tokens actually reached the painting
+role. Each fails if its own fix is reverted — checked by reverting them.
+
 ### The three empty screens
 
 An empty list is not one state, it is three, and they mean different things:

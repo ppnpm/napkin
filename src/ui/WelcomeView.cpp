@@ -132,10 +132,15 @@ QWidget* WelcomeView::buildShortcutRow(const QString& keys, const QString& what,
 void WelcomeView::applyPalette()
 {
     const QPalette pal = QGuiApplication::palette();
+    // Tint the role the label actually paints with, not the one we assume it
+    // paints with. A QLabel inherits its parent's foreground role, so the ones
+    // inside the clickable shortcut rows draw with ButtonText; setting
+    // WindowText on those changed nothing, and they stayed whatever the
+    // platform's ButtonText happened to be — white text on a light window.
     auto tint = [&](QLabel* label, int alpha) {
         if (!label) return;
         QPalette p = label->palette();
-        p.setColor(QPalette::WindowText, text(pal, alpha));
+        p.setColor(label->foregroundRole(), text(pal, alpha));
         label->setPalette(p);
     };
 

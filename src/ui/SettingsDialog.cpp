@@ -26,6 +26,85 @@ QPalette& systemPalette()
     return saved;
 }
 
+// A theme is every role or it is none of them.
+//
+// This used to patch four roles — Window, Base, Text, WindowText — onto
+// whatever the platform handed us. That works only when the platform already
+// agrees about light or dark. Running a dark desktop and choosing Light left
+// ButtonText at white, so the menu bar, the header buttons and the shortcut
+// rows on the start page were white text on a light window; choosing Dark under
+// a light desktop had the mirror-image fault. Every role a widget can draw with
+// is named here.
+QPalette buildPalette(bool dark, const QPalette& system)
+{
+    QPalette p;
+    auto both = [&](QPalette::ColorRole role, QColor c) { p.setColor(role, c); };
+
+    if (!dark) {
+        both(QPalette::Window,        QColor(239, 240, 241));
+        both(QPalette::WindowText,    QColor( 35,  38,  41));
+        both(QPalette::Base,          QColor(252, 252, 252));
+        both(QPalette::AlternateBase, QColor(247, 247, 247));
+        both(QPalette::Text,          QColor( 35,  38,  41));
+        both(QPalette::Button,        QColor(239, 240, 241));
+        both(QPalette::ButtonText,    QColor( 35,  38,  41));
+        both(QPalette::BrightText,    QColor(255, 255, 255));
+        both(QPalette::ToolTipBase,   QColor(247, 247, 247));
+        both(QPalette::ToolTipText,   QColor( 35,  38,  41));
+        both(QPalette::Light,         QColor(255, 255, 255));
+        both(QPalette::Midlight,      QColor(246, 247, 248));
+        both(QPalette::Mid,           QColor(196, 199, 201));
+        both(QPalette::Dark,          QColor(136, 140, 143));
+        both(QPalette::Shadow,        QColor( 79,  82,  85));
+        both(QPalette::Link,          QColor( 41, 128, 185));
+        both(QPalette::LinkVisited,   QColor(127, 140, 141));
+    } else {
+        both(QPalette::Window,        QColor( 35,  38,  41));
+        both(QPalette::WindowText,    QColor(252, 252, 252));
+        both(QPalette::Base,          QColor( 27,  30,  32));
+        both(QPalette::AlternateBase, QColor( 35,  38,  41));
+        both(QPalette::Text,          QColor(252, 252, 252));
+        both(QPalette::Button,        QColor( 49,  54,  59));
+        both(QPalette::ButtonText,    QColor(252, 252, 252));
+        both(QPalette::BrightText,    QColor(255, 255, 255));
+        both(QPalette::ToolTipBase,   QColor( 49,  54,  59));
+        both(QPalette::ToolTipText,   QColor(252, 252, 252));
+        both(QPalette::Light,         QColor( 69,  76,  82));
+        both(QPalette::Midlight,      QColor( 49,  54,  59));
+        both(QPalette::Mid,           QColor( 39,  43,  46));
+        both(QPalette::Dark,          QColor( 24,  26,  28));
+        both(QPalette::Shadow,        QColor( 16,  18,  19));
+        both(QPalette::Link,          QColor( 61, 174, 233));
+        both(QPalette::LinkVisited,   QColor(155,  89, 182));
+    }
+
+    // Placeholders are text and get no contrast exemption (SPEC.md §7), so this
+    // is the same alpha the tokens use for the quietest readable text.
+    QColor placeholder = p.color(QPalette::Text);
+    placeholder.setAlpha(161);
+    both(QPalette::PlaceholderText, placeholder);
+
+    // The accent is the user's, not ours — it is the one part of the platform
+    // theme worth keeping, and a saturated accent reads on either background.
+    // Its partner is chosen here rather than inherited, because a light-theme
+    // HighlightedText carried into a dark theme is how selected text disappears.
+    const QColor accent = system.color(QPalette::Highlight);
+    both(QPalette::Highlight, accent);
+    both(QPalette::HighlightedText,
+         accent.lightness() > 140 ? QColor(35, 38, 41) : QColor(252, 252, 252));
+
+    // Disabled is a group, not a role: without it Qt keeps the enabled colour
+    // and nothing looks disabled.
+    const QColor greyed = dark ? QColor(137, 142, 147) : QColor(136, 140, 143);
+    for (QPalette::ColorRole role : {QPalette::WindowText, QPalette::Text,
+                                     QPalette::ButtonText, QPalette::HighlightedText})
+        p.setColor(QPalette::Disabled, role, greyed);
+    p.setColor(QPalette::Disabled, QPalette::Highlight,
+               dark ? QColor(49, 54, 59) : QColor(219, 220, 221));
+
+    return p;
+}
+
 }  // namespace
 
 SettingsDialog::Theme SettingsDialog::theme()
@@ -51,24 +130,12 @@ void SettingsDialog::applyTheme()
     case Theme::System:
         QApplication::setPalette(systemPalette());
         return;
-    case Theme::Light: {
-        QPalette p = systemPalette();
-        p.setColor(QPalette::Window, QColor(239, 240, 241));
-        p.setColor(QPalette::Base, QColor(252, 252, 252));
-        p.setColor(QPalette::Text, QColor(35, 38, 41));
-        p.setColor(QPalette::WindowText, QColor(35, 38, 41));
-        QApplication::setPalette(p);
+    case Theme::Light:
+        QApplication::setPalette(buildPalette(false, systemPalette()));
         return;
-    }
-    case Theme::Dark: {
-        QPalette p = systemPalette();
-        p.setColor(QPalette::Window, QColor(35, 38, 41));
-        p.setColor(QPalette::Base, QColor(27, 30, 32));
-        p.setColor(QPalette::Text, QColor(252, 252, 252));
-        p.setColor(QPalette::WindowText, QColor(252, 252, 252));
-        QApplication::setPalette(p);
+    case Theme::Dark:
+        QApplication::setPalette(buildPalette(true, systemPalette()));
         return;
-    }
     }
 }
 
