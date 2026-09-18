@@ -73,8 +73,16 @@ jobs:
 
       # The GUI suites set QT_QPA_PLATFORM=offscreen themselves (CMakeLists),
       # so nothing here needs a display server.
+      # Annotated like the others: a failing suite has to say WHICH suite and
+      # why somewhere readable without admin rights on the repository.
       - name: Test
-        run: ctest --test-dir build --output-on-failure --parallel 2
+        run: |
+          set -o pipefail
+          ctest --test-dir build --output-on-failure --parallel 2 2>&1 | tee ctest.log || {
+            echo "::error title=Tests failed::$(grep -E '^\s*[0-9]+ - |FAIL!|Errors while|tests passed' ctest.log | head -30 | tr '\n' ' ')"
+            echo "::error title=First failure detail::$(grep -A4 'FAIL!' ctest.log | head -20 | tr '\n' ' ')"
+            exit 1
+          }
 
       - name: Install, then validate what a desktop would actually read
         run: |
@@ -98,7 +106,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-test-logs
-          path: build/Testing/Temporary/
+          path: |
+            build/Testing/Temporary/
+            ctest.log
 
   # Informational until Phase 9. SPEC §16 puts Windows after Linux is genuinely
   # good, and this job exists to replace guesses about the port with a build log:

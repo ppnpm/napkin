@@ -42,7 +42,16 @@ if(NOT TARGET SQLite3::SQLite3)
 endif()
 
 qt_standard_project_setup()
-add_compile_options(-Wall -Wextra -Wpedantic)
+
+# Warnings, in each compiler's own spelling. These were GCC's only, and MSVC
+# reported "Command line error D8021: invalid numeric argument '/Wextra'" — the
+# first real portability problem the informational Windows job found, and in the
+# build system rather than in the code.
+if(MSVC)
+  add_compile_options(/W4 /permissive-)
+else()
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
 # --- core ---------------------------------------------------------------------
 # Domain and data layers. Links Qt6::Core but deliberately NOT Qt6::Widgets, so
