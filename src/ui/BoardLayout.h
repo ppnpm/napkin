@@ -35,6 +35,11 @@ public:
     std::vector<int> indicesIn(const QRect& visible, int overscan) const;
     int indexOf(ItemId id) const;
 
+    // Drops a cached measurement. The cache is keyed on the item's last SAVED
+    // time, which does not move while you are typing — so a card being edited
+    // kept returning the height it had before you started.
+    void invalidate(ItemId id);
+
 private:
     int heightFor(const Item& item, int columnWidth, bool* clipped) const;
 

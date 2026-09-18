@@ -133,6 +133,7 @@ private:
     // and 270 ms on every resize event. Only what you can see exists.
     void syncVisibleCards();
     void applyFilter();
+    void syncCardText(TextItemCard* card);
     ItemCard* cardFor(const Item& item);
 
     Thumbnailer& thumbs_;

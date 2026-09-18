@@ -706,6 +706,68 @@ private slots:
         QVERIFY(!f.canvas()->hasSelection());
     }
 
+    // --- a card grows with what you put in it --------------------------------
+    void aCardMadeWithCtrlTGrowsAsYouPasteIntoIt()
+    {
+        GuiFixture f;
+        const auto id = f.seed("existing");
+        f.select(id);
+        auto* edit = f.newTextCard();
+
+        // findChildren is tree order, so .first() is the card that already
+        // existed — not the one Ctrl+T just made.
+        TextItemCard* card = nullptr;
+        for (auto* c : f.canvas()->findChildren<TextItemCard*>())
+            if (c->isComposer()) card = c;
+        QVERIFY(card);
+        const int empty = card->height();
+
+        edit->setPlainText(QStringLiteral(
+            "This is a long pasted paragraph that should wrap onto several lines "
+            "and therefore make its card considerably taller than a single line."));
+        QTRY_VERIFY_WITH_TIMEOUT(card->height() > empty, 2000);
+    }
+
+    void editingAnExistingCardGrowsItToo()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("short")));
+        f.model()->reload();
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        const int before = card->height();
+        card->beginEditing();
+        card->findChild<QPlainTextEdit*>()->setPlainText(QStringLiteral(
+            "Now considerably longer text that wraps across several lines in a "
+            "narrow column and should make the card grow to fit what it holds."));
+
+        // The measurement cache is keyed on the item's last SAVED time, which
+        // does not move while you type — so this card kept the height it had
+        // before the edit began.
+        QTRY_VERIFY_WITH_TIMEOUT(card->height() > before, 2000);
+    }
+
+    void aCardShrinksBackWhenYouCutTextOut()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral(
+            "A reasonably long note that wraps across several lines so that the "
+            "card it lives in is meaningfully taller than the minimum height.")));
+        f.model()->reload();
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        const int tall = card->height();
+        QVERIFY(tall > tokens::kCardMinHeight);
+
+        card->beginEditing();
+        card->findChild<QPlainTextEdit*>()->setPlainText(QStringLiteral("brief"));
+        QTRY_VERIFY_WITH_TIMEOUT(card->height() < tall, 2000);
+    }
+
     // --- card chrome and sizing ----------------------------------------------
     void aPastedParagraphGetsACardTallEnoughToReadIt()
     {

@@ -185,6 +185,30 @@ void ItemCanvas::addPendingTextCard()
             if (asText->isComposer()) { asText->focusTextInteraction(); asText->focusText(); return; }
 }
 
+// Keeps the board's copy of an item in step with the widget the user is typing
+// into. Both lists are updated: allItems_ is what a filter is re-derived from,
+// and items_ is what the layout measures.
+void ItemCanvas::syncCardText(TextItemCard* card)
+{
+    if (!card) return;
+    const QString live = card->text();
+    const ItemId id = card->itemId();
+
+    auto update = [&](std::vector<Item>& list) {
+        for (auto& item : list) {
+            if (item.type != ItemType::Text) continue;
+            // An unwritten composer has no id, and there is only ever one.
+            if (item.id == id && (id != kNoItem || item.id == kNoItem)) {
+                item.text = live;
+                return;
+            }
+        }
+    };
+    update(items_);
+    update(allItems_);
+    board_.invalidate(id);
+}
+
 ItemCard* ItemCanvas::cardFor(const Item& item)
 {
     if (auto* existing = live_.value(item.id, nullptr)) return existing;
@@ -194,7 +218,14 @@ ItemCard* ItemCanvas::cardFor(const Item& item)
         auto* text = new TextItemCard(item, body_);
         connect(text, &TextItemCard::edited, this, &ItemCanvas::edited);
         connect(text, &TextItemCard::imagePasted, this, &ItemCanvas::imagePasted);
-        connect(text, &TextItemCard::heightChanged, this, &ItemCanvas::relayout);
+        connect(text, &TextItemCard::heightChanged, this, [this, text] {
+            // The board measures heights from the ITEM data, which goes stale
+            // the moment you type — so a card being edited stayed at its
+            // minimum height no matter how much you pasted into it. Push the
+            // live text back before measuring.
+            syncCardText(text);
+            relayout();
+        });
         textCards_.push_back(text);
         card = text;
     } else {

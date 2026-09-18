@@ -501,6 +501,16 @@ sole indicator of a state.
 
 ### The board is virtualized
 
+> **Virtualization has a cost the design has to pay back.** Heights come from
+> the item data rather than from widgets — which is what makes it possible — but
+> item data goes stale the moment someone types into a card. Two things keep it
+> true: the live text is pushed back into the board's copy on every keystroke,
+> and the measurement cache is invalidated for that item. Without the first, a
+> card never grew as you pasted into it; without the second, an *existing* card
+> never grew either, because the cache is keyed on the item's last **saved**
+> time and that does not move while you are typing.
+
+
 Card heights are computed from the **items**, not from widgets: text against one
 shared `QTextDocument`, images from the dimensions already stored in the row. So
 the whole board's geometry is known without constructing anything, and only the

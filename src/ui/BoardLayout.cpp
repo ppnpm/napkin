@@ -123,6 +123,11 @@ std::vector<int> BoardLayout::indicesIn(const QRect& visible, int overscan) cons
     return out;
 }
 
+void BoardLayout::invalidate(ItemId id)
+{
+    cache_.remove(id);
+}
+
 int BoardLayout::indexOf(ItemId id) const
 {
     for (size_t i = 0; i < placements_.size(); ++i)
