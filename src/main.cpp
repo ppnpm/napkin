@@ -26,14 +26,14 @@ int main(int argc, char** argv)
     // Must match the .desktop file's basename, or Wayland gives the window no
     // icon and no taskbar identity. Until now this named a file that did not
     // exist anywhere.
-    QGuiApplication::setDesktopFileName(QStringLiteral("napkin"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("io.github.ppnpm.Napkin"));
 
     // Prefer the installed theme icon; fall back to the copies compiled in, so
     // a build straight out of the source tree still has an icon.
-    QIcon icon = QIcon::fromTheme(QStringLiteral("napkin"));
+    QIcon icon = QIcon::fromTheme(QStringLiteral("io.github.ppnpm.Napkin"));
     if (icon.isNull()) {
         for (const char* size : {"16", "32", "48", "64", "128", "256"})
-            icon.addFile(QStringLiteral(":/resources/icons/%1x%1/napkin.png").arg(size));
+            icon.addFile(QStringLiteral(":/resources/icons/%1x%1/io.github.ppnpm.Napkin.png").arg(size));
     }
     QApplication::setWindowIcon(icon);
 

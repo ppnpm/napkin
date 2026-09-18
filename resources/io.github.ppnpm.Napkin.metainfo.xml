@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What a software centre shows about Napkin, and what Flathub requires.
+  The id must match the .desktop basename or the entry and the listing are two
+  unrelated things as far as AppStream is concerned — which is why the desktop
+  file and every icon are named after it too.
+
+  io.github.* rather than org.napkin.*: an AppStream id is a claim to a domain,
+  and Flathub checks it. Naming it after a domain nobody here controls would be
+  a claim that is simply untrue.
+-->
+<component type="desktop-application">
+  <id>io.github.ppnpm.Napkin</id>
+  <launchable type="desktop-id">io.github.ppnpm.Napkin.desktop</launchable>
+
+  <name>Napkin</name>
+  <summary>A persistent scratch surface for your computer</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <developer id="io.github.ppnpm">
+    <name>ppnpm</name>
+  </developer>
+
+  <url type="homepage">https://github.com/ppnpm/napkin</url>
+  <url type="bugtracker">https://github.com/ppnpm/napkin/issues</url>
+
+  <description>
+    <p>
+      Napkin is somewhere to put things before you know whether they matter.
+      Paste text and images into it; nothing needs a name, a folder or a tag.
+    </p>
+    <p>
+      Everything stays on this machine. There is no account, no sync and no
+      network access of any kind. What you paste is written to a local database
+      that only you can read.
+    </p>
+    <p>Napkin holds two kinds of thing and no others:</p>
+    <ul>
+      <li>Text, including links, which render as a chip you can open</li>
+      <li>Images, pasted from anywhere — PNG, JPEG, WebP, SVG and animated GIF</li>
+    </ul>
+    <p>
+      Nothing is deleted on your behalf. Buffers you have not touched in a while
+      move to an "Older" section rather than disappearing, and only the trash
+      empties — of what you already deleted. Everything can be exported to a
+      folder of ordinary files at any time.
+    </p>
+  </description>
+
+  <categories>
+    <category>Utility</category>
+    <category>TextEditor</category>
+  </categories>
+
+  <keywords>
+    <keyword>scratch</keyword>
+    <keyword>notes</keyword>
+    <keyword>paste</keyword>
+    <keyword>screenshot</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1"/>
+
+  <!-- Claimed because they are true and testable, not aspirationally. -->
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">640</display_length>
+  </requires>
+
+  <releases>
+    <release version="0.1.0" date="2026-09-18" type="development">
+      <description>
+        <p>First development release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

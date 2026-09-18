@@ -1,0 +1,39 @@
+# Flatpak manifest.
+#
+# Napkin's premise is that everything stays on this machine (SPEC.md §11), so
+# the sandbox permissions below are the short list it actually needs and nothing
+# else. In particular there is no --share=network and no filesystem access
+# beyond the app's own data: a scratch surface that could reach the network
+# would be a different product.
+id: io.github.ppnpm.Napkin
+runtime: org.kde.Platform
+runtime-version: '6.8'
+sdk: org.kde.Sdk
+command: napkin
+
+finish-args:
+  # A window, on either display server.
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # Clipboard access on X11 needs the X socket above; nothing further.
+  # Deliberately absent:
+  #   --share=network      Napkin never makes a network request.
+  #   --filesystem=host    it stores its own data and nothing else.
+  # "Add an image from a file" and "Export" go through the portal instead, which
+  # hands back exactly the file the user chose and no more.
+  - --talk-name=org.freedesktop.portal.FileChooser
+  - --device=dri
+
+modules:
+  - name: napkin
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    # The suites are headless, so the sandbox verifies its own build rather
+    # than trusting that what passed on the host passes here.
+    build-commands:
+      - ctest --test-dir . --output-on-failure
+    sources:
+      - type: dir
+        path: ..

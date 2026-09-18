@@ -1411,8 +1411,44 @@ drop-down is a font you have to imagine.
   start page's columns, the empty-state column) re-derive them on
   `ApplicationFontChange`.
 
-**Phase 8 — Linux delivery.** `.desktop`, icon, Flatpak and AppImage, optional
-tray mode, and the global capture hotkey (see below).
+**Phase 8 — Linux delivery.** In progress.
+
+**CI ✅.** `.github/workflows/ci.yml`. Linux is the gate: configure, build, the
+whole suite, then install and validate what a desktop actually reads — the
+`.desktop` entry with `desktop-file-validate` and the metainfo with
+`appstreamcli`. Ubuntu 24.04 ships Qt 6.4 and this needs 6.5, so Qt is installed
+explicitly; that also means Linux and Windows build against the same Qt, and a
+failure is about the platform rather than the toolchain. Every step was
+rehearsed locally before being written down.
+
+A **Windows job runs informationally**, allowed to fail. SPEC §16 puts Windows
+after Linux is genuinely good, and this job exists to replace guesses about the
+port with a build log. What is already known to need work: `BlobStore` uses
+`::fsync` and `::open(O_DIRECTORY)` and Windows has no directory sync at all, so
+invariant 6's durability argument has to be re-derived rather than translated;
+`QFile::rename` onto an existing path fails on Windows, which the
+content-addressed blob store does whenever the same image is pasted twice; and
+`QFile::setPermissions` maps to the read-only flag rather than an ACL, so §11's
+0700/0600 promise would be quietly untrue there.
+
+**One identity ✅.** The application id is `io.github.ppnpm.Napkin`, and the
+`.desktop` file, every icon and the metainfo are named after it. AppStream and
+Flathub treat the id, the desktop basename and the icon name as one thing; a
+mismatch means the listing and the launcher are unrelated objects. It is
+`io.github.*` rather than `org.napkin.*` because an AppStream id is a claim to a
+domain and Flathub checks it — naming it after a domain nobody here controls
+would be a claim that is simply untrue.
+
+**Flatpak manifest written, not yet built.** `packaging/io.github.ppnpm.Napkin.yml`.
+No `--share=network` and no `--filesystem=host`: §11 says everything stays on
+this machine, and a sandbox that granted either would make that a matter of
+trust rather than of fact. File chooser and export go through the portal, which
+hands back exactly the file the user picked. `flatpak-builder` is not installed
+here, so **the manifest is unverified** — it is a starting point, not a
+delivered artefact.
+
+Still outstanding: AppImage, the release process, optional tray mode, and the
+global capture hotkey (see below).
 
 **Phase 9 — Windows and macOS.** Only after Linux is genuinely good.
 

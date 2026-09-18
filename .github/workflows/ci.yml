@@ -1,0 +1,108 @@
+name: CI
+
+# Napkin holds the only copy of whatever someone threw at it, so the tests that
+# matter are the ones about not losing it. They run on every push.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: 6.8.2
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ubuntu 24.04 ships Qt 6.4; CMakeLists asks for 6.5. Installing Qt
+      # explicitly also means Linux and Windows build against the same version,
+      # so a failure is about the platform rather than about the toolchain.
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: qtimageformats
+          cache: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libsqlite3-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # The GUI suites set QT_QPA_PLATFORM=offscreen themselves (CMakeLists),
+      # so nothing here needs a display server.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 2
+
+      - name: Install, then validate what a desktop would actually read
+        run: |
+          set -eux
+          cmake --install build --prefix "$PWD/staging"
+          APPID=io.github.ppnpm.Napkin
+          test -x "staging/bin/napkin"
+          test -f "staging/share/applications/$APPID.desktop"
+          test -f "staging/share/metainfo/$APPID.metainfo.xml"
+          test -f "staging/share/icons/hicolor/256x256/apps/$APPID.png"
+          sudo apt-get install -y desktop-file-utils appstream
+          # The id, the .desktop basename and the icon name are one identity to
+          # AppStream and to Flathub; a mismatch means the listing and the
+          # launcher are unrelated objects, which is not something a build
+          # failure would otherwise catch.
+          desktop-file-validate "staging/share/applications/$APPID.desktop"
+          appstreamcli validate --no-net "staging/share/metainfo/$APPID.metainfo.xml"
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-test-logs
+          path: build/Testing/Temporary/
+
+  # Informational until Phase 9. SPEC §16 puts Windows after Linux is genuinely
+  # good, and this job exists to replace guesses about the port with a build log:
+  # POSIX fsync and directory sync in BlobStore, QFile::rename over an existing
+  # file, and QFile::setPermissions as an ACL substitute are all known to need
+  # work. A red mark here is expected and does not gate anything.
+  windows:
+    name: Windows (informational)
+    runs-on: windows-2022
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: qtimageformats
+          cache: true
+
+      - name: Install SQLite
+        run: vcpkg install sqlite3:x64-windows
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 2

@@ -81,12 +81,12 @@ qt_add_library(napkin_ui STATIC
 # logo, so anything that uses the UI — including the tests — needs them. Compiled
 # into the executable they were invisible to everything else.
 qt_add_resources(napkin_ui "icons" PREFIX "/" FILES
-  resources/icons/16x16/napkin.png
-  resources/icons/32x32/napkin.png
-  resources/icons/48x48/napkin.png
-  resources/icons/64x64/napkin.png
-  resources/icons/128x128/napkin.png
-  resources/icons/256x256/napkin.png
+  resources/icons/16x16/io.github.ppnpm.Napkin.png
+  resources/icons/32x32/io.github.ppnpm.Napkin.png
+  resources/icons/48x48/io.github.ppnpm.Napkin.png
+  resources/icons/64x64/io.github.ppnpm.Napkin.png
+  resources/icons/128x128/io.github.ppnpm.Napkin.png
+  resources/icons/256x256/io.github.ppnpm.Napkin.png
   resources/icons/trash-empty-128.png
   resources/icons/trash-empty-256.png
 )
@@ -102,10 +102,17 @@ target_link_libraries(napkin PRIVATE napkin_ui)
 # main.cpp promised the compositor a desktop file that did not exist.
 include(GNUInstallDirs)
 install(TARGETS napkin RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES resources/napkin.desktop
+# Everything a desktop installs is named after the application id: AppStream
+# and Flathub both treat the id, the .desktop basename and the icon name as one
+# identity, and a mismatch means the listing and the launcher are unrelated
+# objects as far as the system is concerned.
+set(NAPKIN_APPID io.github.ppnpm.Napkin)
+install(FILES resources/${NAPKIN_APPID}.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES resources/${NAPKIN_APPID}.metainfo.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 foreach(size 16 22 24 32 48 64 128 256 512)
-  install(FILES resources/icons/${size}x${size}/napkin.png
+  install(FILES resources/icons/${size}x${size}/${NAPKIN_APPID}.png
           DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps)
 endforeach()
 set_target_properties(napkin PROPERTIES WIN32_EXECUTABLE OFF MACOSX_BUNDLE OFF)
