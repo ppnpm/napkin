@@ -71,14 +71,10 @@ void BufferCardDelegate::clearAnimationFrame()
     animatedFrame_ = {};
 }
 
-void BufferCardDelegate::setExpandedHeight(int h) { expandedHeight_ = std::clamp(h, 180, 520); }
-
 QSize BufferCardDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
     // O(1): no text layout here. With 5000 rows this runs constantly.
-    const bool expanded = index.data(BufferListModel::IsExpandedRole).toBool();
-    const int body = expanded ? expandedHeight_ : collapsedHeight();
-    return {option.rect.width(), sectionHeight(index) + body + kMarginY * 2};
+    return {option.rect.width(), sectionHeight(index) + collapsedHeight() + kMarginY * 2};
 }
 
 QRect BufferCardDelegate::cardRect(const QRect& itemRect, const QModelIndex& index) const
@@ -104,7 +100,6 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     p->setRenderHint(QPainter::Antialiasing, true);
 
     const QPalette& pal = option.palette;
-    const bool expanded = index.data(BufferListModel::IsExpandedRole).toBool();
     const bool isDraft  = index.data(BufferListModel::IsDraftRole).toBool();
     const bool selected = option.state & QStyle::State_Selected;
     const bool hovered  = option.state & QStyle::State_MouseOver;
@@ -130,7 +125,7 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     path.addRoundedRect(QRectF(card), kRadius, kRadius);
 
     QColor fill = pal.color(QPalette::Base);
-    if (hovered && !expanded) {
+    if (hovered) {
         // A 2% shift is not a hover state, it is a rounding error. This is
         // still quiet, but it is actually perceptible.
         const bool lightTheme = pal.color(QPalette::Window).lightness() > 128;
@@ -139,13 +134,13 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     p->fillPath(path, fill);
 
     QColor border = pal.color(QPalette::Text);
-    border.setAlpha(selected || expanded ? kBorderActive : kBorderResting);
+    border.setAlpha(selected ? kBorderActive : kBorderResting);
     p->setPen(QPen(border, 1));
     p->drawPath(path);
 
     // Focus is never signalled by colour alone: the selected card also carries a
     // solid accent rule down its leading edge (SPEC.md §14).
-    if (selected || expanded) {
+    if (selected) {
         QPainterPath clip;
         clip.addRoundedRect(QRectF(card), kRadius, kRadius);
         p->save();
@@ -154,9 +149,6 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
                     pal.color(QPalette::Highlight));
         p->restore();
     }
-
-    // The inline editor covers the content area while the row is open.
-    if (expanded) { p->restore(); return; }
 
     // --- pin / keep indicators -------------------------------------------------
     // Never colour alone: each glyph is a distinct shape, and the model exposes

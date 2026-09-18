@@ -1,6 +1,4 @@
 #include "GuiFixture.h"
-#include "../src/ui/BufferEditor.h"
-#include "../src/ui/ItemWidgets.h"
 
 #include <QBuffer>
 #include <QtTest>
@@ -72,7 +70,7 @@ private slots:
     }
 
     // --- (b) selecting a card no longer opens it -----------------------------
-    void clickingSelectsWithoutOpening()
+    void clickingSelectsTheRow()
     {
         GuiFixture f;
         const auto id = f.seed("selectable");
@@ -81,8 +79,7 @@ private slots:
         const QRect rect = f.view()->visualRect(f.model()->index(row, 0));
         QTest::mouseClick(f.view()->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
 
-        QCOMPARE(f.view()->currentIndex().row(), row);   // selected...
-        QVERIFY(!f.view()->isEditing());                 // ...but not opened
+        QCOMPARE(f.view()->currentIndex().row(), row);
     }
 
     void aSelectedCardCanBeActedOnWithTheMouseAlone()
@@ -101,26 +98,25 @@ private slots:
         QVERIFY(f.buffers.find(id)->kept);
     }
 
-    void doubleClickOpensTheBuffer()
+    void selectingABufferShowsItInTheCanvas()
     {
         GuiFixture f;
-        const auto id = f.seed("open me");
-        const int row = f.model()->rowForId(id);
+        const auto id = f.seed("show me");
+        f.select(id);
 
-        const QRect rect = f.view()->visualRect(f.model()->index(row, 0));
-        QTest::mouseDClick(f.view()->viewport(), Qt::LeftButton, Qt::NoModifier, rect.center());
-
-        QVERIFY(f.view()->isEditing());
-        QCOMPARE(f.view()->expandedRow(), row);
+        const auto texts = f.canvas()->findChildren<TextItemCard*>();
+        QCOMPARE(texts.size(), 2);          // the item, plus the composer
+        QCOMPARE(texts[0]->text(), QStringLiteral("show me"));
     }
 
-    void enterStillOpensTheSelectedBuffer()
+    void enterPutsTheCaretInTheCanvas()
     {
         GuiFixture f;
         const auto id = f.seed("keyboard");
         f.view()->setCurrentIndex(f.model()->index(f.model()->rowForId(id), 0));
         QTest::keyClick(f.view(), Qt::Key_Return);
-        QVERIFY(f.view()->isEditing());
+        QVERIFY(f.window.focusWidget());
+        QVERIFY(f.canvas()->isAncestorOf(f.window.focusWidget()));
     }
 
     // --- (c) the expanded editor shows every item ----------------------------
@@ -128,12 +124,12 @@ private slots:
     {
         GuiFixture f;
         const auto id = seedMixed(f, 3);   // 1 text + 3 images
-        f.window.openRow(f.model()->rowForId(id));
+        f.select(id);
 
-        auto* editor = f.view()->editor();
+        auto* editor = f.canvas();
         QVERIFY(editor);
-        const auto images = editor->findChildren<ImageItemWidget*>();
-        const auto texts = editor->findChildren<TextItemWidget*>();
+        const auto images = editor->findChildren<ImageItemCard*>();
+        const auto texts = editor->findChildren<TextItemCard*>();
 
         QCOMPARE(images.size(), 3);          // all three, not just the first
         QCOMPARE(texts.size(), 2);           // the existing one, plus a composer
@@ -145,31 +141,31 @@ private slots:
     {
         GuiFixture f;
         const auto id = seedMixed(f, 2);
-        f.window.openRow(f.model()->rowForId(id));
+        f.select(id);
 
         const auto before = f.items.listForBuffer(id);
         QCOMPARE(int(before.size()), 3);
         const ItemId imageId = before[1].id;
 
-        f.window.removeItemFromBuffer(imageId);
+        f.window.removeItems({imageId});
 
         const auto after = f.items.listForBuffer(id);
         QCOMPARE(int(after.size()), 2);
         for (const auto& item : after) QVERIFY(item.id != imageId);
         // And the editor redrew without it.
-        QCOMPARE(f.view()->editor()->findChildren<ImageItemWidget*>().size(), 1);
+        QCOMPARE(f.canvas()->findChildren<ImageItemCard*>().size(), 1);
     }
 
     void removingTheLastReferenceReclaimsTheBlob()
     {
         GuiFixture f;
         const auto id = seedMixed(f, 1);
-        f.window.openRow(f.model()->rowForId(id));
+        f.select(id);
 
         const auto item = f.items.listForBuffer(id)[1];
         QVERIFY(f.blobs.exists(item.blobHash, item.mime));
 
-        f.window.removeItemFromBuffer(item.id);
+        f.window.removeItems({item.id});
         QVERIFY(!f.blobs.exists(item.blobHash, item.mime));
     }
 
@@ -177,9 +173,9 @@ private slots:
     {
         GuiFixture f;
         const auto id = seedMixed(f, 1);
-        f.window.openRow(f.model()->rowForId(id));
+        f.select(id);
 
-        const auto texts = f.view()->editor()->findChildren<TextItemWidget*>();
+        const auto texts = f.canvas()->findChildren<TextItemCard*>();
         QCOMPARE(texts.size(), 2);
         QTest::keyClicks(texts[1]->findChild<QPlainTextEdit*>(), "a second thought");
         QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == 3, 2000);
@@ -193,9 +189,9 @@ private slots:
     {
         GuiFixture f;
         const auto id = seedMixed(f, 0);
-        f.window.openRow(f.model()->rowForId(id));
+        f.select(id);
 
-        auto* edit = f.view()->editor()->findChildren<TextItemWidget*>()[0]
+        auto* edit = f.canvas()->findChildren<TextItemCard*>()[0]
                          ->findChild<QPlainTextEdit*>();
         QTest::keyClicks(edit, " - amended");
         QTest::qWait(600);

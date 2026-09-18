@@ -254,8 +254,7 @@ private slots:
         f.trigger("newBufferAction");
         QCOMPARE(f.buffers.countLive(), 0);
 
-        f.view()->expandRow(0, {});
-        QMetaObject::invokeMethod(f.view(), "imagePasted", Qt::DirectConnection,
+        QMetaObject::invokeMethod(f.canvas(), "imagePasted", Qt::DirectConnection,
                                   Q_ARG(QByteArray, makePng(64, 64)),
                                   Q_ARG(QString, QStringLiteral("image/png")));
 
@@ -270,7 +269,7 @@ private slots:
         QTest::keyClicks(f.editor(), "Investigate this bug");
         QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
 
-        QMetaObject::invokeMethod(f.view(), "imagePasted", Qt::DirectConnection,
+        QMetaObject::invokeMethod(f.canvas(), "imagePasted", Qt::DirectConnection,
                                   Q_ARG(QByteArray, makePng(80, 60)),
                                   Q_ARG(QString, QStringLiteral("image/png")));
 

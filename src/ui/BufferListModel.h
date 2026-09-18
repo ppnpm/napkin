@@ -32,7 +32,6 @@ public:
         PinnedRole,
         KeptRole,
         IsDraftRole,
-        IsExpandedRole,
         SectionFirstRole,   // this row starts a section
         SectionNameRole,    // "PINNED" / "RECENT"
     };
@@ -55,12 +54,14 @@ public:
     BufferId idAt(int row) const;
     int rowForId(BufferId id) const;
 
-    // --- expansion ----------------------------------------------------------
-    // Reloading is deferred while a row is expanded. Autosave bumps
+    // --- order freeze ---------------------------------------------------------
+    // Reloading is deferred while the order is frozen. Autosave bumps
     // modified_at on every flush, and re-sorting on that would make the card
-    // you are typing into jump to the top of the list (SPEC.md §7).
-    int  expandedRow() const { return expandedRow_; }
-    void setExpandedRow(int row);
+    // whose contents you are typing into jump to the top of the list while you
+    // type (SPEC.md §7). The canvas freezes on the first edit and releases when
+    // the selection moves on.
+    bool orderFrozen() const { return frozen_; }
+    void freezeOrder(bool frozen);
 
     // --- draft --------------------------------------------------------------
     // A draft row exists only in the model until it has content (invariant 5).
@@ -101,7 +102,7 @@ private:
     BufferPreview draftPreview_;
     Mode mode_ = Mode::Live;
 
-    int  expandedRow_   = -1;
+    bool frozen_        = false;
     bool pendingReload_ = false;
 };
 

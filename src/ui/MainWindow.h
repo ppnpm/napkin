@@ -1,5 +1,6 @@
 #pragma once
 #include "../domain/Types.h"
+#include <QList>
 #include <QMainWindow>
 
 class QAction;
@@ -7,6 +8,7 @@ class QLabel;
 class QPushButton;
 class QStackedWidget;
 class QMenu;
+class QSplitter;
 class QTimer;
 
 namespace napkin {
@@ -15,6 +17,7 @@ class Autosave;
 class UndoToast;
 class BufferListModel;
 class BufferListView;
+class ItemCanvas;
 class BufferRepository;
 class BufferService;
 class BlobStore;
@@ -35,7 +38,6 @@ public slots:
     // Public and named so it can be reached from a menu, a toolbar or a test,
     // rather than only through a key chord.
     void newDraft();
-    void collapseEditor();
     void togglePin(int row);
     void toggleKeep(int row);
     void trashRow(int row);
@@ -49,7 +51,8 @@ public slots:
     void addImageFromFile();
     void openImageItem(ItemId id);
     void openRow(int row);
-    void removeItemFromBuffer(ItemId id);
+    void selectBuffer(int row);
+    void removeItems(const QList<ItemId>& ids);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -80,6 +83,8 @@ private:
 
     BufferListModel* model_  = nullptr;
     BufferListView*  view_   = nullptr;
+    ItemCanvas*      canvas_ = nullptr;
+    QSplitter*       splitter_ = nullptr;
     QStackedWidget*  stack_  = nullptr;
     Autosave*        autosave_ = nullptr;
     UndoToast*       toast_ = nullptr;

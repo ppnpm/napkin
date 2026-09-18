@@ -2,7 +2,7 @@
 #include "Autosave.h"
 #include "BufferListModel.h"
 #include "BufferListView.h"
-#include "BufferEditor.h"
+#include "ItemCanvas.h"
 #include "Lightbox.h"
 #include "UndoToast.h"
 
@@ -30,6 +30,7 @@
 #include <QMimeData>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QTimer>
 #include <QHBoxLayout>
@@ -82,8 +83,23 @@ void MainWindow::buildUi()
 
     emptyTitle_ = title; emptyLine1_ = line1; emptyLine2_ = line2;
 
+    canvas_ = new ItemCanvas(thumbs_, blobs_);
+
+    // The list keeps its own width; the canvas takes the rest. Below ~820px the
+    // splitter lets the user collapse either side rather than cramming both.
+    splitter_ = new QSplitter(Qt::Horizontal);
+    splitter_->addWidget(view_);
+    splitter_->addWidget(canvas_);
+    splitter_->setStretchFactor(0, 0);
+    splitter_->setStretchFactor(1, 1);
+    splitter_->setChildrenCollapsible(false);
+    view_->setMinimumWidth(260);
+    view_->setMaximumWidth(520);
+    canvas_->setMinimumWidth(320);
+    splitter_->setSizes({340, 660});
+
     stack_ = new QStackedWidget;
-    stack_->addWidget(view_);
+    stack_->addWidget(splitter_);
     stack_->addWidget(empty);
 
     auto* central = new QWidget;
@@ -114,24 +130,30 @@ void MainWindow::buildUi()
     autosave_->setFlushHandler([this] { flushAndReportFailure(); });
 
     connect(view_, &BufferListView::rowActivated, this, &MainWindow::openRow);
-    connect(view_, &BufferListView::collapseRequested, this, &MainWindow::collapseEditor);
-    connect(view_, &BufferListView::editorTextChanged, this, [this] {
-        autosave_->noteChange();
-        if (editingBuffer_ == kNoBuffer) {
-            // Keep the draft card honest before it has ever been written.
-            Draft d;
-            for (const auto& dirty : view_->editor()->dirtyText()) d.setText(dirty.text);
-            model_->setDraftPreview(derivePreview(d.items(), int(d.items().size()),
-                                                  0 /* images */));
-        }
-    });
-    connect(view_, &BufferListView::imageItemActivated, this, &MainWindow::openImageItem);
-    connect(view_, &BufferListView::itemRemoveRequested, this, &MainWindow::removeItemFromBuffer);
-    connect(model_, &BufferListModel::countChanged, this, [this] { updateEmptyState(); });
-    connect(view_, &BufferListView::imagePasted, this,
+    connect(view_->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
+            [this](const QModelIndex& current, const QModelIndex&) {
+                selectBuffer(current.isValid() ? current.row() : -1);
+            });
+    connect(canvas_, &ItemCanvas::imageActivated, this, &MainWindow::openImageItem);
+    connect(canvas_, &ItemCanvas::removeRequested, this, &MainWindow::removeItems);
+    connect(canvas_, &ItemCanvas::imagePasted, this,
             [this](const QByteArray& bytes, const QString& mime) {
                 addImageToCurrent(bytes, mime, QString());
             });
+    connect(canvas_, &ItemCanvas::edited, this, [this] {
+        // Freeze on the first keystroke: autosave is about to bump modified_at,
+        // and the card you are typing into must not leap to the top.
+        model_->freezeOrder(true);
+        autosave_->noteChange();
+        if (editingBuffer_ == kNoBuffer) {
+            Draft d;
+            for (const auto& dirty : canvas_->dirtyText()) d.setText(dirty.text);
+            model_->setDraftPreview(derivePreview(d.items(), int(d.items().size()), 0));
+        }
+    });
+
+    connect(model_, &BufferListModel::countChanged, this, [this] { updateEmptyState(); });
+
 
     // --- actions --------------------------------------------------------------
     // An action rather than a bare shortcut: it carries its own label and key
@@ -293,7 +315,7 @@ void MainWindow::restoreRow(int row)
 
 void MainWindow::showTrash(bool trash)
 {
-    collapseEditor();
+    flushAndReportFailure();
     toast_->dismiss();
     model_->setMode(trash ? BufferListModel::Mode::Trash : BufferListModel::Mode::Live);
     emptyTrashButton_->setVisible(trash && model_->rowCount() > 0);
@@ -443,7 +465,7 @@ bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
     try {
         // The blob is already fsynced and renamed into place, so committing the
         // row now can only ever leave an orphan, never a dangling reference.
-        if (view_->isEditing()) {
+        {
             autosave_->flushNow();                       // the text lands first
             if (editingBuffer_ == kNoBuffer) {           // an empty draft gets promoted
                 Draft draft;
@@ -451,21 +473,23 @@ bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
                                           stored.byteSize, sourceName, stored.mime,
                                           stored.animated));
                 editingBuffer_ = service_.commitDraft(draft);
-                model_->promoteDraft(editingBuffer_);
+                if (model_->hasDraft()) {
+                    model_->promoteDraft(editingBuffer_);
+                } else {
+                    // Pasted straight onto the stack with nothing selected:
+                    // there is no draft card to promote, so the list has to
+                    // learn about the new buffer the ordinary way.
+                    model_->reload();
+                    if (const int row = model_->rowForId(editingBuffer_); row >= 0)
+                        view_->setCurrentIndex(model_->index(row, 0));
+                }
             } else {
                 service_.appendTo(editingBuffer_,
                     Item::makeImage(stored.hash, stored.size.width(), stored.size.height(),
                                     stored.byteSize, sourceName, stored.mime, stored.animated));
             }
+            canvas_->setItems(items_.listForBuffer(editingBuffer_));
             model_->invalidatePreview(editingBuffer_);
-        } else {
-            Draft draft;
-            draft.add(Item::makeImage(stored.hash, stored.size.width(), stored.size.height(),
-                                      stored.byteSize, sourceName, stored.mime, stored.animated));
-            const BufferId id = service_.commitDraft(draft);
-            model_->reload();
-            if (const int row = model_->rowForId(id); row >= 0)
-                view_->setCurrentIndex(model_->index(row, 0));
         }
     } catch (const std::exception&) {
         reportProblem(tr("Could not add the image"),
@@ -482,7 +506,7 @@ void MainWindow::pasteFromClipboard()
 {
     // While an editor is focused the editor handles its own paste, so this
     // only fires for a paste onto the stack itself.
-    if (view_->isEditing()) return;
+
 
     const auto content = readClipboard(QApplication::clipboard()->mimeData());
     switch (content.kind) {
@@ -563,10 +587,7 @@ void MainWindow::resizeEvent(QResizeEvent* e)
 
 void MainWindow::newDraft()
 {
-    if (view_->isEditing()) {
-        collapseEditor();
-        if (view_->isEditing()) return;   // a failed save is holding the editor open
-    }
+    if (!flushAndReportFailure()) return;
     // Ctrl+N while looking at the bin used to create a live buffer and display
     // it under the TRASH header.
     if (model_->mode() != BufferListModel::Mode::Live) showTrash(false);
@@ -575,39 +596,74 @@ void MainWindow::newDraft()
     const int row = model_->insertDraftRow();
     editingBuffer_ = kNoBuffer;
     editingItem_   = kNoItem;
-    view_->expandRow(row, {});
+    view_->setCurrentIndex(model_->index(row, 0));
+    canvas_->setItems({});
+    canvas_->focusComposer();
 }
 
-void MainWindow::openRow(int row)
+// Selecting a buffer in the list shows it in the canvas. There is no expand
+// step any more: the pane is always there, so selection *is* opening.
+void MainWindow::selectBuffer(int row)
 {
-    if (view_->isEditing()) {
-        collapseEditor();
-        if (view_->isEditing()) return;
+    if (!flushAndReportFailure()) return;   // do not leave the old buffer's text behind
+    model_->freezeOrder(false);             // the previous buffer is done; let it re-sort
+
+    // An abandoned draft evaporates because it never had a row (invariant 5).
+    if (editingBuffer_ == kNoBuffer && model_->hasDraft() && model_->draftRow() != row) {
+        const int draft = model_->draftRow();
+        model_->removeDraftRow();
+        if (draft >= 0 && draft < row) --row;   // the list shifted under us
     }
 
     const BufferId id = model_->idAt(row);
+    if (row < 0) {
+        editingBuffer_ = kNoBuffer;
+        canvas_->showNothingSelected();
+        return;
+    }
+
     editingBuffer_ = id;
-    view_->expandRow(row, id == kNoBuffer ? std::vector<Item>{} : items_.listForBuffer(id));
+    canvas_->setItems(id == kNoBuffer ? std::vector<Item>{} : items_.listForBuffer(id));
 }
 
-void MainWindow::collapseEditor()
+// Enter or a double-click puts the caret in the canvas, which is the "open it
+// and start typing" gesture now that the pane is always visible.
+void MainWindow::openRow(int row)
 {
-    if (!view_->isEditing()) return;
-    if (!flushAndReportFailure()) return;   // keep the editor open; the text lives there
+    if (view_->currentIndex().row() != row)
+        view_->setCurrentIndex(model_->index(row, 0));
+    canvas_->focusComposer();
+}
 
-    // An abandoned draft evaporates because it was never written (invariant 5).
-    if (editingBuffer_ == kNoBuffer) model_->removeDraftRow();
+void MainWindow::removeItems(const QList<ItemId>& ids)
+{
+    if (editingBuffer_ == kNoBuffer || ids.isEmpty()) return;
 
-    view_->collapse();
-    editingBuffer_ = kNoBuffer;
-    editingItem_   = kNoItem;
-    updateEmptyState();
+    for (ItemId id : ids) service_.removeItem(editingBuffer_, id);
+    reconcileBlobs(items_, blobs_, paths::thumbsDir());
+
+    // If that emptied the buffer, the buffer itself goes too: an item-level
+    // delete that leaves a husk behind is just litter.
+    if (items_.countForBuffer(editingBuffer_) == 0) {
+        const BufferId emptied = editingBuffer_;
+        if (const auto before = buffers_.find(emptied))
+            lastTrashed_ = {emptied, before->kept, before->modifiedAt};
+        if (!service_.trash(emptied)) service_.trashConfirmed(emptied);
+        editingBuffer_ = kNoBuffer;
+        canvas_->showNothingSelected();
+        reloadPreservingSelection();
+        toast_->offer(tr("Buffer moved to trash"), emptied);
+        return;
+    }
+
+    canvas_->setItems(items_.listForBuffer(editingBuffer_));
+    model_->invalidatePreview(editingBuffer_);
 }
 
 bool MainWindow::flushEditor()
 {
-    if (!view_->isEditing()) return true;
-    auto* editor = view_->editor();
+    if (!canvas_) return true;
+    auto* editor = canvas_;
     const auto dirty = editor->dirtyText();
     if (dirty.empty()) return true;
 
@@ -687,23 +743,14 @@ void MainWindow::openImageItem(ItemId id)
     box.exec();
 }
 
-void MainWindow::removeItemFromBuffer(ItemId id)
-{
-    if (editingBuffer_ == kNoBuffer) return;
-    const auto item = items_.find(id);
-    if (!item) return;
-
-    service_.removeItem(editingBuffer_, id);
-    reconcileBlobs(items_, blobs_, paths::thumbsDir());
-    view_->editor()->setItems(items_.listForBuffer(editingBuffer_));
-    model_->invalidatePreview(editingBuffer_);
-}
-
 bool MainWindow::event(QEvent* e)
 {
     // Losing the window is one of the moments where waiting would be
     // indefensible (SPEC.md §8).
-    if (e->type() == QEvent::WindowDeactivate) autosave_->flushNow();
+    if (e->type() == QEvent::WindowDeactivate) {
+        autosave_->flushNow();
+        model_->freezeOrder(false);
+    }
     return QMainWindow::event(e);
 }
 

@@ -384,6 +384,167 @@ accidental deletion is the single fastest way to lose a user forever.
 Single window. One vertical stack. Virtualized from day one — §12 promises 5000
 buffers, and retrofitting virtualization into a card list is miserable.
 
+### Editing: a second pane
+
+**This reverses the decision the previous two versions of this section argued
+for, and the reversal is the right call.**
+
+§7 previously chose inline expansion over master-detail, and rejected a two-pane
+mockup on the grounds that two panes add a navigation model. That argument was
+sound when a buffer was a note. It did not survive buffers holding four images
+and needing item-level operations:
+
+- A card sized for a two-line preview cannot host a 900×520 screenshot, so the
+  implementation showed a 52px centre-crop — which is how "images do not look
+  very good" happened. It was a layout problem wearing a rendering problem's
+  clothes.
+- The independent review reached the same conclusion unprompted: *"multi-item
+  buffers and inline expansion are in tension, and the spec never reconciled
+  them."* It also pointed out that the built app had already paid the
+  navigation-model cost — a list focused separately from an editor that stole
+  focus, nested scroll regions, keys that silently changed meaning — while
+  getting none of the benefit.
+- Selecting an *item* in order to copy, cut or delete it needs somewhere for
+  items to be objects. A card has no room to be a canvas.
+
+```
++----------------+--------------------------------------+
+| PINNED         |  [ text block                      ] |
+|  [ card ]      |  [ image, at pane width, captioned ] |
+| RECENT         |  [ text block                      ] |
+|  [ card ]      |  [ image                           ] |
+|  [ card ]      |  [ composer: type or paste…        ] |
++----------------+--------------------------------------+
+   selection                  the selected buffer
+```
+
+**What the mockup got right, and what it got wrong, both stand.** The list keeps
+sections, relative timestamps, thumbnails and the pin/keep indicators — the
+things the earlier review correctly said a bare rail would lose — and the list
+is still one row per *buffer*, not per item. Only the editing surface moved.
+
+Selection *is* opening: there is no expand step, so a single click both selects
+the row and fills the canvas. Enter or double-click puts the caret in the
+canvas.
+
+### Items are selectable objects
+
+The hard part is that a text block must be both a selectable object and an
+editable field. Resolved by making a bare click mean the obvious thing for what
+is under it:
+
+| Gesture | Meaning |
+|---|---|
+| Click on text | place the caret (edit) |
+| Click on an image | select the block — an image has no caret to mean instead |
+| Ctrl / Shift + click | select the block, never place a caret |
+| `Esc` while editing | leave the text, select its block |
+| Click empty canvas | clear the selection |
+| `Ctrl+A` | select every item (not the unwritten composer) |
+
+`Ctrl+C`, `Ctrl+X` and `Delete` act on the selection when the canvas has focus,
+and never while a caret is in a text block — there, they mean what they always
+mean. A single selected image copies as an **image**, so it pastes into anything;
+any other selection copies as text, joined in document order.
+
+Deleting every item in a buffer trashes the buffer itself: an item-level delete
+that leaves an empty husk behind is just litter. That goes through the ordinary
+undo toast.
+
+**The order freeze survives the change.** Autosave still bumps `modified_at` on
+every flush, so the list would still re-sort under the buffer being edited. The
+canvas freezes the order on the first keystroke and releases it when the
+selection moves on or the window loses focus.
+
+### Search
+
+```sql
+CREATE VIRTUAL TABLE items_fts USING fts5(
+  text, source_name,
+  content='items', content_rowid='id',
+  tokenize='unicode61 remove_diacritics 2'
+);
+```
+
+Kept in sync by `AFTER INSERT/UPDATE/DELETE` triggers on `items`. Results roll
+**up** to buffer level and dedupe — the UI shows buffers, so a match on item 3's
+`source_name` surfaces the whole buffer. Rank with `bm25()`, snippet with
+`snippet()`. No query language in v1; substring-ish prefix matching only.
+
+### Enforcing invariant 1 below the application layer
+
+```sql
+CREATE TABLE napkin_meta (key TEXT PRIMARY KEY, value TEXT);
+
+CREATE TRIGGER guard_kept_delete BEFORE DELETE ON buffers
+WHEN OLD.kept = 1
+ AND COALESCE((SELECT value FROM napkin_meta WHERE key='allow_kept_delete'),'0') <> '1'
+BEGIN
+  SELECT RAISE(ABORT, 'refusing to delete a kept buffer');
+END;
+```
+
+The confirmed-delete path sets the flag inside its transaction and clears it
+after. This is what "must be enforced by the data layer, not the UI" actually
+looks like — a bug anywhere in the service layer cannot destroy kept data.
+
+Migrations from commit one, via `user_version`. Forward-only.
+
+---
+
+## 6. Lifecycle — the decision v1 never made
+
+v1 was contradictory: it declared at length that kept buffers survive "automatic
+cleanup," while also showing cleanup as a manual dialog and promising to tolerate
+5000 buffers forever. The unanswered question — *does anything ever delete
+without being asked?* — made the whole cleanup phase unbuildable.
+
+**Decision: Napkin never auto-deletes a live buffer. There is no expiry.**
+
+Instead, age changes *visibility*, not existence:
+
+```
+PINNED    pinned buffers, newest first
+RECENT    everything modified within the last 30 days
+OLDER     collapsed section, dimmed, still searchable, still there
+```
+
+Cleanup ("Sweep") is always user-initiated, surfaced by a quiet inline nudge
+once the buffer count crosses a threshold:
+
+```
+┌──────────────────────────────────────────────┐
+│ 83 buffers · 61 older than 30 days           │
+│  4 kept — excluded                Review  ✕  │
+└──────────────────────────────────────────────┘
+```
+
+Sweep moves buffers to **trash**, it does not erase them. `kept` buffers are
+excluded from the sweep's default selection, permanently — that is what Keep
+buys you: you decide once, and never re-decide on any future sweep.
+
+### Trash and undo
+
+v1 had no undo anywhere, while also declaring "never silently discard user
+content." For an app whose premise is *throw things in without thinking*,
+accidental deletion is the single fastest way to lose a user forever.
+
+- Delete is a soft delete (`deleted_at`), always, for every path.
+- An **Undo** toast appears for ~8 seconds after any delete or sweep.
+- Trash is browsable and restorable, and can be emptied on demand — a confirmed,
+  irreversible action, which then reclaims the blobs those buffers held.
+- Trash purges items older than 30 days on startup. **This is the only automatic
+  hard delete in Napkin, and it only ever touches things the user already deleted.**
+  Emptying the trash skips any buffer still marked kept, which is the safe failure.
+- Deleting a `kept` buffer requires explicit confirmation, even into trash.
+
+---
+
+## 7. UI
+
+Single window. One vertical stack. Virtualized from day one — §12 promises 5000
+buffers, and retrofitting virtualization into a card list is miserable.
+
 ### Editing: inline expansion
 
 v1 specified a card stack and separately specified "focus moves to an editor,"

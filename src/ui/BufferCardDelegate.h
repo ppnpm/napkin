@@ -32,10 +32,6 @@ public:
     QRect cardRect(const QRect& itemRect, const QModelIndex& index) const;
     QRect contentRect(const QRect& itemRect, const QModelIndex& index) const;
 
-    // Set by the view from the editor's document height while a row is open.
-    void setExpandedHeight(int h);
-    int  expandedHeight() const { return expandedHeight_; }
-
     int collapsedHeight() const;
     int sectionHeight(const QModelIndex& index) const;
 
@@ -59,7 +55,6 @@ private:
     Thumbnailer* thumbnailer_ = nullptr;
     int     animatedRow_ = -1;
     QPixmap animatedFrame_;
-    int expandedHeight_ = 260;
 };
 
 }  // namespace napkin

@@ -183,7 +183,7 @@ private slots:
         f.model()->reload();          // drops the preview cache
         const int before = f.statementCount();
         for (int row = 0; row < f.model()->rowCount(); ++row) {
-            f.model()->index(row, 0).data(BufferListModel::IsExpandedRole);
+            f.model()->index(row, 0).data(BufferListModel::IsDraftRole);
             f.model()->index(row, 0).data(BufferListModel::PinnedRole);
             f.model()->index(row, 0).data(BufferListModel::SectionFirstRole);
         }

@@ -27,13 +27,13 @@ void BufferListModel::setMode(Mode mode)
 {
     if (mode_ == mode) return;
     mode_ = mode;
-    expandedRow_ = -1;  // nothing stays open across a mode switch
+    frozen_ = false;   // nothing is being edited across a mode switch
     reload();
 }
 
 void BufferListModel::reload()
 {
-    if (expandedRow_ >= 0) { pendingReload_ = true; return; }  // see setExpandedRow
+    if (frozen_) { pendingReload_ = true; return; }  // see freezeOrder
 
     beginResetModel();
     rows_ = mode_ == Mode::Live ? buffers_.listLive(kMaxRows) : buffers_.listTrash();
@@ -96,7 +96,6 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     case PinnedRole:     return b.pinned;
     case KeptRole:       return b.kept;
     case IsDraftRole:    return isDraft;
-    case IsExpandedRole: return row == expandedRow_;
     case SectionFirstRole:
         if (mode_ == Mode::Trash) return row == 0;
         if (row == 0) return true;
@@ -145,18 +144,13 @@ Qt::ItemFlags BufferListModel::flags(const QModelIndex& index) const
     return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
 }
 
-void BufferListModel::setExpandedRow(int row)
+void BufferListModel::freezeOrder(bool frozen)
 {
-    if (row == expandedRow_) return;
-    const int previous = expandedRow_;
-    expandedRow_ = row;
-
-    for (int r : {previous, row})
-        if (r >= 0 && r < int(rows_.size()))
-            emit dataChanged(index(r), index(r), {IsExpandedRole});
+    if (frozen_ == frozen) return;
+    frozen_ = frozen;
 
     // The list re-sorts only once nothing is being edited.
-    if (expandedRow_ < 0 && pendingReload_) {
+    if (!frozen_ && pendingReload_) {
         pendingReload_ = false;
         reload();
     }
@@ -207,7 +201,6 @@ void BufferListModel::removeDraftRow()
     beginRemoveRows({}, row, row);
     rows_.erase(rows_.begin() + row);
     endRemoveRows();
-    if (expandedRow_ == row) expandedRow_ = -1;
     emit countChanged(int(rows_.size()));
 }
 

@@ -7,6 +7,8 @@
 #include "../src/media/Thumbnailer.h"
 #include "../src/ui/BufferListModel.h"
 #include "../src/ui/BufferListView.h"
+#include "../src/ui/ItemCanvas.h"
+#include "../src/ui/ItemCard.h"
 #include "../src/ui/MainWindow.h"
 #include "../src/ui/UndoToast.h"
 
@@ -42,7 +44,22 @@ public:
     napkin::BufferListModel* model() { return window.findChild<napkin::BufferListModel*>(); }
     napkin::BufferListView*  view()  { return window.findChild<napkin::BufferListView*>(); }
     napkin::UndoToast*       toast() { return window.findChild<napkin::UndoToast*>(); }
-    QPlainTextEdit*          editor() { return window.findChild<QPlainTextEdit*>(); }
+    napkin::ItemCanvas*      canvas() { return window.findChild<napkin::ItemCanvas*>(); }
+
+    // Selecting a row in the list is what shows a buffer now; there is no
+    // expand step.
+    void select(napkin::BufferId id)
+    {
+        const int row = model()->rowForId(id);
+        QVERIFY(row >= 0);
+        view()->setCurrentIndex(model()->index(row, 0));
+    }
+    // The last text block in the canvas is the composer: where new text goes.
+    QPlainTextEdit* editor()
+    {
+        const auto edits = window.findChildren<QPlainTextEdit*>();
+        return edits.isEmpty() ? nullptr : edits.last();
+    }
 
     QString thumbsDir() const { return base_.dir.path() + "/thumbs"; }
 
