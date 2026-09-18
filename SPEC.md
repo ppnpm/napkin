@@ -499,6 +499,29 @@ sole indicator of a state.
   scrolls horizontally, which is visible, instead of silently breaching the
   stated minimum.
 
+### The board is virtualized
+
+Card heights are computed from the **items**, not from widgets: text against one
+shared `QTextDocument`, images from the dimensions already stored in the row. So
+the whole board's geometry is known without constructing anything, and only the
+cards inside the visible band plus an overscan actually exist.
+
+| 1000 text items in one buffer | before | after |
+|---|---|---|
+| Live `QPlainTextEdit` widgets | 1000 | **12** |
+| Peak RSS | 365 MB | **53 MB** |
+| Per resize event | 270 ms | **31 ms** |
+| Opening the buffer | 357 ms | 165 ms |
+
+Memory is now flat in the item count — 52 MB at 50 items and 53 MB at 1000.
+Opening still scales, because measuring a thousand documents is real work; that
+is a one-off per buffer and a reasonable next target, not a correctness problem.
+
+> §12 previously claimed virtualization was "Phase 2 architecture, not Phase 10
+> polish", and argued that "retrofitting virtualization into a card list is
+> miserable" — and then the board was built with none of it. The argument was
+> right and the code ignored it. Retrofitting it was indeed miserable.
+
 > **A card's size depends on its own content and nothing else.** That is harder
 > than it sounds. The layout width is computed from the widget width **minus the
 > scrollbar extent, unconditionally** — because with an as-needed scrollbar,

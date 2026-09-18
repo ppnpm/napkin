@@ -1,7 +1,9 @@
 #pragma once
 #include "../domain/Item.h"
+#include "BoardLayout.h"
 #include <QScrollArea>
 
+#include <QHash>
 #include <QSet>
 #include <vector>
 
@@ -12,7 +14,6 @@ namespace napkin {
 
 class BlobStore;
 class ItemCard;
-class MasonryLayout;
 class TextItemCard;
 class Thumbnailer;
 
@@ -100,15 +101,23 @@ protected:
     void resizeEvent(QResizeEvent* e) override;
 
 private:
-    void addCard(ItemCard* card, int index = -1);
+    void wireCard(ItemCard* card);
     void applySelection(ItemId id, Qt::KeyboardModifiers modifiers);
     void relayout();
     int  stableWidth() const;
 
+    // Builds widgets for the visible band and destroys the rest. A buffer with
+    // 1000 text items used to construct 1000 live QPlainTextEdits: 365 MB peak
+    // and 270 ms on every resize event. Only what you can see exists.
+    void syncVisibleCards();
+    ItemCard* cardFor(const Item& item);
+
     Thumbnailer& thumbs_;
     BlobStore&   blobs_;
     QWidget*     body_ = nullptr;
-    MasonryLayout* layout_ = nullptr;
+    BoardLayout    board_;
+    std::vector<Item> items_;                 // every item; widgets only for some
+    QHash<ItemId, ItemCard*> live_;           // the cards that currently exist
     QLabel*      placeholder_ = nullptr;
 
     std::vector<ItemCard*>     cards_;

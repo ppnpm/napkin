@@ -48,6 +48,8 @@ public:
     // only on its own content — never on what its neighbours are doing.
     int heightForColumn(int width) const;
     bool isClipped() const { return clipped_; }
+    // Set by the board, which is what computes heights now.
+    void setClipped(bool clipped);
 
     virtual bool hasEditFocus() const { return false; }
 

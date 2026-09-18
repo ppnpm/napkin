@@ -59,6 +59,7 @@ qt_add_library(napkin_ui STATIC
   src/ui/ItemCard.cpp
   src/ui/CardFooter.cpp
   src/ui/MasonryLayout.cpp
+  src/ui/BoardLayout.cpp
 
   src/ui/Autosave.cpp
   src/ui/Icons.cpp

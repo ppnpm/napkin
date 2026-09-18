@@ -1,7 +1,7 @@
 #include "ItemCanvas.h"
 #include "ItemCard.h"
+#include "../domain/Clock.h"
 #include "../media/BlobStore.h"
-#include "MasonryLayout.h"
 #include "Tokens.h"
 
 #include <QApplication>
@@ -37,11 +37,12 @@ ItemCanvas::ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     body_ = new QWidget;
-    layout_ = new MasonryLayout(body_);
-    layout_->setContentsMargins(kPadX, kPadTop, kPadX, kPadTop);
-    layout_->setColumnWidth(kCardMinWidth, kCardMaxWidth);
-    layout_->setSpacingBetween(kCardGap);
+    body_->setAutoFillBackground(false);
     setWidget(body_);
+
+    // Rebuild the visible band as the board scrolls.
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this,
+            [this] { syncVisibleCards(); });
 
     placeholder_ = new QLabel;
     placeholder_->setAlignment(Qt::AlignCenter);
@@ -53,18 +54,60 @@ void ItemCanvas::clearItems()
 {
     cards_.clear();
     textCards_.clear();
+    live_.clear();
     selected_.clear();
     anchor_ = kNoItem;
     cursor_ = -1;
-    while (QLayoutItem* child = layout_->takeAt(0)) {
-        if (QWidget* w = child->widget()) {
-            // Reparenting before deleteLater() takes the widget out of the tree
-            // now; deferring alone leaves removed items live and drawn until the
-            // next event-loop turn.
-            if (w != placeholder_) { w->hide(); w->setParent(nullptr); w->deleteLater(); }
-            else { w->hide(); }
-        }
-        delete child;
+    items_.clear();
+    // Copy first: setParent(nullptr) removes the child from the very list being
+    // iterated, so walking it live skips every other widget and leaves stale
+    // cards parented and visible.
+    const QObjectList children = body_->children();
+    for (QObject* child : children) {
+        auto* w = qobject_cast<QWidget*>(child);
+        if (!w || w == placeholder_) continue;
+        // Reparenting before deleteLater() takes the widget out of the tree
+        // now; deferring alone leaves removed cards live and drawn until the
+        // next event-loop turn.
+        w->hide();
+        w->setParent(nullptr);
+        w->deleteLater();
+    }
+}
+
+// The width every card is laid out against. Deliberately NOT viewport()->width():
+// with an as-needed scrollbar, adding one item can make the bar appear, shrink
+// the viewport by ~14px, change the column width and resize EVERY card in the
+// buffer. Reserving the extent unconditionally makes a card's size depend only
+// on its own content.
+int ItemCanvas::stableWidth() const
+{
+    return std::max(kCardMinWidth, width() - verticalScrollBar()->sizeHint().width()
+                                       - frameWidth() * 2);
+}
+
+void ItemCanvas::wireCard(ItemCard* card)
+{
+    connect(card, &ItemCard::selectRequested, this, &ItemCanvas::applySelection);
+    connect(card, &ItemCard::activated, this, &ItemCanvas::imageActivated);
+    connect(card, &ItemCard::copyRequested, this, [this](ItemId id) {
+        // One mechanism at two scopes, held by an invariant: after any copy the
+        // clipboard matches what is visibly selected.
+        applySelection(id, Qt::NoModifier);
+        copySelection();
+    });
+    connect(card, &ItemCard::escaped, this, [this, card] {
+        applySelection(card->itemId(), Qt::NoModifier);
+        setFocus(Qt::OtherFocusReason);
+    });
+    if (auto* asText = qobject_cast<TextItemCard*>(card)) {
+        // Only one card edits at a time, so the board never has two carets or
+        // an ambiguous Ctrl+C.
+        connect(asText, &TextItemCard::editingStarted, this, [this](ItemId id) {
+            for (auto* other : textCards_)
+                if (other->itemId() != id) other->endEditing();
+            clearSelection();
+        });
     }
 }
 
@@ -75,12 +118,13 @@ void ItemCanvas::showEmptyBuffer()
     // be pasted into, so it says that rather than offering a blank page.
     placeholder_->setText(tr("Nothing here yet.\n\nPaste with Ctrl+V, or press Ctrl+T "
                              "to write something."));
-    placeholder_->setParent(body_);
-    placeholder_->show();
-    layout_->addWidget(placeholder_);
     QPalette pal = placeholder_->palette();
     pal.setColor(QPalette::WindowText, text(pal, kTextTertiary));
     placeholder_->setPalette(pal);
+    placeholder_->setParent(body_);
+    placeholder_->setGeometry(0, kPadTop, std::max(200, stableWidth()), 120);
+    placeholder_->show();
+    body_->setFixedSize(std::max(200, stableWidth()), viewport()->height());
 }
 
 void ItemCanvas::showNothingSelected()
@@ -91,44 +135,28 @@ void ItemCanvas::showNothingSelected()
     pal.setColor(QPalette::WindowText, text(pal, kTextTertiary));
     placeholder_->setPalette(pal);
     placeholder_->setParent(body_);
+    placeholder_->setGeometry(0, kPadTop, std::max(200, stableWidth()), 120);
     placeholder_->show();
-    layout_->addWidget(placeholder_);
+    body_->setFixedSize(std::max(200, stableWidth()), viewport()->height());
 }
 
-void ItemCanvas::addCard(ItemCard* card, int index)
+int ItemCanvas::indexOf(ItemId id) const
 {
-    connect(card, &ItemCard::copyRequested, this, [this](ItemId id) {
-        // One mechanism at two scopes, held by an invariant: after any copy the
-        // clipboard matches what is visibly selected. Saving and restoring the
-        // previous selection around this broke that — you would see two cards
-        // highlighted while a third sat on the clipboard.
-        applySelection(id, Qt::NoModifier);
-        copySelection();
-    });
-    if (auto* text = qobject_cast<TextItemCard*>(card)) {
-        // Only one block edits at a time: starting one ends the others, so the
-        // canvas never has two carets or an ambiguous Ctrl+C.
-        connect(text, &TextItemCard::editingStarted, this, [this](ItemId id) {
-            for (auto* other : textCards_)
-                if (other->itemId() != id) other->endEditing();
-            clearSelection();
-        });
-    }
-    connect(card, &ItemCard::selectRequested, this, &ItemCanvas::applySelection);
-    connect(card, &ItemCard::activated, this, &ItemCanvas::imageActivated);
-    connect(card, &ItemCard::escaped, this, [this, card] {
-        selected_ = {card->itemId()};
-        for (auto* c : cards_) c->setSelected(c->itemId() == card->itemId());
-        setFocus(Qt::OtherFocusReason);
-        emit selectionChanged();
-    });
-    if (index < 0) {
-        layout_->addWidget(card);
-        cards_.push_back(card);
-    } else {
-        layout_->insertWidgetAt(index, card);
-        cards_.insert(cards_.begin() + std::min(size_t(index), cards_.size()), card);
-    }
+    return board_.indexOf(id);
+}
+
+QList<ItemId> ItemCanvas::itemOrder() const
+{
+    QList<ItemId> out;
+    for (const auto& item : items_)
+        if (item.id != kNoItem) out << item.id;   // the composer has no row yet
+    return out;
+}
+
+void ItemCanvas::resizeEvent(QResizeEvent* e)
+{
+    QScrollArea::resizeEvent(e);
+    relayout();
 }
 
 // Ctrl+T. One unwritten card at the top, focused, which becomes a real item the
@@ -140,30 +168,81 @@ void ItemCanvas::addPendingTextCard()
 
     Item blank;
     blank.type = ItemType::Text;
-    auto* card = new TextItemCard(blank, body_);
-    card->focusTextInteraction();
-    connect(card, &TextItemCard::edited, this, &ItemCanvas::edited);
-    connect(card, &TextItemCard::imagePasted, this, &ItemCanvas::imagePasted);
-    connect(card, &TextItemCard::heightChanged, this, &ItemCanvas::relayout);
+    blank.modifiedAt = nowMs();       // newest, so it lands at the top
+    items_.insert(items_.begin(), blank);
+
     placeholder_->hide();
-    addCard(card, 0);                       // newest first, from the moment it exists
-    textCards_.insert(textCards_.begin(), card);
     relayout();
-    card->focusText();
+
+    // The composer has no row yet, so cardFor() cannot find it by id; build it
+    // directly and let the next sync keep it alive because it is dirty.
+    for (auto* card : cards_)
+        if (auto* asText = qobject_cast<TextItemCard*>(card))
+            if (asText->isComposer()) { asText->focusTextInteraction(); asText->focusText(); return; }
 }
 
-int ItemCanvas::indexOf(ItemId id) const
+ItemCard* ItemCanvas::cardFor(const Item& item)
 {
-    for (size_t i = 0; i < cards_.size(); ++i)
-        if (cards_[i]->itemId() == id) return int(i);
-    return -1;
+    if (auto* existing = live_.value(item.id, nullptr)) return existing;
+
+    ItemCard* card = nullptr;
+    if (item.type == ItemType::Text) {
+        auto* text = new TextItemCard(item, body_);
+        connect(text, &TextItemCard::edited, this, &ItemCanvas::edited);
+        connect(text, &TextItemCard::imagePasted, this, &ItemCanvas::imagePasted);
+        connect(text, &TextItemCard::heightChanged, this, &ItemCanvas::relayout);
+        textCards_.push_back(text);
+        card = text;
+    } else {
+        card = new ImageItemCard(item, thumbs_, blobs_, body_);
+    }
+    wireCard(card);
+    live_.insert(item.id, card);
+    return card;
 }
 
-QList<ItemId> ItemCanvas::itemOrder() const
+void ItemCanvas::syncVisibleCards()
 {
-    QList<ItemId> out;
-    for (auto* card : cards_) out << card->itemId();
-    return out;
+    if (items_.empty()) return;
+
+    const QRect visible(0, verticalScrollBar()->value(),
+                        viewport()->width(), viewport()->height());
+    // An overscan band either side keeps scrolling smooth without holding the
+    // whole board in memory.
+    const auto wanted = board_.indicesIn(visible, viewport()->height());
+
+    QSet<ItemId> keep;
+    for (int i : wanted) keep.insert(board_.placements()[size_t(i)].id);
+
+    // Never destroy the card being typed in, or the caret goes with it.
+    for (auto* text : textCards_)
+        if (text->hasEditFocus() || text->isDirty()) keep.insert(text->itemId());
+
+    for (auto it = live_.begin(); it != live_.end();) {
+        if (keep.contains(it.key())) { ++it; continue; }
+        QWidget* w = it.value();
+        cards_.erase(std::remove(cards_.begin(), cards_.end(), w), cards_.end());
+        textCards_.erase(std::remove_if(textCards_.begin(), textCards_.end(),
+                                        [w](TextItemCard* t) { return t == w; }),
+                         textCards_.end());
+        w->hide();
+        w->setParent(nullptr);
+        w->deleteLater();
+        it = live_.erase(it);
+    }
+
+    cards_.clear();
+    for (int i : wanted) {
+        const auto& slot = board_.placements()[size_t(i)];
+        const Item& item = items_[size_t(i)];
+        ItemCard* card = cardFor(item);
+        card->setGeometry(slot.rect);
+        card->setClipped(slot.clipped);
+        card->setSelected(selected_.contains(item.id));
+        card->setCurrent(cursor_ == i);
+        card->show();
+        cards_.push_back(card);
+    }
 }
 
 void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
@@ -172,30 +251,15 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
     if (items.empty()) { showEmptyBuffer(); return; }
     placeholder_->hide();
 
-    for (const auto& item : items) {
-        if (item.type == ItemType::Text) {
-            auto* card = new TextItemCard(item, body_);
-            connect(card, &TextItemCard::edited, this, &ItemCanvas::edited);
-            connect(card, &TextItemCard::imagePasted, this, &ItemCanvas::imagePasted);
-            connect(card, &TextItemCard::heightChanged, this, &ItemCanvas::relayout);
-            addCard(card);
-            textCards_.push_back(card);
-        } else {
-            addCard(new ImageItemCard(item, thumbs_, blobs_, body_));
-        }
-    }
+    items_ = items;
     relayout();
 
-    if (selectIndex < 0 || cards_.empty()) return;
-    // Clamp: deleting the last card should land on the new last, not nowhere.
-    const int target = std::min(selectIndex, int(cards_.size()) - 1);
-    if (target >= 0 && target < int(cards_.size())
-        && cards_[size_t(target)]->itemId() != kNoItem) {
-        selected_ = {cards_[size_t(target)]->itemId()};
+    if (selectIndex >= 0 && !items_.empty()) {
+        const int target = std::min(selectIndex, int(items_.size()) - 1);
+        selected_ = {items_[size_t(target)].id};
         anchor_ = *selected_.begin();
-        cards_[size_t(target)]->setSelected(true);
-        cards_[size_t(target)]->setCurrent(true);
         cursor_ = target;
+        syncVisibleCards();
         // setItems destroyed whatever had focus, including the card the user
         // was deleting. Take it back, or the *second* Delete goes nowhere.
         setFocus(Qt::OtherFocusReason);
@@ -203,33 +267,13 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
     }
 }
 
-// The width every card is laid out against. Deliberately NOT viewport()->width():
-// with an as-needed scrollbar, adding one item can make the bar appear, shrink
-// the viewport by ~14px, change the column width and resize EVERY card in the
-// buffer. Reserving the extent unconditionally makes a card's size depend only
-// on its own content, which is the whole point.
-int ItemCanvas::stableWidth() const
-{
-    return std::max(kCardMinWidth, width() - verticalScrollBar()->sizeHint().width()
-                                       - frameWidth() * 2);
-}
-
 void ItemCanvas::relayout()
 {
-    const int column = layout_->columnWidth(stableWidth());
-    for (auto* card : cards_) {
-        card->setFixedWidth(column);
-        card->setFixedHeight(card->heightForColumn(column));
-    }
-    body_->setFixedWidth(stableWidth());
-    layout_->invalidate();
-    body_->adjustSize();
-}
-
-void ItemCanvas::resizeEvent(QResizeEvent* e)
-{
-    QScrollArea::resizeEvent(e);
-    relayout();
+    board_.setViewport(stableWidth());
+    if (!textCards_.empty()) board_.setFont(textCards_.front()->font());
+    board_.rebuild(items_);
+    body_->setFixedSize(stableWidth(), std::max(board_.totalHeight(), viewport()->height()));
+    syncVisibleCards();
 }
 
 void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
@@ -432,12 +476,24 @@ void ItemCanvas::markClean()
 bool ItemCanvas::bindComposer(ItemId newId)
 {
     if (newId == kNoItem) return false;
+
+    bool bound = false;
     for (auto* card : textCards_) {
         if (!card->isComposer()) continue;
         card->setItemId(newId);
-        return true;
+        bound = true;
+        break;
     }
-    return false;
+    if (!bound) return false;
+
+    // The board's own list has to learn the id too, or the composer stays a
+    // row-less placeholder in the layout while its widget claims to be an item.
+    for (auto& item : items_)
+        if (item.id == kNoItem) { item.id = newId; break; }
+    live_.remove(kNoItem);
+    for (auto* card : cards_)
+        if (card->itemId() == newId) live_.insert(newId, card);
+    return true;
 }
 
 

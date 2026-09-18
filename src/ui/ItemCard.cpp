@@ -91,6 +91,12 @@ void ItemCard::setSelected(bool selected)
     update();
 }
 
+void ItemCard::setClipped(bool clipped)
+{
+    clipped_ = clipped;
+    if (footer_) footer_->setClipped(clipped);
+}
+
 void ItemCard::setCurrent(bool current)
 {
     if (current_ == current) return;
