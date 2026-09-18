@@ -26,6 +26,7 @@ class ItemCanvas;
 class BufferRepository;
 class BufferService;
 class EmptyStateView;
+class TrayIcon;
 class WelcomeView;
 class BlobStore;
 class Database;
@@ -79,6 +80,7 @@ private:
     void buildMenuBar();
     void openSettings();
     void goHome();
+    void applyTraySetting();
     void exportCurrentBuffer();
     void exportEverything();
     // Both export paths end here, so the result is reported the same way and
@@ -143,6 +145,8 @@ private:
     bool             nudgeDismissed_ = false;
     WelcomeView*     welcome_ = nullptr;
     EmptyStateView*  emptyState_ = nullptr;
+    TrayIcon*        tray_ = nullptr;
+    bool             reallyQuitting_ = false;
 
     // What the open editor is bound to. kNoBuffer means an uncommitted draft,
     // which by invariant 5 has no row in the database yet.

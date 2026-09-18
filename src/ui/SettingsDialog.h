@@ -3,6 +3,7 @@
 #include <QDialog>
 #include <QString>
 
+class QCheckBox;
 class QComboBox;
 class QFontComboBox;
 class QLabel;
@@ -41,6 +42,10 @@ public:
     // the accent is the one piece of the platform theme worth inheriting.
     static QColor accent();
 
+    // Off by default. Napkin is somewhere to throw things, not a resident
+    // service — but it can only catch what is thrown at it if it is running.
+    static bool keepInTray();
+
     // Applies the stored palette AND font to the running application. One
     // function, because a theme that changed the colours but not the type would
     // leave the two settings visibly out of step.
@@ -58,6 +63,7 @@ private:
     QComboBox*     scale_ = nullptr;
     QComboBox*     accent_ = nullptr;
     QLabel*        preview_ = nullptr;
+    QCheckBox*     tray_ = nullptr;
     QSpinBox*      older_ = nullptr;
     QSpinBox*      retention_ = nullptr;
 };

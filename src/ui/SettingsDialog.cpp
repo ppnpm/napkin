@@ -1,11 +1,13 @@
 #include "SettingsDialog.h"
 #include "../domain/BufferService.h"
 #include "Tokens.h"
+#include "TrayIcon.h"
 
 #include <QApplication>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QCheckBox>
 #include <QGroupBox>
 #include <QIcon>
 #include <QPixmap>
@@ -24,6 +26,7 @@ constexpr auto kTheme = "appearance/theme";
 constexpr auto kFontFamily = "appearance/fontFamily";
 constexpr auto kTextScale = "appearance/textScalePercent";
 constexpr auto kAccent = "appearance/accent";
+constexpr auto kKeepInTray = "behaviour/keepInTray";
 constexpr auto kOlder = "lifecycle/olderThanDays";
 constexpr auto kRetention = "lifecycle/trashRetentionDays";
 
@@ -167,6 +170,15 @@ QColor SettingsDialog::accent()
     return colour.isValid() ? colour : QColor();
 }
 
+bool SettingsDialog::keepInTray()
+{
+    // A desktop with no tray cannot honour this however it is stored, and
+    // answering true there would let the window close to somewhere that does
+    // not exist.
+    return QSettings().value(kKeepInTray, false).toBool()
+           && TrayIcon::availableOnThisDesktop();
+}
+
 int SettingsDialog::olderThanDays()
 {
     return QSettings().value(kOlder, kOlderThresholdDays).toInt();
@@ -300,6 +312,20 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
     retention_->setValue(trashRetentionDays());
     lifeForm->addRow(tr("Keep trash for"), retention_);
 
+    tray_ = new QCheckBox(tr("Keep Napkin running in the system tray"));
+    tray_->setChecked(QSettings().value(kKeepInTray, false).toBool());
+    if (!TrayIcon::availableOnThisDesktop()) {
+        tray_->setEnabled(false);
+        tray_->setToolTip(tr("This desktop has no system tray."));
+    }
+    lifeForm->addRow(QString(), tray_);
+
+    auto* trayNote = new QLabel(
+        tr("Closing the window then hides Napkin instead of quitting it, so it is "
+           "already running the next time you have something to put somewhere."));
+    trayNote->setWordWrap(true);
+    lifeForm->addRow(trayNote);
+
     auto* note = new QLabel(
         tr("Napkin never deletes a buffer on its own. “Older” only changes where "
            "a buffer sits in the list; the trash is the only thing that empties, "
@@ -352,6 +378,7 @@ void SettingsDialog::save()
     settings.setValue(kAccent, accentIndex > 0
                                    ? QColor::fromRgba(kAccents[accentIndex].rgb).name()
                                    : QString());
+    settings.setValue(kKeepInTray, tray_->isChecked());
     settings.setValue(kOlder, older_->value());
     settings.setValue(kRetention, retention_->value());
     applyAppearance();

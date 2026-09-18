@@ -1447,8 +1447,49 @@ hands back exactly the file the user picked. `flatpak-builder` is not installed
 here, so **the manifest is unverified** — it is a starting point, not a
 delivered artefact.
 
-Still outstanding: AppImage, the release process, optional tray mode, and the
-global capture hotkey (see below).
+**Tray mode ✅.** Off by default — Napkin is somewhere to throw things, not a
+resident service — but it can only catch what is thrown at it if it is already
+running. `src/ui/TrayIcon.{h,cpp}`, with a setting under Lifecycle.
+
+The rule that matters here is the one about not stranding anyone: whether a tray
+exists is a property of the desktop, not of Napkin, and closing the only window
+to an icon that never appeared would leave the application unreachable with the
+user's data inside it. So `keepInTray()` answers false on a session with no
+tray *whatever is stored*, and `closeEvent` additionally requires the icon to be
+actually showing before it hides instead of quits. `tests/test_tray.cpp` pins
+both; removing the availability check turns the refusal test red.
+
+**AppImage and the release process ✅.** `.github/workflows/release.yml`, driven
+by a `v*` tag. It is the same build CI already runs plus the artefacts, on
+purpose: a release path that differs from the tested path is a release path
+nobody has tested. The suite runs before anything is packaged, and the bundle is
+smoke-tested by running `--version` out of it and checking the version matches
+the tag — so a release cannot ship a binary built from somewhere else. `--help`
+and `--version` are answered before the single-instance check and before the
+database is opened, verified to create no files.
+
+**The global capture hotkey is NOT done.** §17 calls it the highest-leverage
+single addition and it remains so, but it is not built, and the reasons are
+worth recording rather than leaving as an empty box:
+
+- The portal is there: `org.freedesktop.portal.GlobalShortcuts` **version 2** is
+  present on KDE/Wayland, and `CreateSession` returns a Request path. Both
+  verified directly against the session bus.
+- What is not verified is everything after that. The session handle arrives on a
+  `Response` signal against a Request object, `BindShortcuts` is a second
+  round trip that shows the user a prompt, and the key combination is chosen by
+  the desktop rather than by us. None of the activation path can be exercised
+  headless, because it ends in a human pressing a key.
+- An attempt at it derived the session path from the token "by convention",
+  which is guesswork, and a probe written to check that guess crashed. Shipping
+  ~250 lines of D-Bus that cannot be tested here would be exactly the kind of
+  unverified claim this document exists to prevent.
+
+What it needs: a session with a real desktop to develop against, the portal
+handshake written against the `Response` signals rather than derived paths, and
+the Phase 0 constraint honoured — Wayland serves the clipboard only to a focused
+client, so the capture window must appear and take focus *before* the clipboard
+is read. Roughly a day with a desktop to test on; not doable blind.
 
 **Phase 9 — Windows and macOS.** Only after Linux is genuinely good.
 

@@ -7,6 +7,7 @@
 #include "Lightbox.h"
 #include "../media/Exporter.h"
 #include "SettingsDialog.h"
+#include "TrayIcon.h"
 #include "EmptyStateView.h"
 #include "WelcomeView.h"
 #include "SweepDialog.h"
@@ -56,6 +57,7 @@ MainWindow::MainWindow(Database& db, BufferRepository& buffers, ItemRepository& 
       blobs_(blobs), thumbs_(thumbs)
 {
     buildUi();
+    applyTraySetting();   // the setting is read at startup, not only on change
 }
 
 void MainWindow::buildUi()
@@ -562,6 +564,7 @@ void MainWindow::openSettings()
         // Thresholds moved, so what counts as "older" moved with them.
         model_->reload();
         updateSweepNudge();
+        applyTraySetting();
     });
     dialog.exec();
 }
@@ -1328,7 +1331,48 @@ void MainWindow::closeEvent(QCloseEvent* e)
     // Closing with unsaved text that cannot be written would destroy it with no
     // trace at all, which is the worst version of this failure.
     if (!flushAndReportFailure()) { e->ignore(); return; }
+
+    // Hide to the tray rather than quit — but only to a tray that is actually
+    // showing. The setting alone is not enough: a desktop can have no tray, or
+    // the icon can have failed to appear, and hiding the only window to a place
+    // that does not exist leaves no way back into the application.
+    if (!reallyQuitting_ && SettingsDialog::keepInTray() && tray_ && tray_->isShowing()) {
+        hide();
+        e->ignore();
+        return;
+    }
     QMainWindow::closeEvent(e);
+}
+
+// Creating the icon is what makes it appear, so it is created on demand and
+// destroyed when the setting is turned off rather than being left hidden.
+void MainWindow::applyTraySetting()
+{
+    const bool wanted = SettingsDialog::keepInTray();
+    if (!wanted) {
+        delete tray_;
+        tray_ = nullptr;
+        return;
+    }
+    if (tray_) return;
+
+    tray_ = new TrayIcon(this);
+    connect(tray_, &TrayIcon::showRequested, this, &MainWindow::raiseFromOtherInstance);
+    connect(tray_, &TrayIcon::newBufferRequested, this, [this] {
+        raiseFromOtherInstance();
+        newDraft();
+    });
+    connect(tray_, &TrayIcon::pasteRequested, this, [this] {
+        raiseFromOtherInstance();
+        newDraft();
+        pasteFromClipboard();
+    });
+    connect(tray_, &TrayIcon::quitRequested, this, [this] {
+        // Quit means quit, even with the tray setting on.
+        reallyQuitting_ = true;
+        close();
+    });
+    tray_->setVisible(true);
 }
 
 void MainWindow::raiseFromOtherInstance()

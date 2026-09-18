@@ -1,0 +1,92 @@
+name: Release
+
+# Tag-driven. A release is the same build CI already runs, plus the artefacts —
+# deliberately not a separate recipe, because a release path that differs from
+# the tested path is a release path nobody has tested.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    name: AppImage
+    runs-on: ubuntu-22.04   # oldest glibc we build against, so the bundle runs on more
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.2
+          modules: qtimageformats
+          cache: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libsqlite3-dev libfuse2 desktop-file-utils appstream
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+      # The suite runs before anything is packaged. Shipping an artefact built
+      # from a tree whose tests were never run is how a release becomes the
+      # first place a regression is noticed.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 2
+
+      - name: Stage the install tree
+        run: |
+          cmake --install build --prefix AppDir/usr
+          desktop-file-validate AppDir/usr/share/applications/io.github.ppnpm.Napkin.desktop
+          appstreamcli validate --no-net AppDir/usr/share/metainfo/io.github.ppnpm.Napkin.metainfo.xml
+
+      - name: Build the AppImage
+        run: |
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-*.AppImage
+          export QMAKE="$QT_ROOT_DIR/bin/qmake"
+          # The image plugins are loaded by name at runtime, so linuxdeploy
+          # cannot see them by walking the link tree; they are named explicitly
+          # or SVG and WebP silently stop working inside the bundle.
+          export EXTRA_QT_PLUGINS="imageformats;svg"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
+            --desktop-file AppDir/usr/share/applications/io.github.ppnpm.Napkin.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/io.github.ppnpm.Napkin.png
+          mv Napkin*.AppImage napkin-${{ github.ref_name }}-x86_64.AppImage
+
+      # Proves the bundle actually starts and can load its own Qt, rather than
+      # only that a file was produced. --version is answered before the database
+      # or the single-instance socket is touched, so this has no side effects
+      # and a non-zero exit is a real failure rather than a timeout.
+      # --appimage-extract-and-run avoids needing FUSE in the runner.
+      - name: Smoke-test the AppImage
+        run: |
+          set -eux
+          APPIMAGE=$(ls napkin-*.AppImage)
+          chmod +x "$APPIMAGE"
+          OUT=$(QT_QPA_PLATFORM=offscreen timeout 60 "./$APPIMAGE" --appimage-extract-and-run --version)
+          echo "$OUT"
+          # The version it reports must be the tag it was built from, or the
+          # release is shipping a binary from somewhere else.
+          echo "$OUT" | grep -q "napkin ${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: napkin-appimage
+          path: napkin-*.AppImage
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: napkin-*.AppImage
+          draft: true
+          generate_release_notes: true

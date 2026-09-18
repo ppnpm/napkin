@@ -12,6 +12,7 @@
 #include "ui/SettingsDialog.h"
 
 #include <QApplication>
+#include <QCommandLineParser>
 #include <QIcon>
 #include <QMessageBox>
 
@@ -27,6 +28,22 @@ int main(int argc, char** argv)
     // icon and no taskbar identity. Until now this named a file that did not
     // exist anywhere.
     QGuiApplication::setDesktopFileName(QStringLiteral("io.github.ppnpm.Napkin"));
+
+    // Answered before anything else happens — before the single-instance
+    // check, which would otherwise hand "--version" to a running Napkin and
+    // print nothing, and before the database is touched. A packaged build has
+    // to be startable and identifiable from a terminal without side effects.
+    {
+        QCommandLineParser parser;
+        parser.setApplicationDescription(
+            QStringLiteral("Napkin — a persistent scratch surface for your computer.\n"
+                           "Paste text and images into it. Everything stays on this machine."));
+        const QCommandLineOption help = parser.addHelpOption();
+        const QCommandLineOption version = parser.addVersionOption();
+        parser.parse(QCoreApplication::arguments());
+        if (parser.isSet(version)) { parser.showVersion(); return 0; }
+        if (parser.isSet(help))    { parser.showHelp(0); }
+    }
 
     // Prefer the installed theme icon; fall back to the copies compiled in, so
     // a build straight out of the source tree still has an icon.

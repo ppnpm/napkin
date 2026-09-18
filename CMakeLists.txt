@@ -68,6 +68,7 @@ qt_add_library(napkin_ui STATIC
 
   src/ui/Autosave.cpp
   src/ui/Icons.cpp
+  src/ui/TrayIcon.cpp
   src/ui/UndoToast.cpp
   src/ui/Lightbox.cpp
   src/ui/SweepDialog.cpp
@@ -144,7 +145,7 @@ target_link_libraries(bench_load PRIVATE napkin_ui Qt6::Widgets)
 target_include_directories(bench_load PRIVATE src)
 
 # GUI tests drive the real widget tree offscreen.
-foreach(t test_editing test_sweep test_lifecycle test_images test_multiitem test_review_fixes test_canvas test_theme test_chips test_accessibility)
+foreach(t test_editing test_sweep test_lifecycle test_images test_multiitem test_review_fixes test_canvas test_theme test_chips test_accessibility test_tray)
   qt_add_executable(${t} tests/${t}.cpp)
   target_link_libraries(${t} PRIVATE napkin_ui Qt6::Test)
   add_test(NAME ${t} COMMAND ${t})
