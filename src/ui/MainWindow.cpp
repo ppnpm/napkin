@@ -5,6 +5,7 @@
 #include "ItemCanvas.h"
 #include "Tokens.h"
 #include "Lightbox.h"
+#include "SettingsDialog.h"
 #include "SweepDialog.h"
 #include "UndoToast.h"
 
@@ -30,6 +31,7 @@
 #include <QClipboard>
 #include <QFileDialog>
 #include <QMenu>
+#include <QMenuBar>
 #include <QToolButton>
 #include <QMimeData>
 #include <QLineEdit>
@@ -304,6 +306,7 @@ void MainWindow::buildUi()
     connect(view_, &BufferListView::contextMenuRequested, this, &MainWindow::showContextMenu);
 
     if (overflowButton_) overflowButton_->setMenu(buildOverflowMenu());
+    buildMenuBar();
 
     // Relative labels go stale silently, so repaint them on a slow tick.
     timeRefresh_ = new QTimer(this);
@@ -388,10 +391,103 @@ QWidget* MainWindow::buildHeaderWidget()
     connect(emptyTrashButton_, &QPushButton::clicked, this, &MainWindow::emptyTrash);
     layout->addWidget(emptyTrashButton_);
 
-    connect(trashButton, &QPushButton::toggled, this, &MainWindow::showTrash);
+    trashToggle_ = trashButton;
+    connect(trashButton, &QPushButton::toggled, this, [this](bool on) {
+        if (showTrashAction_) showTrashAction_->setChecked(on);
+        showTrash(on);
+    });
     layout->addWidget(trashButton);
 
     return header;
+}
+
+// The menu bar carries every action the application has, which is the one place
+// a user can go to find out what it can do. The header buttons and the key
+// chords are shortcuts to these, not a separate set.
+void MainWindow::buildMenuBar()
+{
+    auto* bar = menuBar();
+    auto named = [this](const char* name) -> QAction* {
+        return findChild<QAction*>(QString::fromLatin1(name));
+    };
+
+    auto* file = bar->addMenu(tr("&File"));
+    file->addAction(named("newBufferAction"));
+    file->addAction(named("addTextAction"));
+    file->addAction(named("addImageAction"));
+    file->addSeparator();
+    file->addAction(named("pasteAction"));
+    file->addSeparator();
+    auto* quit = file->addAction(tr("&Quit"));
+    quit->setShortcut(QKeySequence::Quit);
+    connect(quit, &QAction::triggered, this, &QWidget::close);
+
+    auto* home = bar->addMenu(tr("&Home"));
+    auto* showAll = home->addAction(tr("All buffers"));
+    showAll->setShortcut(QKeySequence(QStringLiteral("Ctrl+Home")));
+    connect(showAll, &QAction::triggered, this, [this] {
+        // One gesture back to the ordinary view from wherever you are: out of
+        // the trash, out of a search, back to the top of the list. The query is
+        // cleared immediately rather than through the debounce, because a menu
+        // action that takes effect a beat later reads as not having worked.
+        search_->clear();
+        searchDebounce_->stop();
+        model_->setQuery(QString());
+        showTrash(false);
+        if (trashToggle_) trashToggle_->setChecked(false);
+        if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
+        view_->setFocus(Qt::OtherFocusReason);
+    });
+    home->addAction(named("findAction"));
+    home->addSeparator();
+    auto* cleanUp = home->addAction(tr("Clean up…"));
+    connect(cleanUp, &QAction::triggered, this, &MainWindow::reviewSweep);
+
+    auto* trash = bar->addMenu(tr("&Trash"));
+    showTrashAction_ = trash->addAction(tr("Show trash"));
+    showTrashAction_->setCheckable(true);
+    connect(showTrashAction_, &QAction::toggled, this, [this](bool on) {
+        if (trashToggle_) trashToggle_->setChecked(on);
+        else              showTrash(on);
+    });
+    auto* restore = trash->addAction(tr("Restore selected"));
+    connect(restore, &QAction::triggered, this,
+            [this] { restoreRow(view_->currentIndex().row()); });
+    trash->addSeparator();
+    auto* empty = trash->addAction(tr("Empty trash…"));
+    connect(empty, &QAction::triggered, this, &MainWindow::emptyTrash);
+    connect(trash, &QMenu::aboutToShow, this, [this, restore, empty] {
+        const bool inTrash = model_->mode() == BufferListModel::Mode::Trash;
+        restore->setEnabled(inTrash && view_->currentIndex().isValid());
+        empty->setEnabled(buffers_.countTrash() > 0);
+    });
+
+    auto* settings = bar->addMenu(tr("&Settings"));
+    auto* prefs = settings->addAction(tr("Preferences…"));
+    prefs->setShortcut(QKeySequence::Preferences);
+    connect(prefs, &QAction::triggered, this, &MainWindow::openSettings);
+    settings->addSeparator();
+    auto* shortcuts = settings->addAction(tr("Keyboard shortcuts…"));
+    connect(shortcuts, &QAction::triggered, this, &MainWindow::showShortcuts);
+    auto* about = settings->addAction(tr("About Napkin"));
+    connect(about, &QAction::triggered, this, [this] {
+        QMessageBox::about(this, tr("About Napkin"),
+            tr("<b>Napkin</b><br>A persistent scratch surface for your computer."
+               "<br><br>Put it here. Use it. Decide later whether it matters."
+               "<br><br>Everything stays on this machine. Napkin makes no network "
+               "requests."));
+    });
+}
+
+void MainWindow::openSettings()
+{
+    SettingsDialog dialog(this);
+    connect(&dialog, &SettingsDialog::settingsChanged, this, [this] {
+        // Thresholds moved, so what counts as "older" moved with them.
+        model_->reload();
+        updateSweepNudge();
+    });
+    dialog.exec();
 }
 
 QMenu* MainWindow::buildOverflowMenu()
@@ -537,6 +633,13 @@ void MainWindow::showTrash(bool trash)
 
 void MainWindow::reloadPreservingSelection()
 {
+    // The order freeze exists to stop the list RE-SORTING under someone who is
+    // typing. It must not also suppress a change in list MEMBERSHIP: every
+    // caller here is a structural change — trash, restore, pin, keep, sweep,
+    // undo — and deferring those left a buffer visible in the list while the
+    // toast beneath it said the buffer was in the trash.
+    model_->freezeOrder(false);
+
     const BufferId current = model_->idAt(view_->currentIndex().row());
     model_->reload();
     if (const int row = model_->rowForId(current); row >= 0)

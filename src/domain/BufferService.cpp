@@ -1,5 +1,7 @@
 #include "BufferService.h"
 #include "Clock.h"
+
+#include <QSettings>
 #include "../data/BufferRepository.h"
 #include "../data/Database.h"
 #include "../data/ItemRepository.h"
@@ -71,7 +73,7 @@ void BufferService::restore(BufferId id)        { buffers_.restore(id); }
 
 int BufferService::purgeExpiredTrash()
 {
-    return buffers_.purgeTrashOlderThan(nowMs() - kTrashRetentionDays * kMsPerDay);
+    return buffers_.purgeTrashOlderThan(nowMs() - trashRetentionDays() * kMsPerDay);
 }
 
 int BufferService::emptyTrash()
@@ -79,9 +81,24 @@ int BufferService::emptyTrash()
     return buffers_.purgeAllTrash();
 }
 
+// Both read from settings, with the constants as defaults. The domain does not
+// depend on the UI for this: a plain QSettings read keeps napkin_core free of
+// any dialog.
+int BufferService::olderThanDays()
+{
+    return QSettings().value(QStringLiteral("lifecycle/olderThanDays"),
+                             kOlderThresholdDays).toInt();
+}
+
+int BufferService::trashRetentionDays()
+{
+    return QSettings().value(QStringLiteral("lifecycle/trashRetentionDays"),
+                             kTrashRetentionDays).toInt();
+}
+
 Timestamp BufferService::olderThanCutoff()
 {
-    return nowMs() - kOlderThresholdDays * kMsPerDay;
+    return nowMs() - qint64(olderThanDays()) * kMsPerDay;
 }
 
 }  // namespace napkin

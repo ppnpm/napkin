@@ -9,6 +9,7 @@
 #include "media/BlobStore.h"
 #include "media/Thumbnailer.h"
 #include "ui/MainWindow.h"
+#include "ui/SettingsDialog.h"
 
 #include <QApplication>
 #include <QIcon>
@@ -20,6 +21,7 @@ int main(int argc, char** argv)
 {
     Application app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("napkin"));
+    QCoreApplication::setOrganizationName(QStringLiteral("napkin"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     // Must match the .desktop file's basename, or Wayland gives the window no
     // icon and no taskbar identity. Until now this named a file that did not
@@ -56,6 +58,8 @@ int main(int argc, char** argv)
     SingleInstance instance;
     if (!instance.acquire())
         return 0;  // an existing Napkin was asked to raise itself
+
+    SettingsDialog::applyTheme();   // before any window exists, so nothing flashes
 
     BufferService service(db, buffers, items);
     service.purgeExpiredTrash();  // the only automatic hard delete (§6)

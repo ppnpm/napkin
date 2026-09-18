@@ -11,6 +11,8 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QMenu>
+#include <QMenuBar>
 #include <QSplitter>
 #include <QtTest>
 
@@ -704,6 +706,101 @@ private slots:
         QVERIFY(card->hasEditFocus());
         QVERIFY(!card->isSelected());
         QVERIFY(!f.canvas()->hasSelection());
+    }
+
+    // --- structural changes must not be deferred -----------------------------
+    void deletingEveryItemAfterTypingStillRemovesTheBufferFromTheList()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("something")));
+        f.model()->reload();
+        f.select(id);
+
+        // Typing freezes the list order so it cannot re-sort under you.
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        QTest::keyClicks(card->findChild<QPlainTextEdit*>(), " more");
+        QTest::qWait(600);
+        QVERIFY(f.model()->orderFrozen());
+
+        f.canvas()->selectAll();
+        f.canvas()->deleteSelection();
+
+        // The freeze must not also defer a change in MEMBERSHIP: the buffer was
+        // left visible in the list while the toast beneath it said it had been
+        // moved to the trash.
+        QTRY_COMPARE_WITH_TIMEOUT(f.model()->rowCount(), 0, 2000);
+        QCOMPARE(f.buffers.countLive(), 0);
+        QCOMPARE(f.buffers.countTrash(), 1);
+    }
+
+    // --- the menu bar --------------------------------------------------------
+    void everyActionIsReachableFromTheMenuBar()
+    {
+        GuiFixture f;
+        QStringList menus;
+        for (auto* action : f.window.menuBar()->actions()) menus << action->text();
+        QCOMPARE(menus.size(), 4);
+        QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("File")));
+        QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("Home")));
+        QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("Trash")));
+        QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("Settings")));
+
+        // The menu is where a user finds out what the app can do, so every
+        // shortcut must be listed rather than only bound.
+        int listed = 0;
+        for (auto* menuAction : f.window.menuBar()->actions())
+            if (auto* menu = menuAction->menu())
+                for (auto* a : menu->actions())
+                    if (!a->isSeparator() && !a->shortcut().isEmpty()) ++listed;
+        QVERIFY2(listed >= 6, qPrintable(QString("only %1 shortcuts listed").arg(listed)));
+    }
+
+    void theTrashMenuAndTheHeaderToggleStayInStep()
+    {
+        GuiFixture f;
+        f.seed("something");
+        auto* toggle = f.window.findChild<QPushButton*>(QStringLiteral("trashToggle"));
+        QVERIFY(toggle);
+
+        QAction* showTrash = nullptr;
+        for (auto* menuAction : f.window.menuBar()->actions())
+            if (auto* menu = menuAction->menu())
+                for (auto* a : menu->actions())
+                    if (a->text().contains(QStringLiteral("Show trash"))) showTrash = a;
+        QVERIFY(showTrash);
+
+        showTrash->setChecked(true);
+        QCOMPARE(f.model()->mode(), BufferListModel::Mode::Trash);
+        QVERIFY(toggle->isChecked());
+
+        toggle->setChecked(false);
+        QCOMPARE(f.model()->mode(), BufferListModel::Mode::Live);
+        QVERIFY(!showTrash->isChecked());
+    }
+
+    void homeReturnsFromBothTrashAndSearch()
+    {
+        GuiFixture f;
+        f.seed("findable"); f.seed("other");
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("findable"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching(), 2000);
+        f.window.showTrash(true);
+
+        QAction* home = nullptr;
+        for (auto* menuAction : f.window.menuBar()->actions())
+            if (auto* menu = menuAction->menu())
+                for (auto* a : menu->actions())
+                    if (a->text().contains(QStringLiteral("All buffers"))) home = a;
+        QVERIFY(home);
+        home->trigger();
+
+        // One gesture back to the ordinary view from wherever you are.
+        QVERIFY(!f.model()->isSearching());
+        QCOMPARE(f.model()->mode(), BufferListModel::Mode::Live);
+        QCOMPARE(f.model()->rowCount(), 2);
     }
 
     // --- a card grows with what you put in it --------------------------------

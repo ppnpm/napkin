@@ -612,6 +612,12 @@ you are looking at nothing. This holds for text and images alike.
 > sweep reclaims them once undo is no longer on offer. The toast takes a closure
 > rather than a `BufferId`, so buffer-level and item-level undo share one widget.
 
+> **The freeze applies to ORDER, never to MEMBERSHIP.** Deleting every item in a
+> buffer trashes it — but with the order frozen from typing, the reload was
+> deferred and the buffer stayed visible in the list while the toast beneath it
+> said it had been moved to the trash. Every structural change (trash, restore,
+> pin, keep, sweep, undo) releases the freeze before reloading.
+
 **The order freeze survives the change.** Autosave still bumps `modified_at` on
 every flush, so the list would still re-sort under the buffer being edited. The
 canvas freezes the order on the first keystroke and releases it when the
@@ -1061,8 +1067,21 @@ and there was no sweep at all. The spec described an app that did not exist.
 > have made pinning a silent second Keep, which is exactly the confusion §3
 > exists to prevent. A test asserts a pinned, un-kept, old buffer is offered.
 
-**Phase 7 — Refinement.** Link chips, themes, accessibility pass, settings, error
-handling, export.
+**Phase 7 — Refinement.** Partly done: **menu bar and settings ✅**, link chips,
+export and a final accessibility pass outstanding.
+
+The menu bar is **File / Home / Trash / Settings** and carries every action the
+application has, because it is the one place a user can go to find out what the
+app can do — the header buttons and the key chords are shortcuts *to* these, not
+a separate set. **Home → All buffers** is one gesture back to the ordinary view
+from wherever you are: out of the trash, out of a search, back to the top.
+
+Settings is deliberately small. Napkin's premise is that you do not configure it,
+you throw things at it, so it holds only the choices that change how the app
+behaves *over time* — appearance, when a buffer becomes "older", how long the
+trash keeps things — and nothing that merely changes how it looks for its own
+sake. The lifecycle values are read through `BufferService` from `QSettings`, so
+the domain layer picks them up without depending on any dialog.
 
 **Phase 8 — Linux delivery.** `.desktop`, icon, Flatpak and AppImage, optional
 tray mode, and the global capture hotkey (see below).

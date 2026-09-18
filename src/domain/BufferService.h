@@ -64,6 +64,8 @@ public:
 
     // Buffers older than this belong in the collapsed OLDER section.
     static Timestamp olderThanCutoff();
+    static int olderThanDays();
+    static int trashRetentionDays();
 
 private:
     Database&         db_;

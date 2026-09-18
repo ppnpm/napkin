@@ -73,6 +73,8 @@ private:
     void buildUi();
     QWidget* buildHeaderWidget();
     QMenu* buildOverflowMenu();
+    void buildMenuBar();
+    void openSettings();
     // Returns false when the write failed. The caller must NOT collapse or close
     // on a false: doing so strands the text in a widget that is about to go
     // away, and the next flush returns early because nothing is being edited.
@@ -120,6 +122,8 @@ private:
     QAction*         trashAction_ = nullptr;
     QPushButton*     emptyTrashButton_ = nullptr;
     QToolButton*     overflowButton_ = nullptr;
+    QPushButton*     trashToggle_ = nullptr;
+    QAction*         showTrashAction_ = nullptr;
     QLineEdit*       search_ = nullptr;
     QTimer*          searchDebounce_ = nullptr;
     QWidget*         filterBanner_ = nullptr;
