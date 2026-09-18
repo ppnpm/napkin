@@ -673,7 +673,34 @@ private slots:
     }
 
     // --- the board model -----------------------------------------------------
-    void clearingATextCardDeletesTheItem()
+    void clearingACardWhileEditingItKeepsIt()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+        const int before = f.items.countForBuffer(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        auto* edit = card->findChild<QPlainTextEdit*>();
+        edit->selectAll();
+        QTest::keyClick(edit, Qt::Key_Delete);
+        QTest::qWait(700);   // well past the autosave debounce
+
+        // Clearing a card in order to rewrite it must not delete it out from
+        // under you mid-sentence.
+        QCOMPARE(f.items.countForBuffer(id), before);
+        QVERIFY(card->hasEditFocus());
+
+        // And typing the replacement keeps the same item, rather than making a
+        // new one beside a corpse.
+        QTest::keyClicks(edit, "rewritten from scratch");
+        QTRY_VERIFY_WITH_TIMEOUT(
+            f.items.find(card->itemId())->text == QStringLiteral("rewritten from scratch"), 3000);
+        QCOMPARE(f.items.countForBuffer(id), before);
+    }
+
+    void clearingACardAndThenLeavingItRemovesIt()
     {
         GuiFixture f;
         const auto id = seedMixed(f);
@@ -686,11 +713,84 @@ private slots:
         edit->selectAll();
         QTest::keyClick(edit, Qt::Key_Delete);
 
-        // An item holding nothing is not a thing; a blank card is litter.
+        // Leaving is the moment an empty card is judged.
+        card->endEditing();
         QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == before - 1, 3000);
     }
 
-    void clearingTheOnlyTextCardOfASingleItemBufferRemovesTheBuffer()
+    void ctrlEnterFinishesEditing()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        QVERIFY(card->hasEditFocus());
+
+        QTest::keyClick(card->findChild<QPlainTextEdit*>(), Qt::Key_Return,
+                        Qt::ControlModifier);
+        QVERIFY(!card->hasEditFocus());
+    }
+
+    void plainEnterStaysInTheText()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        auto* edit = card->findChild<QPlainTextEdit*>();
+        const int lines = edit->toPlainText().count(QLatin1Char('\n'));
+        QTest::keyClick(edit, Qt::Key_Return);
+
+        // A note is several lines more often than it is one.
+        QVERIFY(card->hasEditFocus());
+        QCOMPARE(edit->toPlainText().count(QLatin1Char('\n')), lines + 1);
+    }
+
+    void clickingAwayFromACardCommitsIt()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        QTest::keyClicks(card->findChild<QPlainTextEdit*>(), " plus more");
+
+        // Clicking the empty board is a commit; anything else leaves the user
+        // wondering whether their typing was kept.
+        QTest::mouseClick(f.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          QPoint(5, 5));
+        QVERIFY(!card->hasEditFocus());
+        QTRY_VERIFY_WITH_TIMEOUT(
+            f.items.find(card->itemId())->text.endsWith(QStringLiteral(" plus more")), 3000);
+    }
+
+    void theCaretIsVisibleTheMomentYouDoubleClick()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        auto* edit = card->findChild<QPlainTextEdit*>();
+
+        // While read-only the editor must NOT hold focus: the caret blink only
+        // starts on a focus-in event, so an editor that already had focus gained
+        // a caret that never appeared until an arrow key forced a repaint.
+        QCOMPARE(edit->focusPolicy(), Qt::NoFocus);
+        QVERIFY(!edit->hasFocus());
+
+        card->beginEditing();
+        QCOMPARE(edit->focusPolicy(), Qt::StrongFocus);
+        QVERIFY(!edit->isReadOnly());
+        QCOMPARE(edit->cursorWidth(), 2);
+    }
+
+    void clearingTheOnlyCardAndLeavingItRemovesTheBuffer()
     {
         GuiFixture f;
         QApplication::clipboard()->setText(QStringLiteral("only thing"));
@@ -702,6 +802,7 @@ private slots:
         auto* edit = card->findChild<QPlainTextEdit*>();
         edit->selectAll();
         QTest::keyClick(edit, Qt::Key_Delete);
+        card->endEditing();
 
         QTRY_VERIFY_WITH_TIMEOUT(f.buffers.countLive() == 0, 3000);
         QVERIFY(f.buffers.find(id)->inTrash());

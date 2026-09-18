@@ -232,8 +232,14 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
     edit->setStyleSheet(QStringLiteral("QPlainTextEdit { background: transparent; }"));
     edit->document()->setDocumentMargin(1);
     // Read-only until you ask to edit, so a click lands on the card rather than
-    // in the text. The composer is born editable: it has nothing to select.
+    // in the text. NoFocus while read-only matters for more than tab order: the
+    // caret blink only starts on a focus-IN event, and the editor was already
+    // holding focus before editing began — so enabling the caret produced no
+    // focus change, no blink, and no visible cursor until an arrow key forced a
+    // repaint. Giving up focus while read-only guarantees a real focus-in.
+    edit->setReadOnly(true);
     edit->setTextInteractionFlags(Qt::NoTextInteraction);
+    edit->setFocusPolicy(Qt::NoFocus);
     edit->onPaste = [this](const QMimeData* source) {
         const auto content = readClipboard(source);
         if (content.kind != ClipboardContent::Kind::Image) return false;
@@ -284,7 +290,10 @@ bool TextItemCard::hasEditFocus() const
 
 void TextItemCard::focusTextInteraction()
 {
+    edit_->setFocusPolicy(Qt::StrongFocus);
+    edit_->setReadOnly(false);
     edit_->setTextInteractionFlags(Qt::TextEditorInteraction);
+    edit_->setCursorWidth(2);
 }
 
 void TextItemCard::focusText()
@@ -299,18 +308,23 @@ void TextItemCard::beginEditing(bool moveToEnd)
     if (hasEditFocus()) return;
     focusTextInteraction();
     edit_->setFocus(Qt::MouseFocusReason);
-    // A visible, blinking caret is the whole signal that a card is editable.
-    edit_->setCursorWidth(2);
     if (moveToEnd) edit_->moveCursor(QTextCursor::End);
     emit editingStarted(itemId());
     update();
 }
 
+// Leaving edit mode. This — not every autosave flush — is where an empty card
+// is judged: a user clearing a card to rewrite it must not have it deleted out
+// from under them mid-sentence.
 void TextItemCard::endEditing()
 {
-    if (isComposer()) return;   // the composer is always ready to be written in
+    if (!hasEditFocus()) return;
+    edit_->setReadOnly(true);
     edit_->setTextInteractionFlags(Qt::NoTextInteraction);
+    edit_->setFocusPolicy(Qt::NoFocus);
+    edit_->clearFocus();
     update();
+    emit editingFinished(itemId(), text().trimmed().isEmpty());
 }
 
 int TextItemCard::contentHeightForWidth(int innerWidth) const
@@ -364,9 +378,11 @@ bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
         const QPoint pos = edit_->viewport()->mapFrom(
             qobject_cast<QWidget*>(watched), mouse->position().toPoint());
         beginEditing(/*moveToEnd=*/false);
-        QTextCursor cursor = edit_->cursorForPosition(pos);
-        cursor.select(QTextCursor::WordUnderCursor);
-        edit_->setTextCursor(cursor);
+        // Place the caret where the click landed. Deliberately not selecting the
+        // word: a caret is the signal that the card is editable, and a selection
+        // hides it.
+        edit_->setTextCursor(edit_->cursorForPosition(pos));
+        edit_->ensureCursorVisible();
         return true;
     }
     if (event->type() == QEvent::MouseButtonPress) {
@@ -379,7 +395,17 @@ bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
         }
     }
     if (watched == edit_ && event->type() == QEvent::KeyPress) {
-        if (static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+        auto* key = static_cast<QKeyEvent*>(event);
+        const bool enter = key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter;
+
+        // Ctrl+Enter commits and leaves. Plain Enter belongs to the text — a
+        // note is several lines more often than it is one.
+        if (enter && (key->modifiers() & Qt::ControlModifier)) {
+            endEditing();
+            emit escaped();
+            return true;
+        }
+        if (key->key() == Qt::Key_Escape) {
             endEditing();
             emit escaped();
             return true;

@@ -127,6 +127,15 @@ void MainWindow::buildUi()
             [this](const QModelIndex& current, const QModelIndex&) {
                 selectBuffer(current.isValid() ? current.row() : -1);
             });
+    connect(canvas_, &ItemCanvas::editingFinished, this,
+            [this](ItemId id, bool leftEmpty) {
+                // Save what is there, then — and only then — decide whether an
+                // empty card should go.
+                flushAndReportFailure();
+                if (!leftEmpty || id == kNoItem) return;
+                QMetaObject::invokeMethod(this, [this, id] { removeItems({id}); },
+                                          Qt::QueuedConnection);
+            });
     connect(canvas_, &ItemCanvas::imageActivated, this, &MainWindow::openImageItem);
     connect(canvas_, &ItemCanvas::removeRequested, this, &MainWindow::removeItems);
     connect(canvas_, &ItemCanvas::imagePasted, this,
@@ -294,7 +303,8 @@ void MainWindow::showShortcuts()
            "<tr><td><b>Ctrl+A</b></td><td>Select every item</td></tr>"
            "<tr><td><b>Ctrl+C</b> / <b>Ctrl+X</b> / <b>Delete</b></td>"
            "<td>Copy, cut or delete the selection</td></tr>"
-           "<tr><td><b>Esc</b></td><td>Stop editing, then clear the selection</td></tr>"
+           "<tr><td><b>Ctrl+Enter</b></td><td>Finish editing a card</td></tr>"
+           "<tr><td><b>Esc</b></td><td>Finish editing, then clear the selection</td></tr>"
            "<tr><td colspan='2'>&nbsp;</td></tr>"
            "<tr><td colspan='2'><i>With the list focused:</i></td></tr>"
            "<tr><td><b>P</b></td><td>Pin — keeps it at the top</td></tr>"
@@ -708,6 +718,7 @@ void MainWindow::newDraft()
 // step any more: the pane is always there, so selection *is* opening.
 void MainWindow::selectBuffer(int row)
 {
+    if (canvas_) canvas_->commitEditing();  // leaving a buffer commits its card
     if (!flushAndReportFailure()) return;   // do not leave the old buffer's text behind
     model_->freezeOrder(false);             // the previous buffer is done; let it re-sort
 
@@ -818,7 +829,6 @@ bool MainWindow::flushEditor()
     bool hasContent = false;
     for (const auto& d : dirty) if (!d.text.trimmed().isEmpty()) hasContent = true;
 
-    std::vector<ItemId> emptied;   // cards the user cleared out
 
     try {
         if (editingBuffer_ == kNoBuffer) {
@@ -840,10 +850,11 @@ bool MainWindow::flushEditor()
         } else {
             for (const auto& d : dirty) {
                 if (d.id != kNoItem) {
-                    // Emptying a card removes it. Napkin stores things; an item
-                    // holding nothing is not a thing, and leaving a blank card
-                    // behind makes the board accumulate litter.
-                    if (d.text.trimmed().isEmpty()) { emptied.push_back(d.id); continue; }
+                    // An empty card is NOT removed here. Clearing a card in
+                    // order to rewrite it would otherwise delete it mid-
+                    // sentence and take the user's card with it. Emptiness is
+                    // judged when the card is left — see editingFinished.
+                    if (d.text.trimmed().isEmpty()) continue;
                     service_.updateTextItem(editingBuffer_, d.id, d.text);
                 } else if (!d.text.trimmed().isEmpty()) {
                     // appendTo hands back the id, so the composer is bound by
@@ -867,14 +878,6 @@ bool MainWindow::flushEditor()
         editor->markClean();
         model_->invalidatePreview(editingBuffer_);
         saveFailures_ = 0;
-        if (!emptied.empty()) {
-            QList<ItemId> ids;
-            for (ItemId id : emptied) ids << id;
-            // Deferred: removeItems rebuilds the canvas, and doing that from
-            // inside a flush would delete the widget whose edit triggered it.
-            QMetaObject::invokeMethod(this, [this, ids] { removeItems(ids); },
-                                      Qt::QueuedConnection);
-        }
         return true;
     } catch (const std::exception&) {
         // SPEC.md §14: never silently discard content. The text stays in the

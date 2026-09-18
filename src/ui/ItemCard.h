@@ -113,6 +113,7 @@ signals:
     void imagePasted(const QByteArray& bytes, const QString& mime);
     void heightChanged();
     void editingStarted(ItemId id);
+    void editingFinished(ItemId id, bool leftEmpty);
 
 protected:
     int contentHeightForWidth(int innerWidth) const override;

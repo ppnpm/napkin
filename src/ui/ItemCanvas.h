@@ -90,8 +90,17 @@ public:
     // background window, and always false under a headless platform.
     bool keyboardIsHere() const;
 
+    // Ends any card that is being edited. Called whenever attention moves
+    // elsewhere — another card, the empty board, another buffer — because
+    // leaving a card is a commit.
+    void commitEditing();
+    bool isEditing() const;
+
 signals:
     void edited();
+    // A card stopped being edited. leftEmpty says whether it now holds nothing,
+    // which is the ONLY moment an empty card is removed.
+    void editingFinished(ItemId id, bool leftEmpty);
     void imagePasted(const QByteArray& bytes, const QString& mime);
     void imageActivated(ItemId id);
     void removeRequested(const QList<ItemId>& ids);

@@ -111,6 +111,7 @@ void ItemCanvas::wireCard(ItemCard* card)
                 if (other->itemId() != id) other->endEditing();
             clearSelection();
         });
+        connect(asText, &TextItemCard::editingFinished, this, &ItemCanvas::editingFinished);
     }
 }
 
@@ -312,6 +313,10 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
         if (here) cursor_ = int(i);
     }
 
+    // Selecting another card is also leaving the one being edited.
+    for (auto* card : textCards_)
+        if (card->itemId() != id) card->endEditing();
+
     for (auto* card : cards_) card->setSelected(selected_.contains(card->itemId()));
     // Selecting in the canvas moves the keyboard here. Without this, clicking a
     // card left focus on the buffer list, so Delete was delivered to the list —
@@ -322,6 +327,9 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
 
 void ItemCanvas::mousePressEvent(QMouseEvent* e)
 {
+    // Clicking away from a card is a commit. Anything else makes the user
+    // wonder whether their typing was kept.
+    commitEditing();
     clearSelection();
     QScrollArea::mousePressEvent(e);
 }
@@ -515,6 +523,17 @@ bool ItemCanvas::keyboardIsHere() const
     const QWidget* top = window();
     QWidget* focus = top ? top->focusWidget() : nullptr;
     return focus && (focus == this || isAncestorOf(focus));
+}
+
+void ItemCanvas::commitEditing()
+{
+    for (auto* card : textCards_) card->endEditing();
+}
+
+bool ItemCanvas::isEditing() const
+{
+    for (auto* card : textCards_) if (card->hasEditFocus()) return true;
+    return false;
 }
 
 bool ItemCanvas::textHasFocus() const
