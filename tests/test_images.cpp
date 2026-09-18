@@ -266,7 +266,7 @@ private slots:
     {
         GuiFixture f;
         f.trigger("newBufferAction");
-        QTest::keyClicks(f.editor(), "Investigate this bug");
+        QTest::keyClicks(f.newTextCard(), "Investigate this bug");
         QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
 
         QMetaObject::invokeMethod(f.canvas(), "imagePasted", Qt::DirectConnection,
@@ -274,12 +274,13 @@ private slots:
                                   Q_ARG(QString, QStringLiteral("image/png")));
 
         const auto id = f.buffers.listLive(10).front().id;
+        // Newest first, so the image the user just pasted leads.
         const auto items = f.items.listForBuffer(id);
         QCOMPARE(items.size(), size_t(2));
-        QCOMPARE(items[0].type, ItemType::Text);
-        QCOMPARE(items[1].type, ItemType::Image);
-        QCOMPARE(items[0].position, 0);
-        QCOMPARE(items[1].position, 1);
+        QCOMPARE(items[0].type, ItemType::Image);
+        QCOMPARE(items[1].type, ItemType::Text);
+        QCOMPARE(items[0].position, 1);
+        QCOMPARE(items[1].position, 0);
 
         // The preview reports the count, and still offers a thumbnail.
         const auto row = f.model()->rowForId(id);

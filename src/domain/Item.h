@@ -12,6 +12,7 @@ struct Item {
     int       position = 0;
     ItemType  type     = ItemType::Text;
     Timestamp createdAt = 0;
+    Timestamp modifiedAt = 0;   // added or last edited: what "newest" means
 
     QString text;        // type == Text
     QString blobHash;    // type == Image, sha256 hex

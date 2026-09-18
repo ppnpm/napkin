@@ -1,5 +1,6 @@
 #include "GuiFixture.h"
 #include "../src/media/BlobGc.h"
+#include "../src/ui/Tokens.h"
 
 #include <QApplication>
 #include <QBuffer>
@@ -62,7 +63,7 @@ private slots:
         f.select(id);
 
         QCOMPARE(f.canvas()->findChildren<ImageItemCard*>().size(), 2);
-        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), 3);  // 2 + composer
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), 2);  // no composer
     }
 
     void selectingNothingShowsAPlaceholder()
@@ -296,7 +297,8 @@ private slots:
         // selected one: the same gesture doing two different things.
         QCOMPARE(f.buffers.countLive(), 1);
         QCOMPARE(f.items.countForBuffer(id), 5);
-        QCOMPARE(f.items.listForBuffer(id).back().text, QStringLiteral("pasted note"));
+        // Newest first: the thing you just pasted is at the top of the board.
+        QCOMPARE(f.items.listForBuffer(id).front().text, QStringLiteral("pasted note"));
     }
 
     void pastingTextWithNothingSelectedMakesOneBuffer()
@@ -333,13 +335,12 @@ private slots:
         const auto id = seedMixed(f);
         f.select(id);
 
-        const auto items = f.items.listForBuffer(id);
-        const int last = f.canvas()->indexOf(items.back().id);
-        QVERIFY(last >= 0);
-        f.window.removeItems({items.back().id});
+        // Delete the card at the end of the board.
+        const auto ordered = f.items.listForBuffer(id);
+        f.window.removeItems({ordered.back().id});
 
         QCOMPARE(f.canvas()->selection().size(), 1);
-        QCOMPARE(f.canvas()->selection().first(), items[items.size() - 2].id);
+        QCOMPARE(f.canvas()->selection().first(), ordered[ordered.size() - 2].id);
     }
 
     void aSingleClickSelectsATextBlockRatherThanEditingIt()
@@ -392,7 +393,7 @@ private slots:
         f.trigger("addTextAction");
         QTest::keyClicks(f.editor(), "written after Ctrl+T");
         QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == 5, 2000);
-        QCOMPARE(f.items.listForBuffer(id).back().text,
+        QCOMPARE(f.items.listForBuffer(id).front().text,
                  QStringLiteral("written after Ctrl+T"));
     }
 
@@ -477,17 +478,105 @@ private slots:
         QCOMPARE(f.buffers.countLive(), 0);
     }
 
+    // --- the board model -----------------------------------------------------
+    void clearingATextCardDeletesTheItem()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+        const int before = f.items.countForBuffer(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        auto* edit = card->findChild<QPlainTextEdit*>();
+        edit->selectAll();
+        QTest::keyClick(edit, Qt::Key_Delete);
+
+        // An item holding nothing is not a thing; a blank card is litter.
+        QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == before - 1, 3000);
+    }
+
+    void clearingTheOnlyTextCardOfASingleItemBufferRemovesTheBuffer()
+    {
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral("only thing"));
+        f.trigger("pasteAction");
+        const auto id = f.buffers.listLive(10).front().id;
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        auto* edit = card->findChild<QPlainTextEdit*>();
+        edit->selectAll();
+        QTest::keyClick(edit, Qt::Key_Delete);
+
+        QTRY_VERIFY_WITH_TIMEOUT(f.buffers.countLive() == 0, 3000);
+        QVERIFY(f.buffers.find(id)->inTrash());
+    }
+
+    void ctrlNGivesAnEmptyBoardRatherThanABlankPage()
+    {
+        GuiFixture f;
+        f.trigger("newBufferAction");
+
+        // Napkin is temporary storage, not an editor: a new buffer waits to be
+        // pasted into instead of offering somewhere to write.
+        QCOMPARE(f.canvas()->findChildren<TextItemCard*>().size(), 0);
+        QCOMPARE(f.buffers.countLive(), 0);
+    }
+
+    void theNewestItemIsFirst()
+    {
+        GuiFixture f;
+        const auto id = f.seed("oldest");
+        f.select(id);
+        QTest::keyClicks(f.newTextCard(), "newest");
+        QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == 2, 2000);
+
+        const auto ordered = f.items.listForBuffer(id);
+        QCOMPARE(ordered.front().text, QStringLiteral("newest"));
+        // And the board agrees: first on screen is the newest, not the first
+        // widget that happened to be constructed.
+        QCOMPARE(f.canvas()->itemOrder().first(), ordered.front().id);
+    }
+
+    void aCardIsNoWiderThanTheBoardAllows()
+    {
+        GuiFixture f;
+        const auto id = f.seed("short");
+        f.select(id);
+        f.window.resize(1400, 800);
+        QTest::qWait(50);
+
+        for (auto* card : f.canvas()->findChildren<ItemCard*>())
+            QVERIFY2(card->width() <= tokens::kCardMaxWidth,
+                     qPrintable(QString("card is %1px wide").arg(card->width())));
+    }
+
+    void aVeryLongTextCardIsCappedRatherThanOwningTheBoard()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        QString huge;
+        for (int i = 0; i < 400; ++i) huge += QStringLiteral("line %1\n").arg(i);
+        f.service.appendTo(id, Item::makeText(huge));
+        f.model()->reload();
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        QVERIFY(card->height() <= tokens::kCardMaxHeight);
+        QVERIFY(card->isClipped());   // and it says so, rather than hiding it
+    }
+
     // --- editing -------------------------------------------------------------
-    void typingIntoTheComposerAppendsANewTextItem()
+    void ctrlTThenTypingAddsANewTextItem()
     {
         GuiFixture f;
         const auto id = seedMixed(f);
         f.select(id);
 
-        f.canvas()->focusComposer();
-        QTest::keyClicks(f.editor(), "one more thought");
+        QTest::keyClicks(f.newTextCard(), "one more thought");
         QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == 5, 2000);
-        QCOMPARE(f.items.listForBuffer(id).back().text, QStringLiteral("one more thought"));
+        QCOMPARE(f.items.listForBuffer(id).front().text, QStringLiteral("one more thought"));
     }
 
     void switchingBufferSavesTheOneYouAreLeaving()
@@ -497,12 +586,11 @@ private slots:
         const auto second = f.seed("second buffer");
 
         f.select(first);
-        f.canvas()->focusComposer();
-        QTest::keyClicks(f.editor(), "an unsaved addition");
+        QTest::keyClicks(f.newTextCard(), "an unsaved addition");
         f.select(second);   // inside the debounce window
 
         QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(first) == 2, 2000);
-        QCOMPARE(f.items.listForBuffer(first).back().text,
+        QCOMPARE(f.items.listForBuffer(first).front().text,
                  QStringLiteral("an unsaved addition"));
     }
 
@@ -514,8 +602,7 @@ private slots:
         QCOMPARE(f.model()->idAt(0), newer);
 
         f.select(older);
-        f.canvas()->focusComposer();
-        QTest::keyClicks(f.editor(), "edited");
+        QTest::keyClicks(f.newTextCard(), "edited");
         QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(older) == 2, 2000);
 
         QCOMPARE(f.model()->idAt(0), newer);   // held while typing

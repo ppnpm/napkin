@@ -592,6 +592,11 @@ void MainWindow::appendTextBlock(const QString& text)
     if (!currentBufferIsLive() && !model_->hasDraft()) newDraft();
     if (!flushAndReportFailure()) return;
 
+    if (text.isEmpty()) {          // Ctrl+T: an empty card to type into
+        canvas_->addPendingTextCard();
+        return;
+    }
+
     const bool ok = guarded(tr("Could not add that text"), [this, &text] {
         if (editingBuffer_ == kNoBuffer) {
             if (text.trimmed().isEmpty()) return;
@@ -610,7 +615,7 @@ void MainWindow::appendTextBlock(const QString& text)
     if (editingBuffer_ != kNoBuffer)
         canvas_->setItems(items_.listForBuffer(editingBuffer_));
     model_->invalidatePreview(editingBuffer_);
-    canvas_->focusComposer();
+    canvas_->addPendingTextCard();
     updateEmptyState();
 }
 
@@ -683,8 +688,8 @@ void MainWindow::newDraft()
     editingBuffer_ = kNoBuffer;
     editingItem_   = kNoItem;
     view_->setCurrentIndex(model_->index(row, 0));
-    canvas_->setItems({});
-    canvas_->focusComposer();
+    // An empty buffer is waiting to be pasted into, not a blank page to write on.
+    canvas_->showEmptyBuffer();
 }
 
 // Selecting a buffer in the list shows it in the canvas. There is no expand
@@ -718,7 +723,7 @@ void MainWindow::openRow(int row)
 {
     if (view_->currentIndex().row() != row)
         view_->setCurrentIndex(model_->index(row, 0));
-    canvas_->focusComposer();
+    canvas_->addPendingTextCard();
 }
 
 void MainWindow::removeItems(const QList<ItemId>& ids)
@@ -794,6 +799,8 @@ bool MainWindow::flushEditor()
     bool hasContent = false;
     for (const auto& d : dirty) if (!d.text.trimmed().isEmpty()) hasContent = true;
 
+    std::vector<ItemId> emptied;   // cards the user cleared out
+
     try {
         if (editingBuffer_ == kNoBuffer) {
             if (!hasContent) return true;            // invariant 5
@@ -812,6 +819,10 @@ bool MainWindow::flushEditor()
         } else {
             for (const auto& d : dirty) {
                 if (d.id != kNoItem) {
+                    // Emptying a card removes it. Napkin stores things; an item
+                    // holding nothing is not a thing, and leaving a blank card
+                    // behind makes the board accumulate litter.
+                    if (d.text.trimmed().isEmpty()) { emptied.push_back(d.id); continue; }
                     service_.updateTextItem(editingBuffer_, d.id, d.text);
                 } else if (!d.text.trimmed().isEmpty()) {
                     service_.appendTo(editingBuffer_, Item::makeText(d.text));
@@ -824,6 +835,14 @@ bool MainWindow::flushEditor()
         editor->markClean();
         model_->invalidatePreview(editingBuffer_);
         saveFailures_ = 0;
+        if (!emptied.empty()) {
+            QList<ItemId> ids;
+            for (ItemId id : emptied) ids << id;
+            // Deferred: removeItems rebuilds the canvas, and doing that from
+            // inside a flush would delete the widget whose edit triggered it.
+            QMetaObject::invokeMethod(this, [this, ids] { removeItems(ids); },
+                                      Qt::QueuedConnection);
+        }
         return true;
     } catch (const std::exception&) {
         // SPEC.md §14: never silently discard content. The text stays in the

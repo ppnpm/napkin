@@ -13,6 +13,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QLinearGradient>
 #include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QTextDocument>
@@ -110,6 +111,18 @@ void ItemCard::paintEvent(QPaintEvent*)
     else                p.setPen(Qt::NoPen);
     if (p.pen() != Qt::NoPen) p.drawPath(path);
 
+    if (clipped_) {
+        // Fade the last few lines rather than cutting them mid-stroke, so it
+        // reads as "there is more" instead of "this is broken".
+        QLinearGradient fade(0, height() - 34, 0, height() - 2);
+        QColor base = pal.color(QPalette::Base);
+        base.setAlpha(0);
+        fade.setColorAt(0.0, base);
+        base.setAlpha(255);
+        fade.setColorAt(1.0, base);
+        p.fillRect(QRect(kRailOffset + 1, height() - 34, width() - kRailOffset - 2, 32), fade);
+    }
+
     // Each state changes exactly two things, never three.
     if (selected_ || editing || hovered_) {
         const QColor rail = (selected_ || editing) ? highlight(pal, 255)
@@ -195,10 +208,22 @@ void TextItemCard::focusText()
     edit_->moveCursor(QTextCursor::End);
 }
 
-int TextItemCard::desiredHeight() const
+int TextItemCard::heightForColumn(int width) const
 {
-    const qreal doc = edit_->document()->documentLayout()->documentSize().height();
-    return std::max(34, int(doc)) + kCardPadding * 2 + 6;
+    // QPlainTextDocumentLayout reports documentSize().height() in LINES, not
+    // pixels — a quirk of the plain-text layout that an earlier version took at
+    // face value, which is why short notes were being clipped after two lines.
+    const int inner = std::max(40, width - (kRailOffset + kSelectionBleed * 2));
+    QTextDocument* doc = edit_->document();
+    doc->setTextWidth(inner);
+
+    const int lines = std::max(1, int(doc->size().height()));
+    const int lineHeight = edit_->fontMetrics().lineSpacing();
+    const int docMargin = int(doc->documentMargin()) * 2;
+
+    const int natural = lines * lineHeight + docMargin + kCardPadding * 2 + 2;
+    clipped_ = natural > kCardMaxHeight;
+    return std::min(natural, kCardMaxHeight);
 }
 
 void TextItemCard::beginEditing()
@@ -283,7 +308,7 @@ ImageItemCard::ImageItemCard(const Item& item, Thumbnailer& thumbs, BlobStore& b
         // a 100-megapixel HEIC should not land in memory whole to be shrunk.
         if (const QSize full = reader.size(); full.isValid()) {
             QSize target = full;
-            target.scale(2200, kImageMaxHeight * 2, Qt::KeepAspectRatio);
+            target.scale(2200, kCardMaxHeight * 2, Qt::KeepAspectRatio);
             if (target.width() < full.width()) reader.setScaledSize(target);
         }
         source_ = QPixmap::fromImage(reader.read());
@@ -324,14 +349,20 @@ QString ImageItemCard::asPlainText() const
     return item_.sourceName.isEmpty() ? tr("[image]") : item_.sourceName;
 }
 
-int ImageItemCard::desiredHeight() const
+int ImageItemCard::heightForColumn(int width) const
 {
-    if (source_.isNull()) return 190;
-    const int available = std::max(200, width() - kRailOffset - kSelectionBleed * 2);
+    const int captionH = caption_ ? caption_->sizeHint().height() : 0;
+    const int chrome = captionH + kCardPadding * 2 + kGapTight;
+    if (source_.isNull()) return 140 + chrome;
+
+    // Draw at the column width, never upscaled, and never taller than a card is
+    // allowed to be — otherwise one phone screenshot owns the whole board.
+    const int available = std::max(60, width - kRailOffset - kSelectionBleed * 2);
     const int drawn = source_.height() * std::min(available, source_.width())
                       / std::max(1, source_.width());
-    return std::min(drawn, kImageMaxHeight) + caption_->sizeHint().height()
-           + kCardPadding * 2 + kGapTight;
+    const int capped = std::min(drawn, kCardMaxHeight - chrome);
+    clipped_ = drawn > capped;
+    return capped + chrome;
 }
 
 void ImageItemCard::rescale()
@@ -341,7 +372,7 @@ void ImageItemCard::rescale()
     // Never upscaled. A 200x140 favicon draws at 200x140; stretching a small
     // image to fill a column is the fastest way to make a UI look cheap.
     const QSize target = source_.size()
-                             .scaled(available, kImageMaxHeight, Qt::KeepAspectRatio)
+                             .scaled(available, kCardMaxHeight, Qt::KeepAspectRatio)
                              .boundedTo(source_.size());
     view_->setPixmap(source_.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     view_->setFixedHeight(target.height());

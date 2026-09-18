@@ -38,7 +38,7 @@ private slots:
         QCOMPARE(t.items.listForBuffer(id)[0].type, napkin::ItemType::Image);
     }
 
-    void mixedItemsKeepInsertionOrder()
+    void positionsAreAssignedInInsertionOrderEvenThoughTheBoardShowsNewestFirst()
     {
         TestDb t;
         const auto id = t.buffers.create();
@@ -46,13 +46,15 @@ private slots:
         t.service.appendTo(id, napkin::Item::makeImage(QStringLiteral("hash1"), 100, 50, 900));
         t.service.appendTo(id, napkin::Item::makeText(QStringLiteral("https://example.com")));
 
+        // listForBuffer returns the board order: newest first. position still
+        // records the order things arrived, which is what undo restores to.
         const auto list = t.items.listForBuffer(id);
         QCOMPARE(list.size(), size_t(3));
-        QCOMPARE(list[0].position, 0);
+        QCOMPARE(list[0].position, 2);
         QCOMPARE(list[1].position, 1);
-        QCOMPARE(list[2].position, 2);
+        QCOMPARE(list[2].position, 0);
         QCOMPARE(list[1].type, napkin::ItemType::Image);
-        QCOMPARE(list[2].text, QStringLiteral("https://example.com"));
+        QCOMPARE(list[0].text, QStringLiteral("https://example.com"));
     }
 
     void imageMetadataRoundTrips()

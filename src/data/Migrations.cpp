@@ -81,6 +81,16 @@ constexpr const char* kV3 = R"SQL(
 ALTER TABLE items ADD COLUMN animated INTEGER NOT NULL DEFAULT 0;
 )SQL";
 
+// --- v4: items carry their own modified time ---------------------------------
+// The canvas shows the newest thing first, and "newest" has to mean edited as
+// well as added — otherwise amending an old note leaves it buried. Backfilled
+// from created_at so existing rows keep a sensible order.
+constexpr const char* kV4 = R"SQL(
+ALTER TABLE items ADD COLUMN modified_at INTEGER NOT NULL DEFAULT 0;
+UPDATE items SET modified_at = created_at WHERE modified_at = 0;
+CREATE INDEX idx_items_recent ON items(buffer_id, modified_at DESC);
+)SQL";
+
 struct Migration {
     int version;
     const char* sql;
@@ -90,6 +100,7 @@ constexpr std::array kMigrations{
     Migration{1, kV1},
     Migration{2, kV2},
     Migration{3, kV3},
+    Migration{4, kV4},
 };
 
 }  // namespace

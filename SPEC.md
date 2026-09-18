@@ -427,6 +427,29 @@ Selection *is* opening: there is no expand step, so a single click both selects
 the row and fills the canvas. Enter or double-click puts the caret in the
 canvas.
 
+### A board of cards, not a page
+
+Napkin is temporary storage, not an editor. The canvas is a **masonry board**:
+uniform column width, each card its own height, newest first.
+
+| Decision | Why |
+|---|---|
+| **No composer.** | A trailing "write something" box assumed writing is the primary act. It is not — pasting is. `Ctrl+T` summons a card when you do want to type. |
+| **`Ctrl+N` shows an empty board**, not a blank page | A new buffer is somewhere to paste into. Saying "Nothing here yet · Ctrl+V" is what it is for. |
+| **Emptying a text card deletes the item** | An item holding nothing is not a thing, and a blank card is litter. If it was the last item, the buffer goes too. |
+| **Newest first** (schema v4, `items.modified_at`) | On a scratch surface the thing you just put down is the thing you want. "Newest" has to mean edited as well as added, or amending an old note leaves it buried. |
+| **Column-balanced flow, not a grid** | A grid forces a common height and crops the tall ones; a single column gave a three-word note a 780px row. Each card goes to whichever column is currently shortest. |
+| **Cards clip at 420px with a fade** | Past that one phone screenshot owns the board. The fade says "there is more"; double-click opens it. |
+
+Column width is 280–400px: as many columns as fit, then widened to share the
+space, so a card is never cramped and never stretched merely because the window
+is large.
+
+> The card architecture is deliberately open. `ItemCard` is a base class with
+> `heightForColumn()` and `asPlainText()`; text and image are two subclasses.
+> Link previews, code snippets with syntax colouring, and map coordinates are
+> further subclasses and nothing else has to change.
+
 ### The visual system
 
 Tokenised in `src/ui/Tokens.h` rather than scattered as literals, so contrast is
@@ -438,27 +461,16 @@ which are text and get no exemption. **126** is the floor for a non-text
 affordance carrying meaning; anything at or below 90 is decorative and never the
 sole indicator of a state.
 
-Three deliberate moves, from a full design pass (`docs/UX_TWO_PANE.md`):
-
-- **Canvas body is two points larger than list text.** The list is chrome, the
-  canvas is content, and size is the cheapest way to say so.
-- **Text blocks have no border and no fill at rest.** A text item must not look
+- **Text cards have no border and no fill at rest.** A text item must not look
   like a form field, because it is not one — it is the content. What makes a
-  borderless block read as an *object* is a 3px **gutter rail** to its left,
-  empty at rest, solid when selected or being edited. Editing deliberately has
-  no fill: a wash behind text you are actively reading degrades it, and the
-  rail, border and caret are three signals already. Every state changes exactly
+  borderless card read as an *object* is a 3px **gutter rail**, empty at rest and
+  solid when selected or being edited. Editing deliberately has no fill: a wash
+  behind text you are actively reading degrades it. Every state changes exactly
   two things, never three.
-- **Both panes sit on `Base`; the gutters sit on `Window`.** The canvas is one
-  large sheet of paper, the list cards are small sheets, both on the same desk.
-  No tint difference, no gradient, no shadow anywhere.
-
-Images draw at the pane width, **never upscaled** — a 200×140 favicon draws at
-200×140, because stretching a small image to fill a column is the fastest way to
-make a UI look cheap — and are capped at 560px tall so a phone screenshot cannot
-own the whole canvas. One caption line beneath: filename or format, dimensions,
-size, and *animated* when it moves. The filename-above-a-thumbnail row it
-replaces was a file-manager row, not a picture.
+- **Both panes sit on `Base`; the gutters sit on `Window`.** The board is a desk;
+  the cards are pieces of paper on it. No tint difference, no gradient, no shadow.
+- Images draw at the column width, **never upscaled**, with one caption line:
+  filename or format, dimensions, size, and *animated* when it moves.
 
 ### Items are selectable objects
 

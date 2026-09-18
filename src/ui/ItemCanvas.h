@@ -2,16 +2,17 @@
 #include "../domain/Item.h"
 #include <QScrollArea>
 
-class QLabel;
 #include <QSet>
 #include <vector>
 
-class QVBoxLayout;
+class QLabel;
+
 
 namespace napkin {
 
 class BlobStore;
 class ItemCard;
+class MasonryLayout;
 class TextItemCard;
 class Thumbnailer;
 
@@ -30,7 +31,13 @@ public:
     // not dump the user back to nothing selected. -1 selects none.
     void setItems(const std::vector<Item>& items, int selectIndex = -1);
     int  indexOf(ItemId id) const;
+    // Board order, newest first. Not the same as the widget tree order, which
+    // is creation order.
+    QList<ItemId> itemOrder() const;
     void showNothingSelected();
+    // A buffer that exists but holds nothing yet: Ctrl+N makes one of these and
+    // it waits to be pasted into.
+    void showEmptyBuffer();
     void clearItems();
 
     struct DirtyText {
@@ -51,7 +58,9 @@ public:
     void cutSelection();       // copies, then asks for removal
     void deleteSelection();
 
-    void focusComposer();
+    // Adds an unwritten text card at the top and puts the caret in it. It
+    // becomes a real item when it has content, and evaporates if it does not.
+    void addPendingTextCard();
     bool textHasFocus() const;
 
 signals:
@@ -67,15 +76,14 @@ protected:
     void resizeEvent(QResizeEvent* e) override;
 
 private:
-    void addCard(ItemCard* card);
-    void addComposer();
+    void addCard(ItemCard* card, int index = -1);
     void applySelection(ItemId id, Qt::KeyboardModifiers modifiers);
     void relayout();
 
     Thumbnailer& thumbs_;
     BlobStore&   blobs_;
     QWidget*     body_ = nullptr;
-    QVBoxLayout* layout_ = nullptr;
+    MasonryLayout* layout_ = nullptr;
     QLabel*      placeholder_ = nullptr;
 
     std::vector<ItemCard*>     cards_;

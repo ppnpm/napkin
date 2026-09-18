@@ -35,14 +35,15 @@ inline constexpr int kPadTop    = 28;
 inline constexpr int kPadBottom = 120;   // clickable dead space below the composer
 
 // --- geometry ----------------------------------------------------------------
-inline constexpr int kTextColumn    = 780;   // ~92 characters: wide, because a
-                                             // wrapped shell command is worse
-                                             // than a slightly long measure
-inline constexpr int kImageColumnMax = 1040;
-inline constexpr int kImageBleedMin  = 120;  // an image matches the text column
-                                             // exactly or gains at least this
-                                             // much; a 37px bleed reads as a bug
-inline constexpr int kImageMaxHeight = 560;
+// Cards, not a column. A board of pasted things wants a uniform width and each
+// card's own height; a single 780px column gave a three-word note a 780px row.
+inline constexpr int kCardMinWidth = 280;
+inline constexpr int kCardMaxWidth = 400;
+
+// Enough for roughly 18 lines of body text or a landscape screenshot. Past this
+// a card would own the board, so it clips with a fade and opens on double-click.
+inline constexpr int kCardMaxHeight = 420;
+
 inline constexpr int kRailOffset     = 26;
 inline constexpr int kRailWidth      = 3;
 inline constexpr int kSelectionBleed = 12;   // so the text never moves between states

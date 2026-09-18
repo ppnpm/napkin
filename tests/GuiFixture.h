@@ -54,11 +54,24 @@ public:
         QVERIFY(row >= 0);
         view()->setCurrentIndex(model()->index(row, 0));
     }
-    // The last text block in the canvas is the composer: where new text goes.
+    // Cards are newest-first, so the first text card is the newest one — which
+    // is also the pending card Ctrl+T just created.
     QPlainTextEdit* editor()
     {
-        const auto edits = window.findChildren<QPlainTextEdit*>();
-        return edits.isEmpty() ? nullptr : edits.last();
+        const auto cards = window.findChildren<napkin::TextItemCard*>();
+        if (cards.isEmpty()) return nullptr;
+        // An unwritten card is the one waiting to be typed into.
+        for (auto* card : cards)
+            if (card->isComposer()) return card->findChild<QPlainTextEdit*>();
+        return cards.first()->findChild<QPlainTextEdit*>();
+    }
+
+    // Ctrl+N gives an empty buffer waiting to be pasted into; Ctrl+T is how you
+    // ask for somewhere to type.
+    QPlainTextEdit* newTextCard()
+    {
+        canvas()->addPendingTextCard();
+        return editor();
     }
 
     QString thumbsDir() const { return base_.dir.path() + "/thumbs"; }

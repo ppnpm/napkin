@@ -43,6 +43,12 @@ public:
 
     virtual QString asPlainText() const { return {}; }
 
+    // Natural height at this column width, capped. A card shows its content
+    // whole when it fits; past the cap it clips with a fade and opens on
+    // double-click, which is honest about there being more.
+    virtual int heightForColumn(int width) const = 0;
+    bool isClipped() const { return clipped_; }
+
 signals:
     void selectRequested(ItemId id, Qt::KeyboardModifiers modifiers);
     void activated(ItemId id);
@@ -64,6 +70,9 @@ protected:
 private:
     bool selected_ = false;
     bool hovered_ = false;
+
+protected:
+    mutable bool clipped_ = false;
 };
 
 class TextItemCard : public ItemCard {
@@ -81,7 +90,7 @@ public:
     void focusTextInteraction();
     void endEditing();
     bool isComposer() const { return itemId() == kNoItem; }
-    int desiredHeight() const;
+    int heightForColumn(int width) const override;
     bool textHasFocus() const;
     // Editing MODE, not window focus: a block being edited must still look
     // edited when the window is inactive, and window focus is not something a
@@ -112,7 +121,7 @@ public:
                   QWidget* parent = nullptr);
 
     QString asPlainText() const override;
-    int desiredHeight() const;
+    int heightForColumn(int width) const override;
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent* e) override;

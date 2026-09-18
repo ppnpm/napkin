@@ -1,6 +1,7 @@
 #include "ItemCanvas.h"
 #include "ItemCard.h"
 #include "../media/BlobStore.h"
+#include "MasonryLayout.h"
 #include "Tokens.h"
 
 #include <QApplication>
@@ -31,11 +32,10 @@ ItemCanvas::ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     body_ = new QWidget;
-    layout_ = new QVBoxLayout(body_);
-    // Generous bottom padding is dead space on purpose: clicking it focuses the
-    // composer, so there is always a large target for "I want to write".
-    layout_->setContentsMargins(kPadX, kPadTop, kPadX, kPadBottom);
-    layout_->setSpacing(kGapItem);
+    layout_ = new MasonryLayout(body_);
+    layout_->setContentsMargins(kPadX, kPadTop, kPadX, kPadTop);
+    layout_->setColumnWidth(kCardMinWidth, kCardMaxWidth);
+    layout_->setSpacingBetween(kGapTight * 2);
     setWidget(body_);
 
     placeholder_ = new QLabel;
@@ -62,6 +62,21 @@ void ItemCanvas::clearItems()
     }
 }
 
+void ItemCanvas::showEmptyBuffer()
+{
+    clearItems();
+    // Napkin is temporary storage, not an editor. An empty buffer is waiting to
+    // be pasted into, so it says that rather than offering a blank page.
+    placeholder_->setText(tr("Nothing here yet.\n\nPaste with Ctrl+V, or press Ctrl+T "
+                             "to write something."));
+    placeholder_->setParent(body_);
+    placeholder_->show();
+    layout_->addWidget(placeholder_);
+    QPalette pal = placeholder_->palette();
+    pal.setColor(QPalette::WindowText, text(pal, kTextTertiary));
+    placeholder_->setPalette(pal);
+}
+
 void ItemCanvas::showNothingSelected()
 {
     clearItems();
@@ -71,10 +86,10 @@ void ItemCanvas::showNothingSelected()
     placeholder_->setPalette(pal);
     placeholder_->setParent(body_);
     placeholder_->show();
-    layout_->addWidget(placeholder_, 1);
+    layout_->addWidget(placeholder_);
 }
 
-void ItemCanvas::addCard(ItemCard* card)
+void ItemCanvas::addCard(ItemCard* card, int index)
 {
     if (auto* text = qobject_cast<TextItemCard*>(card)) {
         // Only one block edits at a time: starting one ends the others, so the
@@ -93,15 +108,22 @@ void ItemCanvas::addCard(ItemCard* card)
         setFocus(Qt::OtherFocusReason);
         emit selectionChanged();
     });
-    layout_->addWidget(card);
-    cards_.push_back(card);
+    if (index < 0) {
+        layout_->addWidget(card);
+        cards_.push_back(card);
+    } else {
+        layout_->insertWidgetAt(index, card);
+        cards_.insert(cards_.begin() + std::min(size_t(index), cards_.size()), card);
+    }
 }
 
-// There is always somewhere to type at the end. It costs nothing until it has
-// content (invariant 5) and it is how a new text block gets added at all.
-void ItemCanvas::addComposer()
+// Ctrl+T. One unwritten card at the top, focused, which becomes a real item the
+// moment it has content and evaporates if it never does (invariant 5).
+void ItemCanvas::addPendingTextCard()
 {
-    if (!textCards_.empty() && textCards_.back()->text().trimmed().isEmpty()) return;
+    for (auto* existing : textCards_)
+        if (existing->isComposer()) { existing->focusText(); return; }
+
     Item blank;
     blank.type = ItemType::Text;
     auto* card = new TextItemCard(blank, body_);
@@ -109,8 +131,11 @@ void ItemCanvas::addComposer()
     connect(card, &TextItemCard::edited, this, &ItemCanvas::edited);
     connect(card, &TextItemCard::imagePasted, this, &ItemCanvas::imagePasted);
     connect(card, &TextItemCard::heightChanged, this, &ItemCanvas::relayout);
-    addCard(card);
-    textCards_.push_back(card);
+    placeholder_->hide();
+    addCard(card, 0);                       // newest first, from the moment it exists
+    textCards_.insert(textCards_.begin(), card);
+    relayout();
+    card->focusText();
 }
 
 int ItemCanvas::indexOf(ItemId id) const
@@ -120,9 +145,17 @@ int ItemCanvas::indexOf(ItemId id) const
     return -1;
 }
 
+QList<ItemId> ItemCanvas::itemOrder() const
+{
+    QList<ItemId> out;
+    for (auto* card : cards_) out << card->itemId();
+    return out;
+}
+
 void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
 {
     clearItems();
+    if (items.empty()) { showEmptyBuffer(); return; }
     placeholder_->hide();
 
     for (const auto& item : items) {
@@ -137,14 +170,11 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
             addCard(new ImageItemCard(item, thumbs_, blobs_, body_));
         }
     }
-    addComposer();
-    layout_->addStretch();
     relayout();
 
-    if (selectIndex < 0) return;
-    // Clamp: deleting the last item should land on the new last, not nowhere.
-    const int real = int(cards_.size()) - 1;   // the composer is never selectable
-    const int target = std::min(selectIndex, real - 1);
+    if (selectIndex < 0 || cards_.empty()) return;
+    // Clamp: deleting the last card should land on the new last, not nowhere.
+    const int target = std::min(selectIndex, int(cards_.size()) - 1);
     if (target >= 0 && target < int(cards_.size())
         && cards_[size_t(target)]->itemId() != kNoItem) {
         selected_ = {cards_[size_t(target)]->itemId()};
@@ -156,17 +186,13 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
 
 void ItemCanvas::relayout()
 {
-    // ~92 characters at 16px. Wide on purpose: Napkin holds pasted logs and
-    // shell commands as often as prose, and wrapping a command line is worse
-    // than a slightly long measure.
-    const int column = std::min(kTextColumn, std::max(240, viewport()->width() - kPadX * 2));
+    const int column = layout_->columnWidth(viewport()->width());
     for (auto* card : cards_) {
-        card->setMaximumWidth(column + kRailOffset + kSelectionBleed * 2);
-        if (auto* text = qobject_cast<TextItemCard*>(card))
-            text->setFixedHeight(text->desiredHeight());
-        else if (auto* image = qobject_cast<ImageItemCard*>(card))
-            image->setFixedHeight(image->desiredHeight());
+        card->setFixedWidth(column);
+        card->setFixedHeight(card->heightForColumn(column));
     }
+    layout_->invalidate();
+    body_->adjustSize();
 }
 
 void ItemCanvas::resizeEvent(QResizeEvent* e)
@@ -207,8 +233,6 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
 void ItemCanvas::mousePressEvent(QMouseEvent* e)
 {
     clearSelection();
-    // Clicking the empty paper below the last item means "I want to write".
-    if (!textCards_.empty() && e->button() == Qt::LeftButton) focusComposer();
     QScrollArea::mousePressEvent(e);
 }
 
@@ -327,10 +351,7 @@ bool ItemCanvas::rebindTextIds(const std::vector<Item>& items)
     return true;
 }
 
-void ItemCanvas::focusComposer()
-{
-    if (!textCards_.empty()) textCards_.back()->focusText();
-}
+
 
 bool ItemCanvas::textHasFocus() const
 {

@@ -106,7 +106,7 @@ private slots:
         f.select(id);
 
         const auto texts = f.canvas()->findChildren<TextItemCard*>();
-        QCOMPARE(texts.size(), 2);          // the item, plus the composer
+        QCOMPARE(texts.size(), 1);
         QCOMPARE(texts[0]->text(), QStringLiteral("show me"));
     }
 
@@ -133,9 +133,8 @@ private slots:
         const auto texts = editor->findChildren<TextItemCard*>();
 
         QCOMPARE(images.size(), 3);          // all three, not just the first
-        QCOMPARE(texts.size(), 2);           // the existing one, plus a composer
+        QCOMPARE(texts.size(), 1);
         QCOMPARE(texts[0]->text(), QStringLiteral("Investigate this bug"));
-        QVERIFY(texts[1]->text().isEmpty());
     }
 
     void anImageCanBeRemovedFromInsideTheBuffer()
@@ -163,7 +162,9 @@ private slots:
         const auto id = seedMixed(f, 1);
         f.select(id);
 
-        const auto item = f.items.listForBuffer(id)[1];
+        Item item;
+        for (const auto& i : f.items.listForBuffer(id))
+            if (i.type == ItemType::Image) item = i;
         QVERIFY(f.blobs.exists(item.blobHash, item.mime));
 
         f.window.removeItems({item.id});
@@ -173,20 +174,18 @@ private slots:
         QVERIFY(!f.blobs.exists(item.blobHash, item.mime));
     }
 
-    void typingIntoTheTrailingComposerAppendsANewTextItem()
+    void ctrlTAddsATextItem()
     {
         GuiFixture f;
         const auto id = seedMixed(f, 1);
         f.select(id);
 
-        const auto texts = f.canvas()->findChildren<TextItemCard*>();
-        QCOMPARE(texts.size(), 2);
-        QTest::keyClicks(texts[1]->findChild<QPlainTextEdit*>(), "a second thought");
+        QTest::keyClicks(f.newTextCard(), "a second thought");
         QTRY_VERIFY_WITH_TIMEOUT(f.items.countForBuffer(id) == 3, 2000);
 
         const auto items = f.items.listForBuffer(id);
-        QCOMPARE(items.back().type, ItemType::Text);
-        QCOMPARE(items.back().text, QStringLiteral("a second thought"));
+        QCOMPARE(items.front().type, ItemType::Text);
+        QCOMPARE(items.front().text, QStringLiteral("a second thought"));
     }
 
     void editingAnExistingTextItemDoesNotCreateADuplicate()
@@ -212,7 +211,7 @@ private slots:
         // the caret to position 0, so the next keystrokes were prepended.
         GuiFixture f;
         f.trigger("newBufferAction");
-        auto* edit = f.editor();
+        auto* edit = f.newTextCard();
         QTest::keyClicks(edit, "first");
         QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
 

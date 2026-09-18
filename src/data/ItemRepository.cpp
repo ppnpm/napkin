@@ -22,6 +22,7 @@ Item readItem(const Statement& s)
     i.byteSize   = s.columnInt64(10);
     i.mime       = s.columnText(11);
     i.animated   = s.columnBool(12);
+    i.modifiedAt = s.columnInt64(13);
     return i;
 }
 
@@ -46,8 +47,9 @@ ItemId ItemRepository::append(BufferId bufferId, Item item)
 
     Statement s(db_,
         "INSERT INTO items(buffer_id, position, type, created_at, text, blob_hash,"
-        "                  source_name, width, height, byte_size, mime, animated)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+        "                  source_name, width, height, byte_size, mime, animated,"
+        "                  modified_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
     s.bind(1, item.bufferId).bind(2, item.position).bind(3, itemTypeName(item.type))
      .bind(4, item.createdAt);
 
@@ -56,7 +58,7 @@ ItemId ItemRepository::append(BufferId bufferId, Item item)
     else                             { s.bindNull(5); s.bind(6, item.blobHash); }
 
     s.bind(7, item.sourceName).bind(8, item.width).bind(9, item.height).bind(10, item.byteSize);
-    s.bind(11, item.mime).bind(12, item.animated);
+    s.bind(11, item.mime).bind(12, item.animated).bind(13, item.createdAt);
     s.exec();
     return db_.lastInsertId();
 }
@@ -65,14 +67,16 @@ ItemId ItemRepository::restoreAt(const Item& item)
 {
     Statement s(db_,
         "INSERT INTO items(buffer_id, position, type, created_at, text, blob_hash,"
-        "                  source_name, width, height, byte_size, mime, animated)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+        "                  source_name, width, height, byte_size, mime, animated,"
+        "                  modified_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
     s.bind(1, item.bufferId).bind(2, item.position).bind(3, itemTypeName(item.type))
      .bind(4, item.createdAt);
     if (item.type == ItemType::Text) { s.bind(5, item.text); s.bindNull(6); }
     else                             { s.bindNull(5); s.bind(6, item.blobHash); }
     s.bind(7, item.sourceName).bind(8, item.width).bind(9, item.height)
-     .bind(10, item.byteSize).bind(11, item.mime).bind(12, item.animated);
+     .bind(10, item.byteSize).bind(11, item.mime).bind(12, item.animated)
+     .bind(13, item.modifiedAt ? item.modifiedAt : item.createdAt);
     s.exec();
     return db_.lastInsertId();
 }
@@ -80,7 +84,7 @@ ItemId ItemRepository::restoreAt(const Item& item)
 std::optional<Item> ItemRepository::find(ItemId id)
 {
     Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
-                     " source_name, width, height, byte_size, mime, animated FROM items WHERE id = ?");
+                     " source_name, width, height, byte_size, mime, animated, modified_at FROM items WHERE id = ?");
     s.bind(1, id);
     if (!s.step()) return std::nullopt;
     return readItem(s);
@@ -89,8 +93,8 @@ std::optional<Item> ItemRepository::find(ItemId id)
 std::vector<Item> ItemRepository::listForBuffer(BufferId bufferId)
 {
     Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
-                     " source_name, width, height, byte_size, mime, animated FROM items"
-                     " WHERE buffer_id = ? ORDER BY position ASC, id ASC");
+                     " source_name, width, height, byte_size, mime, animated, modified_at FROM items"
+                     " WHERE buffer_id = ? ORDER BY modified_at DESC, id DESC");
     s.bind(1, bufferId);
     std::vector<Item> out;
     while (s.step()) out.push_back(readItem(s));
@@ -104,8 +108,8 @@ std::vector<Item> ItemRepository::previewHead(BufferId bufferId, int limit)
     // difference between a list that scrolls and one that does not.
     Statement s(db_, "SELECT id, buffer_id, position, type, created_at,"
                      " substr(text, 1, 2048), blob_hash,"
-                     " source_name, width, height, byte_size, mime, animated FROM items"
-                     " WHERE buffer_id = ? ORDER BY position ASC, id ASC LIMIT ?");
+                     " source_name, width, height, byte_size, mime, animated, modified_at FROM items"
+                     " WHERE buffer_id = ? ORDER BY modified_at DESC, id DESC LIMIT ?");
     s.bind(1, bufferId).bind(2, limit);
     std::vector<Item> out;
     while (s.step()) out.push_back(readItem(s));
@@ -131,8 +135,9 @@ ItemRepository::Counts ItemRepository::countsForBuffer(BufferId bufferId)
 
 void ItemRepository::updateText(ItemId id, const QString& text)
 {
-    Statement s(db_, "UPDATE items SET text = ? WHERE id = ? AND type = 'text'");
-    s.bind(1, text).bind(2, id);
+    Statement s(db_, "UPDATE items SET text = ?, modified_at = ?"
+                     " WHERE id = ? AND type = 'text'");
+    s.bind(1, text).bind(2, nowMs()).bind(3, id);
     s.exec();
 }
 
@@ -153,7 +158,7 @@ bool ItemRepository::blobIsReferenced(const QString& hash)
 std::vector<Item> ItemRepository::allImageItems()
 {
     Statement s(db_, "SELECT id, buffer_id, position, type, created_at, text, blob_hash,"
-                     " source_name, width, height, byte_size, mime, animated FROM items"
+                     " source_name, width, height, byte_size, mime, animated, modified_at FROM items"
                      " WHERE type = 'image'");
     std::vector<Item> out;
     while (s.step()) out.push_back(readItem(s));

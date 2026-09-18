@@ -20,7 +20,7 @@ private slots:
         GuiFixture f;
         f.trigger("newBufferAction");
 
-        QVERIFY(f.editor());
+        QVERIFY(f.newTextCard());
         QCOMPARE(f.model()->rowCount(), 1);   // a card is visible...
         QCOMPARE(f.buffers.countLive(), 0);   // ...but invariant 5 holds
     }
@@ -29,7 +29,7 @@ private slots:
     {
         GuiFixture f;
         f.trigger("newBufferAction");
-        QTest::keyClicks(f.editor(), "systemctl restart nginx");
+        QTest::keyClicks(f.newTextCard(), "systemctl restart nginx");
 
         // Wait past the debounce; the autosave must fire on its own.
         QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
@@ -44,10 +44,11 @@ private slots:
     {
         GuiFixture f;
         f.trigger("newBufferAction");
-        QTest::keyClicks(f.editor(), "first");
+        auto* edit = f.newTextCard();
+        QTest::keyClicks(edit, "first");
         QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
 
-        QTest::keyClicks(f.editor(), " and second");
+        QTest::keyClicks(edit, " and second");   // the same card, not a new one
         QTest::qWait(600);
 
         QCOMPARE(f.buffers.countLive(), 1);  // still one
@@ -73,7 +74,7 @@ private slots:
     {
         GuiFixture f;
         f.trigger("newBufferAction");
-        QTest::keyClicks(f.editor(), "   \t  ");
+        QTest::keyClicks(f.newTextCard(), "   \t  ");
         QTest::qWait(600);
 
         QCOMPARE(f.buffers.countLive(), 0);  // invariant 5
@@ -84,7 +85,7 @@ private slots:
         GuiFixture f;
         const auto other = f.seed("other");
         f.trigger("newBufferAction");
-        QTest::keyClicks(f.editor(), "quick note");
+        QTest::keyClicks(f.newTextCard(), "quick note");
         f.select(other);   // immediately, inside the debounce window
 
         // Moving on must not cost the user the last keystrokes (SPEC.md §8).
@@ -136,7 +137,7 @@ private slots:
     {
         GuiFixture f;
         f.trigger("newBufferAction");
-        QTest::keyClicks(f.editor(), "unsaved when closing");
+        QTest::keyClicks(f.newTextCard(), "unsaved when closing");
         f.window.close();  // inside the debounce window
 
         QCOMPARE(f.buffers.countLive(), 1);
@@ -150,7 +151,7 @@ private slots:
         QCOMPARE(stack->currentIndex(), 1);  // empty state
 
         f.trigger("newBufferAction");
-        QTest::keyClicks(f.editor(), "content");
+        QTest::keyClicks(f.newTextCard(), "content");
         QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 2000);
         QCOMPARE(stack->currentIndex(), 0);  // the stack
     }
