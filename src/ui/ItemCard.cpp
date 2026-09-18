@@ -89,11 +89,15 @@ void ItemCard::setSelected(bool selected)
     update();
 }
 
+int ItemCard::chromeHeight() const
+{
+    return kCardPad * 2 - 6 + (footer_ ? kCardFooterH + kGapTight : 0);
+}
+
 int ItemCard::heightForColumn(int width) const
 {
     const int inner = std::max(40, width - kCardPad * 2);
-    const int chrome = kCardPad * 2 - 6 + (footer_ ? kCardFooterH + kGapTight : 0);
-    const int natural = contentHeightForWidth(inner) + chrome;
+    const int natural = contentHeightForWidth(inner) + chromeHeight();
 
     clipped_ = natural > kCardMaxHeight;
     return std::clamp(natural, kCardMinHeight, kCardMaxHeight);
@@ -127,11 +131,12 @@ void ItemCard::paintEvent(QPaintEvent*)
     if (selected_ || editing)
         p.fillPath(path, highlight(pal, isLightTheme(pal) ? 20 : 34));
 
-    QColor border = selected_ || editing ? highlight(pal, editing ? kBorderEditing
-                                                                 : kBorderSelected)
-                  : hovered_             ? text(pal, kCardBorderHover)
-                                         : text(pal, kCardBorder);
-    p.setPen(QPen(border, selected_ || editing ? 1.6 : 1.0));
+    const QColor border = selected_ || editing
+        ? highlight(pal, editing ? kBorderEditing : kBorderSelected)
+        : text(pal, cardBorderAlpha(pal, hovered_));
+    // Selection changes the border's WIDTH as well as its colour, so the state
+    // is never carried by colour alone (SPEC.md §14).
+    p.setPen(QPen(border, selected_ || editing ? 2.0 : 1.0));
     p.drawPath(path);
 
     if (!clipped_) return;
@@ -379,9 +384,11 @@ int ImageItemCard::contentHeightForWidth(int innerWidth) const
 void ImageItemCard::rescale()
 {
     if (source_.isNull()) return;
+    // Must use the same chrome arithmetic as heightForColumn, or the caption
+    // ends up painted over the bottom of the picture.
     const int available = std::max(60, width() - kCardPad * 2);
     const int captionH = caption_ ? caption_->sizeHint().height() + 6 : 0;
-    const int room = std::max(60, height() - kCardPad * 2 - kCardFooterH - kGapTight - captionH);
+    const int room = std::max(60, height() - chromeHeight() - captionH);
 
     const QSize target = source_.size().scaled(available, room, Qt::KeepAspectRatio)
                              .boundedTo(source_.size());

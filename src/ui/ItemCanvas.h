@@ -79,6 +79,7 @@ private:
     void addCard(ItemCard* card, int index = -1);
     void applySelection(ItemId id, Qt::KeyboardModifiers modifiers);
     void relayout();
+    int  stableWidth() const;
 
     Thumbnailer& thumbs_;
     BlobStore&   blobs_;

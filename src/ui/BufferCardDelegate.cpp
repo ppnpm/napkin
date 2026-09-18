@@ -232,17 +232,6 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
             x = box.right() + gap;
         }
 
-        if (imageCount > count) {
-            const QRect more(x, content.top(), size, size);
-            QPainterPath clip;
-            clip.addRoundedRect(QRectF(more), 4, 4);
-            p->fillPath(clip, dimmed(pal, 32));
-            p->setFont(option.font);
-            p->setPen(dimmed(pal, 170));
-            p->drawText(more, Qt::AlignCenter, QStringLiteral("+%1").arg(imageCount - count));
-            x = more.right() + gap;
-        }
-
         content.setLeft(x + 7);
     }
 

@@ -546,7 +546,7 @@ private slots:
         QCOMPARE(footers.size(), f.items.countForBuffer(id));
     }
 
-    void theCardCopyActionCopiesThatCardNotTheSelection()
+    void copyingFromACardAlsoSelectsIt()
     {
         GuiFixture f;
         const auto id = seedMixed(f);
@@ -559,16 +559,20 @@ private slots:
 
         auto* textCard = f.canvas()->findChildren<TextItemCard*>().first();
         emit textCard->copyRequested(textCard->itemId());
-        QCOMPARE(QApplication::clipboard()->text(), textCard->text());
 
-        // And the selection is left exactly as it was.
+        // The invariant: after any copy, the clipboard matches what is VISIBLY
+        // selected. Restoring the old selection afterwards would leave one card
+        // highlighted while a different one sat on the clipboard.
+        QCOMPARE(QApplication::clipboard()->text(), textCard->text());
         QCOMPARE(f.canvas()->selection().size(), 1);
-        QCOMPARE(f.canvas()->selection().first(), image->itemId());
+        QCOMPARE(f.canvas()->selection().first(), textCard->itemId());
     }
 
     void aTinyCardStillHasAMinimumSize()
     {
         GuiFixture f;
+        f.window.resize(1200, 800);
+        QTest::qWait(30);
         const auto id = f.buffers.create();
         f.service.appendTo(id, Item::makeText(QStringLiteral("ok")));
         f.model()->reload();
@@ -578,6 +582,26 @@ private slots:
         QVERIFY2(card->height() >= tokens::kCardMinHeight,
                  qPrintable(QString("a two-letter card is %1px tall").arg(card->height())));
         QVERIFY(card->width() >= tokens::kCardMinWidth);
+    }
+
+    void addingAnItemDoesNotResizeTheCardsAlreadyThere()
+    {
+        // With an as-needed scrollbar, the bar appearing shrinks the viewport by
+        // ~14px, which changes the column width and resizes every card in the
+        // buffer. The layout width now reserves the extent unconditionally.
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("first")));
+        f.model()->reload();
+        f.select(id);
+        const int widthBefore = f.canvas()->findChildren<TextItemCard*>().first()->width();
+
+        for (int i = 0; i < 12; ++i)
+            f.service.appendTo(id, Item::makeText(QStringLiteral("filler %1").arg(i)));
+        f.window.selectBuffer(f.model()->rowForId(id));
+
+        for (auto* card : f.canvas()->findChildren<TextItemCard*>())
+            QCOMPARE(card->width(), widthBefore);
     }
 
     void aCardsHeightDependsOnlyOnItsOwnContent()

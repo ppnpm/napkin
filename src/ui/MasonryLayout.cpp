@@ -65,7 +65,10 @@ int MasonryLayout::columnWidth(int width) const
     const QMargins m = contentsMargins();
     const int usable = width - m.left() - m.right();
     const int columns = columnCount(width);
-    return std::max(minColumn_ / 2, std::min(maxColumn_, (usable - (columns - 1) * gap_) / columns));
+    // Floored at the minimum, never half of it. A card has a stated minimum
+    // width and squashing it below that in a narrow window is a silent breach
+    // of it; the board scrolls horizontally instead, which is visible.
+    return std::max(minColumn_, std::min(maxColumn_, (usable - (columns - 1) * gap_) / columns));
 }
 
 int MasonryLayout::layoutInto(const QRect& rect, bool apply) const
@@ -117,7 +120,7 @@ QSize MasonryLayout::sizeHint() const
 QSize MasonryLayout::minimumSize() const
 {
     const QMargins m = contentsMargins();
-    return {minColumn_ / 2 + m.left() + m.right(), 0};
+    return {minColumn_ + m.left() + m.right(), 0};
 }
 
 }  // namespace napkin

@@ -1,4 +1,6 @@
 #pragma once
+#include "Tokens.h"
+
 #include <QLayout>
 #include <QList>
 
@@ -43,9 +45,11 @@ private:
     int layoutInto(const QRect& rect, bool apply) const;
 
     QList<QLayoutItem*> items_;
-    int minColumn_ = 280;
-    int maxColumn_ = 420;
-    int gap_ = 16;
+    // Defaults mirror Tokens.h; ItemCanvas sets them explicitly anyway, but a
+    // second set of magic numbers drifting from the first helps nobody.
+    int minColumn_ = tokens::kCardMinWidth;
+    int maxColumn_ = tokens::kCardMaxWidth;
+    int gap_ = tokens::kCardGap;
 };
 
 }  // namespace napkin

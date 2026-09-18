@@ -31,13 +31,16 @@ ItemCanvas::ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
     viewport()->setAutoFillBackground(true);
     viewport()->setBackgroundRole(QPalette::Window);
     setFocusPolicy(Qt::StrongFocus);
-    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // Horizontal scrolling only appears if the window is narrower than one
+    // full-width card, which is the honest outcome of a real minimum width.
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     body_ = new QWidget;
     layout_ = new MasonryLayout(body_);
     layout_->setContentsMargins(kPadX, kPadTop, kPadX, kPadTop);
     layout_->setColumnWidth(kCardMinWidth, kCardMaxWidth);
-    layout_->setSpacingBetween(kGapTight * 2);
+    layout_->setSpacingBetween(kCardGap);
     setWidget(body_);
 
     placeholder_ = new QLabel;
@@ -94,11 +97,12 @@ void ItemCanvas::showNothingSelected()
 void ItemCanvas::addCard(ItemCard* card, int index)
 {
     connect(card, &ItemCard::copyRequested, this, [this](ItemId id) {
-        // One-click copy of exactly this card, independent of the selection.
-        const auto keep = selected_;
-        selected_ = {id};
+        // One mechanism at two scopes, held by an invariant: after any copy the
+        // clipboard matches what is visibly selected. Saving and restoring the
+        // previous selection around this broke that — you would see two cards
+        // highlighted while a third sat on the clipboard.
+        applySelection(id, Qt::NoModifier);
         copySelection();
-        selected_ = keep;
     });
     if (auto* text = qobject_cast<TextItemCard*>(card)) {
         // Only one block edits at a time: starting one ends the others, so the
@@ -193,13 +197,25 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
     }
 }
 
+// The width every card is laid out against. Deliberately NOT viewport()->width():
+// with an as-needed scrollbar, adding one item can make the bar appear, shrink
+// the viewport by ~14px, change the column width and resize EVERY card in the
+// buffer. Reserving the extent unconditionally makes a card's size depend only
+// on its own content, which is the whole point.
+int ItemCanvas::stableWidth() const
+{
+    return std::max(kCardMinWidth, width() - verticalScrollBar()->sizeHint().width()
+                                       - frameWidth() * 2);
+}
+
 void ItemCanvas::relayout()
 {
-    const int column = layout_->columnWidth(viewport()->width());
+    const int column = layout_->columnWidth(stableWidth());
     for (auto* card : cards_) {
         card->setFixedWidth(column);
         card->setFixedHeight(card->heightForColumn(column));
     }
+    body_->setFixedWidth(stableWidth());
     layout_->invalidate();
     body_->adjustSize();
 }

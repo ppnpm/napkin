@@ -55,6 +55,7 @@ protected:
     // Subclasses call this once, with the widget that fills the content area.
     void setContent(QWidget* content, const QString& copyLabel);
     virtual int contentHeightForWidth(int innerWidth) const = 0;
+    int chromeHeight() const;
 
     void mousePressEvent(QMouseEvent* e) override;
     void paintEvent(QPaintEvent* e) override;

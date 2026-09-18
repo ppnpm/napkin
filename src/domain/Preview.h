@@ -7,9 +7,10 @@ namespace napkin {
 
 // Derived display, never user-entered metadata (SPEC.md §1, §3). Napkin has no
 // title field; a card's label is computed from what the buffer already holds.
-// A card shows up to this many thumbnails; beyond that it shows an overflow
-// count. Three fits the card width without crowding the text.
-inline constexpr int kMaxCardThumbs = 3;
+// One. Three of them squeezed the only identifying string in the row down to
+// "This is some of the mult…", and the canvas beside it now shows every image
+// anyway — the list only has to say "there are pictures in here".
+inline constexpr int kMaxCardThumbs = 1;
 
 struct ImageRef {
     QString hash;

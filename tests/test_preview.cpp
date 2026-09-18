@@ -68,7 +68,7 @@ private slots:
         QVERIFY(p.primary.isEmpty());
     }
 
-    void severalImagesYieldSeveralThumbnails()
+    void severalImagesYieldOneThumbnailAndACount()
     {
         std::vector<Item> head;
         for (int i = 0; i < 5; ++i)
@@ -76,9 +76,11 @@ private slots:
 
         const auto p = derivePreview(head, 5, 5);
         QCOMPARE(p.imageCount, 5);
-        QCOMPARE(int(p.thumbs.size()), kMaxCardThumbs);   // capped, with overflow shown
-        QCOMPARE(p.thumbs[0].hash, QStringLiteral("hash0"));
-        QCOMPARE(p.thumbs[2].hash, QStringLiteral("hash2"));
+        // One thumbnail, not three: the row only has to say "there are pictures
+        // in here", and the canvas beside it shows every one of them.
+        QCOMPARE(int(p.thumbs.size()), kMaxCardThumbs);
+        QVERIFY(!p.thumbs.empty());
+        QCOMPARE(p.thumbs.front().hash, QStringLiteral("hash0"));
         QCOMPARE(p.primary, QStringLiteral("5 images"));
     }
 
@@ -89,7 +91,7 @@ private slots:
                                       Item::makeImage("b", 10, 10, 1)}, 3, 2);
         QCOMPARE(p.primary, QStringLiteral("Investigate this bug"));
         QCOMPARE(p.secondary, QStringLiteral("3 items"));
-        QCOMPARE(int(p.thumbs.size()), 2);
+        QCOMPARE(int(p.thumbs.size()), 1);
     }
 
     void byteSizes()

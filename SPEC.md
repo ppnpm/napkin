@@ -463,8 +463,12 @@ which are text and get no exemption. **126** is the floor for a non-text
 affordance carrying meaning; anything at or below 90 is decorative and never the
 sole indicator of a state.
 
-- **A card is a card.** Own surface (`Base`), own edge (`Text` α62, α104 on
-  hover), 16px inset, 10px radius. An earlier build drew text cards with no
+- **A card is a card.** Own surface (`Base`), own edge, 16px inset, 10px radius.
+  The edge is `Text` **α128 light / α108 dark** (3.09:1 and 4.00:1) — the same
+  3:1 floor everything else here obeys. An earlier value of α62 was described as
+  "quiet", measured **1.63:1**, and contradicted the constant four lines above it
+  in the same file. Selection changes the border's *width* as well as its colour,
+  so no state is carried by colour alone. An earlier build drew text cards with no
   border and no fill on the reasoning that "a text item is content, not a
   widget" — which was true about the *content* and wrong about the *card*. The
   board read as loose text rather than as things you can pick up, and that is
@@ -487,10 +491,21 @@ sole indicator of a state.
 > `QTextDocument`, which honours `setTextWidth` and answers in pixels before the
 > widget has ever been shown.
 
-- **Sizes are per-card and absolute.** Min 92px tall so a two-word paste is still
-  something you can aim at, max 420px so one screenshot cannot own the board,
-  columns 280–400px wide. A card's height is computed from its own content and
-  nothing else — a tall neighbour never stretches or shrinks it.
+- **Sizes are per-card and absolute.** Min 88px tall — one line plus chrome, and
+  deliberately not padded to something rounder, because a minimum that exceeds
+  what a short card needs makes the board lie about how much is in it. Max 420px
+  so one screenshot cannot own the board. Columns 280–460px, floored at the
+  minimum rather than squashed below it; a window too narrow for one full card
+  scrolls horizontally, which is visible, instead of silently breaching the
+  stated minimum.
+
+> **A card's size depends on its own content and nothing else.** That is harder
+> than it sounds. The layout width is computed from the widget width **minus the
+> scrollbar extent, unconditionally** — because with an as-needed scrollbar,
+> adding one item makes the bar appear, shrinks the viewport by ~14px, changes
+> the column width and resizes *every card in the buffer*. Both halves are
+> asserted: a tall neighbour must not change a short card's height, and adding
+> twelve items must not change the width of the card that was already there.
 - Images draw at the column width, **never upscaled**, with one caption line:
   filename or format, dimensions, size, and *animated* when it moves.
 

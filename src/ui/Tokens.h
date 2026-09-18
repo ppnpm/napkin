@@ -2,6 +2,7 @@
 #include <QColor>
 #include <QFont>
 #include <QPalette>
+#include <algorithm>
 
 // The visual system, in one place. Every alpha here is a measured contrast
 // threshold composited over QPalette::Base against Breeze Light, the harsher of
@@ -38,7 +39,7 @@ inline constexpr int kPadBottom = 120;   // clickable dead space below the compo
 // Cards, not a column. A board of pasted things wants a uniform width and each
 // card's own height; a single 780px column gave a three-word note a 780px row.
 inline constexpr int kCardMinWidth = 280;
-inline constexpr int kCardMaxWidth = 400;
+inline constexpr int kCardMaxWidth = 460;
 
 // Enough for roughly 18 lines of body text or a landscape screenshot. Past this
 // a card would own the board, so it clips with a fade and opens on double-click.
@@ -47,14 +48,31 @@ inline constexpr int kCardMaxHeight = 420;
 // A card is never shorter than this, so a one-word paste is still a card you can
 // aim at rather than a sliver. Every card's size depends only on its own
 // content: nothing here is derived from what the neighbours are doing.
-inline constexpr int kCardMinHeight = 92;
+// One line of body text plus the chrome. Deliberately not padded out to
+// something rounder: a min height that exceeds what a short card needs makes
+// the board lie about how much is in it.
+inline constexpr int kCardMinHeight = 88;
 
 // Card chrome.
 inline constexpr int kCardPad      = 16;   // content inset
-inline constexpr int kCardFooterH  = 30;   // the copy action and the timestamp
+inline constexpr int kCardFooterH  = 28;   // the copy action and the timestamp
 inline constexpr int kCardRadius   = 10;
-inline constexpr int kCardBorder   = 62;   // alpha: quiet, but a card reads as an object
-inline constexpr int kCardBorderHover = 104;
+inline constexpr int kCardGap      = 20;
+
+// A card's edge is a meaningful affordance, so it obeys the same 3:1 floor as
+// everything else here. An earlier value of 62 was 1.63:1 in light — declared
+// "quiet", measured invisible, and contradicting the constant four lines above
+// it. Dark needs less to read as an edge, so it gets less.
+inline constexpr int kCardBorderLight = 128;  // 3.09:1
+inline constexpr int kCardBorderDark  = 108;  // 4.00:1
+inline constexpr int kCardBorderHoverBoost = 46;
+
+inline int cardBorderAlpha(const QPalette& pal, bool hovered)
+{
+    const int base = pal.color(QPalette::Window).lightness() > 128 ? kCardBorderLight
+                                                                  : kCardBorderDark;
+    return hovered ? std::min(255, base + kCardBorderHoverBoost) : base;
+}
 
 inline constexpr int kRailOffset     = 26;
 inline constexpr int kRailWidth      = 3;
