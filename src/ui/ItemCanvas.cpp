@@ -55,6 +55,7 @@ void ItemCanvas::clearItems()
     textCards_.clear();
     selected_.clear();
     anchor_ = kNoItem;
+    cursor_ = -1;
     while (QLayoutItem* child = layout_->takeAt(0)) {
         if (QWidget* w = child->widget()) {
             // Reparenting before deleteLater() takes the widget out of the tree
@@ -193,6 +194,8 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
         selected_ = {cards_[size_t(target)]->itemId()};
         anchor_ = *selected_.begin();
         cards_[size_t(target)]->setSelected(true);
+        cards_[size_t(target)]->setCurrent(true);
+        cursor_ = target;
         // setItems destroyed whatever had focus, including the card the user
         // was deleting. Take it back, or the *second* Delete goes nowhere.
         setFocus(Qt::OtherFocusReason);
@@ -252,6 +255,14 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
         // Uniform: a single click selects, whatever the item is.
         selected_ = {id};
         anchor_ = id;
+    }
+
+    // Keep the keyboard cursor where the mouse just acted, so the two never
+    // disagree about "the current card".
+    for (size_t i = 0; i < cards_.size(); ++i) {
+        const bool here = cards_[i]->itemId() == id;
+        cards_[i]->setCurrent(here);
+        if (here) cursor_ = int(i);
     }
 
     for (auto* card : cards_) card->setSelected(selected_.contains(card->itemId()));
@@ -338,8 +349,50 @@ void ItemCanvas::deleteSelection()
     emit removeRequested(ids);
 }
 
+void ItemCanvas::setCursorTo(int index, Qt::KeyboardModifiers modifiers)
+{
+    if (cards_.empty()) return;
+    const int target = std::clamp(index, 0, int(cards_.size()) - 1);
+    if (cursor_ >= 0 && cursor_ < int(cards_.size())) cards_[size_t(cursor_)]->setCurrent(false);
+    cursor_ = target;
+    cards_[size_t(cursor_)]->setCurrent(true);
+
+    const ItemId id = cards_[size_t(cursor_)]->itemId();
+    if (modifiers & Qt::ShiftModifier) applySelection(id, Qt::ShiftModifier);
+    else if (!(modifiers & Qt::ControlModifier)) applySelection(id, Qt::NoModifier);
+
+    ensureWidgetVisible(cards_[size_t(cursor_)], 0, kCardGap);
+}
+
+void ItemCanvas::moveCursor(int delta, Qt::KeyboardModifiers modifiers)
+{
+    if (cards_.empty()) return;
+    setCursorTo(cursor_ < 0 ? (delta > 0 ? 0 : int(cards_.size()) - 1) : cursor_ + delta,
+                modifiers);
+}
+
 void ItemCanvas::keyPressEvent(QKeyEvent* e)
 {
+    // Arrow keys walk the board in document order — down/right forward,
+    // up/left back. Deliberately not spatial: masonry puts item 2 top-middle,
+    // so a spatial walk would be unpredictable, while document order is the
+    // order the cards were made.
+    switch (e->key()) {
+    case Qt::Key_Down:
+    case Qt::Key_Right: moveCursor(+1, e->modifiers()); return;
+    case Qt::Key_Up:
+    case Qt::Key_Left:  moveCursor(-1, e->modifiers()); return;
+    case Qt::Key_Home:  setCursorTo(0, e->modifiers()); return;
+    case Qt::Key_End:   setCursorTo(int(cards_.size()) - 1, e->modifiers()); return;
+    case Qt::Key_Space:
+        if (cursor_ >= 0 && cursor_ < int(cards_.size())) {
+            applySelection(cards_[size_t(cursor_)]->itemId(), Qt::ControlModifier);
+            return;
+        }
+        break;
+    default: break;
+    }
+
     // These only fire when the canvas itself has focus, not while a caret is in
     // a text block, so they can never eat a keystroke meant for the text.
     if (e->matches(QKeySequence::Copy))      { copySelection(); return; }
@@ -350,12 +403,15 @@ void ItemCanvas::keyPressEvent(QKeyEvent* e)
         return;
     }
     if (e->key() == Qt::Key_Escape) { clearSelection(); return; }
-    // Enter on a single selected text block starts editing it, the keyboard
-    // equivalent of the double-click.
-    if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter)
-        && selected_.size() == 1) {
-        for (auto* card : textCards_)
-            if (card->itemId() == *selected_.begin()) { card->beginEditing(); return; }
+    // Enter edits the card under the cursor — the keyboard equivalent of the
+    // double-click — or opens it, if it is an image.
+    if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+        if (cursor_ >= 0 && cursor_ < int(cards_.size())) {
+            ItemCard* card = cards_[size_t(cursor_)];
+            if (auto* asText = qobject_cast<TextItemCard*>(card)) { asText->beginEditing(); return; }
+            emit imageActivated(card->itemId());
+            return;
+        }
     }
     QScrollArea::keyPressEvent(e);
 }

@@ -3,6 +3,10 @@
 #include "../src/media/ImageFormats.h"
 #include "../src/ui/ItemCanvas.h"
 #include "../src/ui/ItemCard.h"
+#include "../src/ui/CardFooter.h"
+#include "../src/ui/Tokens.h"
+
+#include <cmath>
 
 #include <QBuffer>
 #include <QDir>
@@ -285,6 +289,123 @@ private slots:
                 QVERIFY2(f.blobs.exists(item.blobHash, item.mime),
                          "undo restored a row whose blob had been swept away");
         }
+    }
+
+    // --- the board is operable without a mouse -------------------------------
+    void arrowKeysMoveTheSelectionAcrossCards()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        for (int i = 0; i < 5; ++i)
+            f.service.appendTo(id, Item::makeText(QStringLiteral("card %1").arg(i)));
+        f.model()->reload();
+        f.select(id);
+        f.canvas()->setFocus(Qt::OtherFocusReason);
+
+        // Every canvas verb acts on the selection, and until this there was no
+        // keyboard gesture anywhere that wrote to it — a keyboard user could
+        // select all or nothing.
+        QCOMPARE(f.canvas()->selection().size(), 0);
+        QTest::keyClick(f.canvas(), Qt::Key_Down);
+        QCOMPARE(f.canvas()->selection().size(), 1);
+        QCOMPARE(f.canvas()->cursorIndex(), 0);
+
+        QTest::keyClick(f.canvas(), Qt::Key_Down);
+        QCOMPARE(f.canvas()->cursorIndex(), 1);
+        QTest::keyClick(f.canvas(), Qt::Key_Up);
+        QCOMPARE(f.canvas()->cursorIndex(), 0);
+
+        QTest::keyClick(f.canvas(), Qt::Key_End);
+        QCOMPARE(f.canvas()->cursorIndex(), 4);
+        QTest::keyClick(f.canvas(), Qt::Key_Home);
+        QCOMPARE(f.canvas()->cursorIndex(), 0);
+    }
+
+    void shiftArrowExtendsAndSpaceToggles()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        for (int i = 0; i < 4; ++i)
+            f.service.appendTo(id, Item::makeText(QStringLiteral("card %1").arg(i)));
+        f.model()->reload();
+        f.select(id);
+        f.canvas()->setFocus(Qt::OtherFocusReason);
+
+        QTest::keyClick(f.canvas(), Qt::Key_Down);
+        QTest::keyClick(f.canvas(), Qt::Key_Down, Qt::ShiftModifier);
+        QCOMPARE(f.canvas()->selection().size(), 2);
+
+        QTest::keyClick(f.canvas(), Qt::Key_Space);
+        QCOMPARE(f.canvas()->selection().size(), 1);
+    }
+
+    void deleteFromTheKeyboardAloneRemovesTheCard()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        for (int i = 0; i < 3; ++i)
+            f.service.appendTo(id, Item::makeText(QStringLiteral("card %1").arg(i)));
+        f.model()->reload();
+        f.select(id);
+        f.canvas()->setFocus(Qt::OtherFocusReason);
+
+        QTest::keyClick(f.canvas(), Qt::Key_Down);
+        QTest::keyClick(f.canvas(), Qt::Key_Delete);
+        QCOMPARE(f.items.countForBuffer(id), 2);
+    }
+
+    void everyCardAnnouncesItselfToAScreenReader()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("a note worth reading")));
+        f.model()->reload();
+        f.select(id);
+
+        for (auto* card : f.canvas()->findChildren<ItemCard*>()) {
+            QVERIFY2(!card->accessibleName().isEmpty(),
+                     "a card with no accessible name announces nothing");
+        }
+    }
+
+    void theSelectedBorderIsActuallyVisible()
+    {
+        // The raw Highlight at alpha 160 measured 1.74:1 in Breeze Light —
+        // fainter than the 3.10:1 resting border it replaced.
+        QPalette pal;
+        pal.setColor(QPalette::Base, QColor(252, 252, 252));
+        pal.setColor(QPalette::Window, QColor(239, 240, 241));
+        pal.setColor(QPalette::Highlight, QColor(61, 174, 233));
+
+        auto relLum = [](const QColor& c) {
+            auto ch = [](int v) {
+                const qreal s = v / 255.0;
+                return s <= 0.04045 ? s / 12.92 : std::pow((s + 0.055) / 1.055, 2.4);
+            };
+            return 0.2126 * ch(c.red()) + 0.7152 * ch(c.green()) + 0.0722 * ch(c.blue());
+        };
+        const QColor accent = tokens::readableAccent(pal, 1.0);
+        const qreal la = relLum(accent), lb = relLum(pal.color(QPalette::Base));
+        const qreal ratio = (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+        QVERIFY2(ratio >= 3.0, qPrintable(QString("selected border is %1:1").arg(ratio)));
+    }
+
+    void aClippedCardSaysSo()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        QString huge;
+        for (int i = 0; i < 200; ++i) huge += QStringLiteral("line %1\n").arg(i);
+        f.service.appendTo(id, Item::makeText(huge));
+        f.model()->reload();
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        QVERIFY(card->isClipped());
+        auto* footer = card->findChild<CardFooter*>();
+        QVERIFY(footer);
+        QVERIFY2(!footer->toolTip().isEmpty(),
+                 "a clipped card must announce that there is more in it");
     }
 
     void thePreviewCacheIsBounded()

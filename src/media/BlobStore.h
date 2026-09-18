@@ -16,9 +16,13 @@ public:
     static constexpr qint64 kMaxBytes = 64LL * 1024 * 1024;
 
     // Bytes are not the only way to be enormous: a 48 KB PNG can declare
-    // 20000x20000 and cost 1.6 GB to decode. 80 megapixels is well past any
-    // camera or screenshot a scratch surface should hold.
-    static constexpr qint64 kMaxPixels = 80LL * 1000 * 1000;
+    // 20000x20000 and cost 1.6 GB to decode.
+    //
+    // 48 megapixels, not 80. QImageReader's default allocation limit is 256 MB,
+    // i.e. 64 megapixels at 4 bytes a pixel — so an 80 MP ceiling let Napkin
+    // accept images it could then never display, and the card reported them as
+    // missing from disk while the file sat right there.
+    static constexpr qint64 kMaxPixels = 48LL * 1000 * 1000;
 
     struct Stored {
         QString hash;

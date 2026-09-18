@@ -3,6 +3,7 @@
 #include <QFont>
 #include <QPalette>
 #include <algorithm>
+#include <cmath>
 
 // The visual system, in one place. Every alpha here is a measured contrast
 // threshold composited over QPalette::Base against Breeze Light, the harsher of
@@ -66,6 +67,39 @@ inline constexpr int kCardGap      = 20;
 inline constexpr int kCardBorderLight = 128;  // 3.09:1
 inline constexpr int kCardBorderDark  = 108;  // 4.00:1
 inline constexpr int kCardBorderHoverBoost = 46;
+
+// QPalette::Highlight is chosen by the theme for *fills*, where the text on top
+// carries the contrast. Used as a hairline against Base it is often far below
+// 3:1 — Breeze Light's is 2.1:1 at full strength. Darken (or lighten, in a dark
+// theme) until it genuinely reads as an edge.
+inline QColor readableAccent(const QPalette& pal, qreal strength = 1.0)
+{
+    const QColor base = pal.color(QPalette::Base);
+    const bool light = base.lightness() > 128;
+    QColor accent = pal.color(QPalette::Highlight);
+
+    auto relLum = [](const QColor& c) {
+        auto ch = [](int v) {
+            const qreal s = v / 255.0;
+            return s <= 0.04045 ? s / 12.92 : std::pow((s + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * ch(c.red()) + 0.7152 * ch(c.green()) + 0.0722 * ch(c.blue());
+    };
+    auto ratio = [&](const QColor& a, const QColor& b) {
+        const qreal la = relLum(a), lb = relLum(b);
+        return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+    };
+
+    for (int i = 0; i < 24 && ratio(accent, base) < 3.0; ++i)
+        accent = light ? accent.darker(112) : accent.lighter(112);
+
+    if (strength < 1.0) {
+        // A softer variant for "selected but not editing", still above 3:1
+        // because it only ever moves toward the accent, never back to Base.
+        accent.setAlphaF(std::max(0.75, strength));
+    }
+    return accent;
+}
 
 inline int cardBorderAlpha(const QPalette& pal, bool hovered)
 {

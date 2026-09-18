@@ -18,6 +18,8 @@ public:
     CardFooter(QString actionLabel, QWidget* parent = nullptr);
 
     void setTimestamp(qint64 modifiedAt);
+    // Shown when the card cannot display all of its content.
+    void setClipped(bool clipped);
     void refreshTimestamp();
 
 signals:
@@ -38,6 +40,7 @@ private:
     QString age_;
     bool    hoveringAction_ = false;
     bool    pressed_ = false;
+    bool    clipped_ = false;
 };
 
 }  // namespace napkin

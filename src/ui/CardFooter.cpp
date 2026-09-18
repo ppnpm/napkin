@@ -30,6 +30,15 @@ void CardFooter::setTimestamp(qint64 modifiedAt)
     refreshTimestamp();
 }
 
+void CardFooter::setClipped(bool clipped)
+{
+    if (clipped_ == clipped) return;
+    clipped_ = clipped;
+    setToolTip(clipped_ ? tr("There is more in this card than fits — open it to read it all")
+                        : QString());
+    update();
+}
+
 void CardFooter::refreshTimestamp()
 {
     const QString fresh = modifiedAt_ ? relativeTime(modifiedAt_, nowMs()) : QString();
@@ -61,9 +70,15 @@ void CardFooter::paintEvent(QPaintEvent*)
                      action.width() - kIcon - kIconGap, height()),
                Qt::AlignLeft | Qt::AlignVCenter, label_);
 
-    if (age_.isEmpty()) return;
+    // A clipped card has to say so. The previous attempt painted a fade in the
+    // card's own paintEvent — but the text edit is a CHILD and paints after its
+    // parent, so the glyphs went straight over the gradient at full opacity and
+    // a 1 MB paste looked identical to a 21-line note.
+    QString right = age_;
+    if (clipped_) right = right.isEmpty() ? tr("more…") : tr("more…   %1").arg(age_);
+    if (right.isEmpty()) return;
     p.setPen(text(pal, kTextTertiary));
-    p.drawText(rect(), Qt::AlignRight | Qt::AlignVCenter, age_);
+    p.drawText(rect(), Qt::AlignRight | Qt::AlignVCenter, right);
 }
 
 void CardFooter::mousePressEvent(QMouseEvent* e)

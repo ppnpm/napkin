@@ -35,6 +35,12 @@ public:
     bool isSelected() const { return selected_; }
     void setSelected(bool selected);
 
+    // The keyboard cursor. Distinct from selection: you can move the cursor
+    // across cards with the arrow keys and the card under it draws a focus ring
+    // whether or not it is part of the selection.
+    bool isCurrent() const { return current_; }
+    void setCurrent(bool current);
+
     virtual QString asPlainText() const { return {}; }
 
     // Natural height at this column width, clamped between the minimum a card
@@ -68,6 +74,7 @@ protected:
 private:
     CardFooter* footer_ = nullptr;
     bool selected_ = false;
+    bool current_ = false;
     bool hovered_ = false;
 };
 
@@ -88,6 +95,7 @@ public:
     void endEditing();
     bool textHasFocus() const;
     bool hasEditFocus() const override;
+    void updateAccessibleName();
 
 signals:
     void edited();

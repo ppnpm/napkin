@@ -57,6 +57,16 @@ public:
     // composer, so identity is unambiguous and position is never consulted.
     bool bindComposer(ItemId newId);
 
+    // --- keyboard ------------------------------------------------------------
+    // The board is fully operable without a mouse: arrows move the cursor,
+    // Shift+arrows extend, Space toggles, Enter edits, Home/End jump. Every
+    // canvas verb acts on the selection, so without a keyboard route to the
+    // selection a keyboard user could select all or nothing — which is how this
+    // shipped until an audit drove it and found nothing worked.
+    void moveCursor(int delta, Qt::KeyboardModifiers modifiers);
+    void setCursorTo(int index, Qt::KeyboardModifiers modifiers);
+    int  cursorIndex() const { return cursor_; }
+
     QList<ItemId> selection() const;
     bool hasSelection() const { return !selected_.isEmpty(); }
     void clearSelection();
@@ -105,6 +115,7 @@ private:
     std::vector<TextItemCard*> textCards_;
     QSet<ItemId> selected_;
     ItemId       anchor_ = kNoItem;   // for Shift+click ranges
+    int          cursor_ = -1;        // the keyboard cursor
 };
 
 }  // namespace napkin

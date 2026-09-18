@@ -39,8 +39,25 @@ Lightbox::Lightbox(const QString& imagePath, bool animated, QString caption, QWi
     } else {
         QImageReader reader(imagePath);
         reader.setAutoTransform(true);
+        natural = reader.size();
+        // Bounded to the screen. Reading a 208 KB 8000x8000 PNG unbounded cost
+        // 288 MB and 400 ms — a one-click memory spike on a double-click.
+        QSize cap(3840, 2160);
+        if (const auto* screen = QGuiApplication::primaryScreen())
+            cap = screen->availableGeometry().size() * screen->devicePixelRatio();
+        if (natural.isValid() && (natural.width() > cap.width()
+                                  || natural.height() > cap.height())) {
+            QSize target = natural;
+            target.scale(cap, Qt::KeepAspectRatio);
+            reader.setScaledSize(target);
+        }
         source_ = QPixmap::fromImage(reader.read());
-        natural = source_.size();
+        if (source_.isNull()) {
+            view_->setText(tr("Napkin could not open this image."));
+            view_->setEnabled(false);
+        } else if (!natural.isValid()) {
+            natural = source_.size();
+        }
     }
 
     QSize target = natural.isValid() ? natural : QSize(640, 480);

@@ -1,7 +1,9 @@
 #include "ItemCard.h"
 #include "CardFooter.h"
 #include "Tokens.h"
+#include "../domain/Clock.h"
 #include "../domain/Preview.h"
+#include "../domain/TimeFormat.h"
 #include "../media/BlobStore.h"
 #include "../media/ClipboardContent.h"
 #include "../media/ImageFormats.h"
@@ -89,6 +91,13 @@ void ItemCard::setSelected(bool selected)
     update();
 }
 
+void ItemCard::setCurrent(bool current)
+{
+    if (current_ == current) return;
+    current_ = current;
+    update();
+}
+
 int ItemCard::chromeHeight() const
 {
     return kCardPad * 2 - 6 + (footer_ ? kCardFooterH + kGapTight : 0);
@@ -100,6 +109,7 @@ int ItemCard::heightForColumn(int width) const
     const int natural = contentHeightForWidth(inner) + chromeHeight();
 
     clipped_ = natural > kCardMaxHeight;
+    if (footer_) footer_->setClipped(clipped_);
     return std::clamp(natural, kCardMinHeight, kCardMaxHeight);
 }
 
@@ -134,26 +144,27 @@ void ItemCard::paintEvent(QPaintEvent*)
     if (selected_ && !editing)
         p.fillPath(path, highlight(pal, isLightTheme(pal) ? 20 : 34));
 
+    // The accent is darkened until it actually meets 3:1 against the card. The
+    // raw Highlight at alpha 160 measured 1.74:1 in Breeze Light — FAINTER than
+    // the 3.10:1 resting border it replaced, so selecting a card made its edge
+    // harder to see and the state ended up carried by hue alone.
     const QColor border = selected_ || editing
-        ? highlight(pal, editing ? kBorderEditing : kBorderSelected)
+        ? readableAccent(pal, editing ? 1.0 : 0.82)
         : text(pal, cardBorderAlpha(pal, hovered_));
-    // Selection changes the border's WIDTH as well as its colour, so the state
-    // is never carried by colour alone (SPEC.md §14).
     p.setPen(QPen(border, selected_ || editing ? 2.0 : 1.0));
     p.drawPath(path);
 
-    if (!clipped_) return;
+    // Keyboard focus is its own signal, drawn inside the border so it never
+    // collides with it. Without this a focused card was pixel-identical to its
+    // neighbours and the board could not be operated by keyboard at all.
+    if (current_) {
+        QPainterPath ring;
+        ring.addRoundedRect(box.adjusted(3, 3, -3, -3), kCardRadius - 3, kCardRadius - 3);
+        QPen focusPen(readableAccent(pal, 1.0), 2.0, Qt::DotLine);
+        p.setPen(focusPen);
+        p.drawPath(ring);
+    }
 
-    // Fade the last lines rather than cutting them mid-stroke, so it reads as
-    // "there is more" instead of "this is broken".
-    const int fadeTop = height() - (footer_ ? kCardFooterH + kCardPad : kCardPad) - 30;
-    QLinearGradient fade(0, fadeTop, 0, fadeTop + 30);
-    QColor base = pal.color(QPalette::Base);
-    base.setAlpha(0);
-    fade.setColorAt(0.0, base);
-    base.setAlpha(255);
-    fade.setColorAt(1.0, base);
-    p.fillRect(QRect(2, fadeTop, width() - 4, 30), fade);
 }
 
 void ItemCard::enterEvent(QEnterEvent* e)
@@ -210,14 +221,27 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
 
     connect(edit_, &QPlainTextEdit::textChanged, this, [this] {
         dirty_ = true;
+        updateAccessibleName();
         emit edited();
         emit heightChanged();
     });
+    updateAccessibleName();
     edit_->installEventFilter(this);
     edit_->viewport()->installEventFilter(this);
 }
 
 QString TextItemCard::text() const { return edit_->toPlainText(); }
+
+// A screen reader gets the same thing a sighted user does: the first line, and
+// when it happened. Six of nine cards announced nothing at all before this.
+void TextItemCard::updateAccessibleName()
+{
+    const QString body = firstLine(edit_->toPlainText());
+    setAccessibleName(body.isEmpty() ? tr("Empty note") : body.left(80));
+    const Timestamp when = item_.modifiedAt ? item_.modifiedAt : item_.createdAt;
+    setAccessibleDescription(when ? tr("Note, %1").arg(relativeTime(when, nowMs()))
+                                  : tr("New note"));
+}
 bool TextItemCard::textHasFocus() const { return edit_->hasFocus(); }
 
 // Editing MODE, not window focus: a card being edited must still look edited
@@ -339,23 +363,22 @@ ImageItemCard::ImageItemCard(const Item& item, Thumbnailer& thumbs, BlobStore& b
     view_ = new QLabel;
     view_->setAlignment(Qt::AlignCenter);
 
-    const QString path = blobs.pathFor(item.blobHash, item.mime);
-    if (QFile::exists(path)) {
-        QImageReader reader(path);
-        reader.setAutoTransform(true);
-        // Decode size-aware: a 100-megapixel HEIC should not land in memory
-        // whole just to be shrunk into a 400px card.
-        if (const QSize full = reader.size(); full.isValid()) {
-            QSize target = full;
-            target.scale(kCardMaxWidth * 2, kCardMaxHeight * 2, Qt::KeepAspectRatio);
-            if (target.width() < full.width()) reader.setScaledSize(target);
-        }
-        source_ = QPixmap::fromImage(reader.read());
-    }
+    // Through the Thumbnailer, which caches to disk and negative-caches
+    // failures. The card used to decode the original blob itself, on the UI
+    // thread, in its constructor: Qt's PNG handler ignores setScaledSize and
+    // decodes in full, so a 208 KB 8000x8000 screenshot cost 288 MB and 410 ms
+    // — per card, every time the buffer was opened. The Thumbnailer pays that
+    // once, then reads a small cached file.
+    const bool fileExists = QFile::exists(blobs.pathFor(item.blobHash, item.mime));
+    if (fileExists)
+        source_ = thumbs.forBlob(item.blobHash, item.mime, kCardMaxWidth * 2);
+
     if (source_.isNull()) {
-        // Say so rather than showing an empty box: silently blank content is
-        // indistinguishable from empty content.
-        view_->setText(tr("This image is no longer on disk."));
+        // Two different failures, and telling them apart matters: one means the
+        // file is gone, the other means it is right there and unreadable. The
+        // card used to claim "no longer on disk" for both.
+        view_->setText(fileExists ? tr("This image is too large to display.")
+                                  : tr("This image is no longer on disk."));
         view_->setEnabled(false);
     }
     layout->addWidget(view_);
