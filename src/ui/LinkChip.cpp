@@ -7,7 +7,9 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
+#include <QApplication>
 #include <QFontMetrics>
+#include <algorithm>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QUrl>
@@ -83,9 +85,19 @@ void LinkChip::resizeEvent(QResizeEvent* e)
     QWidget::resizeEvent(e);
 }
 
+// Derived from the font, not a constant. §14 asks for sensible text scaling,
+// and a chip with a fixed 60px height clipped its own second line the moment
+// the desktop font went up — the board measures cards from this number, so a
+// stale one is a card too short to draw the chip it was sized for.
 int LinkChip::preferredHeight()
 {
-    return 60;
+    const QFont base = QApplication::font();
+    const int host = QFontMetrics(scaled(base, 0.5, QFont::DemiBold)).height();
+    const int path = QFontMetrics(scaled(base, -1.0)).height();
+    // Tall enough for a push button too: at small fonts the button, not the
+    // text, is what sets the floor.
+    const int button = QFontMetrics(base).height() + 14;
+    return kPad * 2 + std::max(host + 1 + path, button);
 }
 
 void LinkChip::paintEvent(QPaintEvent*)

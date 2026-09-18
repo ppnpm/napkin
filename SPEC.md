@@ -982,9 +982,34 @@ kind of lock-in, and there is no recovery path if the DB corrupts.
 
 - **Export buffer** → a folder: `.txt` per text item, images as files, plus
   `manifest.json` with timestamps, pin/keep flags, and ordering.
-- **Export all** → the same, one directory per buffer.
+- **Export all** → the same, one directory per buffer, under one dated folder.
 
 Roughly a day of work; disproportionate trust returned.
+
+**Built.** `src/media/Exporter.{h,cpp}`, reachable from **File ▸ Export this
+buffer…** and **File ▸ Export everything…**. 240 items including 120 images
+export in 15 ms.
+
+The rules that make it a real exit rather than a gesture:
+
+- **Ordinary files.** No archive format, no wrapper. A `.txt` holds exactly the
+  text; an image is copied byte for byte and never re-encoded, so the `sha256`
+  in the manifest stays checkable against the file beside it.
+- **Chronological.** `listForBuffer()` sorts newest-first because that is how
+  the board reads. A folder of files is read from `001` downwards, so the
+  exporter sorts by position — it inherited the board's order at first and
+  inverted every buffer on its way out.
+- **Nothing is overwritten.** An export into a folder that already holds one
+  gets a new name. Napkin does not destroy what it was not asked to.
+- **Skipped items are reported.** A missing blob becomes a line in
+  `Result::problems`, surfaced in the dialog's detail text. An export that
+  quietly passed over an image would be a backup that quietly is not one.
+- **User content becomes a filename here, and nowhere else.**
+  `Exporter::slug()` keeps letters and digits and drops everything else, which
+  handles `..`, path separators, NUL, newlines, control characters and RTL
+  overrides with one rule rather than a list of special cases that has to stay
+  complete. Names reserved on Windows are refused too — Phase 9 is the plan,
+  and a folder exported on Linux must be one that unpacks there.
 
 ---
 
@@ -998,6 +1023,21 @@ order. Sufficient contrast in both themes.
 
 **Never encode meaning in color alone.** Pinned and kept states carry an icon and
 an accessible label, not just a tint.
+
+`tests/test_accessibility.cpp` sweeps the real widget tree rather than naming
+widgets one at a time, so a control added later is covered without anyone
+remembering to come back: every visible button and line edit must announce
+something, every menu must carry a mnemonic, and every list row must have
+`Qt::AccessibleTextRole` text that names its pinned and kept state.
+
+**Text scaling is a layout rule, not a font setting.** Several constants were
+pixel counts that happened to fit at the default font. At 200% the card's chrome
+estimate was smaller than the footer it had to hold, so the content area shrank
+and a link chip clipped its own descenders. `tokens::footerHeight()` and
+`tokens::cardChromeHeight()` now derive from the font, as do the start page's
+two columns, the empty-state text column and `LinkChip::preferredHeight()`. The
+board measures cards from those numbers, so a stale one is not a cosmetic
+problem — it is a card too short for the thing it was measured to hold.
 
 ### Error handling
 

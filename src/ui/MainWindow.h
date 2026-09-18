@@ -1,5 +1,6 @@
 #pragma once
 #include "../domain/Types.h"
+#include "../media/Exporter.h"   // Result is a nested type, so it cannot be forward-declared
 #include <QList>
 #include <QSet>
 #include <functional>
@@ -78,6 +79,11 @@ private:
     void buildMenuBar();
     void openSettings();
     void goHome();
+    void exportCurrentBuffer();
+    void exportEverything();
+    // Both export paths end here, so the result is reported the same way and
+    // the problem list can never be dropped on one of them.
+    void reportExport(const Exporter::Result& result, const QString& what);
     // Returns false when the write failed. The caller must NOT collapse or close
     // on a false: doing so strands the text in a widget that is about to go
     // away, and the next flush returns early because nothing is being edited.
@@ -127,6 +133,7 @@ private:
     QToolButton*     overflowButton_ = nullptr;
     QPushButton*     trashToggle_ = nullptr;
     QAction*         showTrashAction_ = nullptr;
+    QAction*         exportBufferAction_ = nullptr;
     QLineEdit*       search_ = nullptr;
     QTimer*          searchDebounce_ = nullptr;
     QWidget*         filterBanner_ = nullptr;

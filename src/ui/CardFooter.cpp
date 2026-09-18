@@ -19,7 +19,7 @@ constexpr int kIconGap = 7;
 CardFooter::CardFooter(QString actionLabel, QWidget* parent)
     : QWidget(parent), label_(std::move(actionLabel))
 {
-    setFixedHeight(kCardFooterH);
+    setFixedHeight(footerHeight(font()));
     setMouseTracking(true);
     setCursor(Qt::ArrowCursor);
     setAccessibleName(label_);

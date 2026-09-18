@@ -3,6 +3,7 @@
 
 #include <QEvent>
 #include <QGuiApplication>
+#include <QFontMetrics>
 #include <QLabel>
 #include <QPixmap>
 #include <QPushButton>
@@ -12,7 +13,14 @@ namespace napkin {
 namespace {
 using namespace tokens;
 constexpr int kArtHeight = 128;
-constexpr int kTextColumn = 380;
+
+// A measure, not a pixel count: roughly 46 characters, which is a readable
+// line at any font size. Fixed at 380px it was a comfortable column at the
+// default font and a two-word-per-line ribbon at 200%.
+int textColumn(const QFont& font)
+{
+    return QFontMetrics(font).averageCharWidth() * 46;
+}
 }  // namespace
 
 EmptyStateView::EmptyStateView(QWidget* parent) : QWidget(parent)
@@ -29,7 +37,7 @@ EmptyStateView::EmptyStateView(QWidget* parent) : QWidget(parent)
     title_ = new QLabel;
     title_->setAlignment(Qt::AlignCenter);
     title_->setWordWrap(true);
-    title_->setFixedWidth(kTextColumn);
+    title_->setFixedWidth(textColumn(title_->font()));
     title_->setFont(scaled(font(), 3.0, QFont::Medium));
     outer->addWidget(title_);
     outer->addSpacing(6);
@@ -40,13 +48,17 @@ EmptyStateView::EmptyStateView(QWidget* parent) : QWidget(parent)
     // Fixed, not merely bounded: a word-wrapped label asks for the narrowest
     // width it can survive at, so left to itself it wrapped a six-word sentence
     // onto two lines in the middle of an empty window.
-    detail_->setFixedWidth(kTextColumn);
+    detail_->setFixedWidth(textColumn(detail_->font()));
     outer->addWidget(detail_);
     outer->addSpacing(22);
 
     action_ = new QPushButton;
     action_->setCursor(Qt::PointingHandCursor);
     action_->setObjectName(QStringLiteral("emptyStateAction"));
+    // Named before it has any text. The button lives on a stack page that is
+    // not current, so it is not "hidden" — it is simply unpopulated until the
+    // state that needs it arrives, and until then it announced as nothing.
+    action_->setAccessibleName(tr("Leave this view"));
     connect(action_, &QPushButton::clicked, this, &EmptyStateView::actionTriggered);
     outer->addWidget(action_, 0, Qt::AlignHCenter);
 
@@ -70,7 +82,12 @@ void EmptyStateView::setContent(const QString& artwork, const QString& title,
 
     title_->setText(title);
     detail_->setText(detail);
+    // The whole screen as one announcement, so a screen reader says why this
+    // view is empty rather than reading three disconnected labels.
+    setAccessibleName(title);
+    setAccessibleDescription(detail);
     action_->setText(actionLabel);
+    if (!actionLabel.isEmpty()) action_->setAccessibleName(actionLabel);
     action_->setVisible(!actionLabel.isEmpty());
 }
 

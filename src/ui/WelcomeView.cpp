@@ -5,6 +5,7 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QFontMetrics>
 #include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -15,8 +16,14 @@ namespace {
 using namespace tokens;
 
 constexpr int kLogoSize = 112;
-constexpr int kKeyColumn = 128;   // wide enough for Ctrl+Shift+I without wrapping
-constexpr int kWhatColumn = 230;  // fixed, so the block is a block and not a ragged edge
+
+// Measured in characters rather than pixels: "Ctrl+Shift+I" has to fit without
+// wrapping at any font size, and the description column has to stay a block
+// rather than a ragged edge. Fixed pixel widths did both jobs at the default
+// font and neither at 200%.
+int keyColumn(const QFont& font)  { return QFontMetrics(font).horizontalAdvance(
+                                        QStringLiteral("Ctrl+Shift+I")) + 24; }
+int whatColumn(const QFont& font) { return QFontMetrics(font).averageCharWidth() * 28; }
 
 QPixmap loadMark()
 {
@@ -107,14 +114,14 @@ QWidget* WelcomeView::buildShortcutRow(const QString& keys, const QString& what,
     layout->setSpacing(0);
 
     auto* key = new QLabel(keys);
-    key->setFixedWidth(kKeyColumn);
     QFont keyFont = row->font();
     keyFont.setFamilies({QStringLiteral("monospace")});
     key->setFont(keyFont);
+    key->setFixedWidth(keyColumn(keyFont));
     key->setObjectName(QStringLiteral("shortcutKey"));
 
     auto* text = new QLabel(what);
-    text->setFixedWidth(kWhatColumn);
+    text->setFixedWidth(whatColumn(text->font()));
     text->setObjectName(QStringLiteral("shortcutWhat"));
 
     layout->addWidget(key);
@@ -123,7 +130,7 @@ QWidget* WelcomeView::buildShortcutRow(const QString& keys, const QString& what,
     // Sized to its content rather than stretched: a row that expands to the
     // window width cannot be centred with the title above it, and the block
     // ended up hard against the left edge.
-    row->setFixedWidth(kKeyColumn + kWhatColumn + 20);
+    row->setFixedWidth(key->width() + text->width() + 20);
 
     connect(row, SIGNAL(clicked()), this, signalName);
     return row;

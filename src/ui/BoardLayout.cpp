@@ -43,7 +43,7 @@ int BoardLayout::heightFor(const Item& item, int columnWidth, bool* clipped) con
     }
 
     const int inner = std::max(40, columnWidth - kCardPad * 2);
-    const int chrome = kCardPad * 2 - 6 + kCardFooterH + kGapTight;
+    const int chrome = cardChromeHeight(body_ ? *body_ : QFont());
 
     int content = 0;
     if (item.type == ItemType::Text && links::soleUrl(item.text)) {

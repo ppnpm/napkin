@@ -138,7 +138,7 @@ void ItemCard::setCurrent(bool current)
 
 int ItemCard::chromeHeight() const
 {
-    return kCardPad * 2 - 6 + (footer_ ? kCardFooterH + kGapTight : 0);
+    return footer_ ? cardChromeHeight(font()) : kCardPad * 2 - 6;
 }
 
 int ItemCard::heightForColumn(int width) const

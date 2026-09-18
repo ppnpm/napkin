@@ -1,6 +1,7 @@
 #pragma once
 #include <QColor>
 #include <QFont>
+#include <QFontMetrics>
 #include <QPalette>
 #include <algorithm>
 #include <cmath>
@@ -60,7 +61,9 @@ inline constexpr int kMeasureLimit = 2048;
 
 // Card chrome.
 inline constexpr int kCardPad      = 16;   // content inset
-inline constexpr int kCardFooterH  = 28;   // the copy action and the timestamp
+inline constexpr int kCardFooterH  = 28;   // the copy action and the timestamp,
+                                          // at the default font — use
+                                          // footerHeight() for the real one
 inline constexpr int kCardRadius   = 10;
 inline constexpr int kCardGap      = 20;
 
@@ -139,6 +142,21 @@ inline QColor highlight(const QPalette& pal, int alpha)
 inline bool isLightTheme(const QPalette& pal)
 {
     return pal.color(QPalette::Window).lightness() > 128;
+}
+
+// The footer holds text, so its height follows the font. Fixed at 28px it fit
+// at the default size and clipped the card's own content at 200%: the board
+// derives a card's chrome from this number, so a stale one is a card whose
+// content area is smaller than the thing it was measured to hold.
+inline int footerHeight(const QFont& font)
+{
+    return std::max(kCardFooterH, QFontMetrics(font).height() + 10);
+}
+
+// Everything above the content: padding, the footer, and the gap to it.
+inline int cardChromeHeight(const QFont& font)
+{
+    return kCardPad * 2 - 6 + footerHeight(font) + kGapTight;
 }
 
 inline QFont scaled(const QFont& base, qreal deltaPt, int weight = -1)

@@ -44,6 +44,7 @@ add_library(napkin_media STATIC
   src/media/BlobStore.cpp
   src/media/ImageFormats.cpp
   src/media/BlobGc.cpp
+  src/media/Exporter.cpp
   src/media/Thumbnailer.cpp
   src/media/ClipboardContent.cpp
 )
@@ -121,6 +122,11 @@ foreach(t test_migrations test_invariants test_buffers test_items test_paths tes
   add_test(NAME ${t} COMMAND ${t})
 endforeach()
 
+# Export writes real image files, so it needs the blob store from napkin_media.
+qt_add_executable(test_export tests/test_export.cpp)
+target_link_libraries(test_export PRIVATE napkin_media Qt6::Test)
+add_test(NAME test_export COMMAND test_export)
+
 # Load-testing tool. Not installed: it exists to fill a throwaway profile.
 qt_add_executable(napkin_seed tools/seed_corpus.cpp)
 target_link_libraries(napkin_seed PRIVATE napkin_core napkin_media Qt6::Gui)
@@ -131,7 +137,7 @@ target_link_libraries(bench_load PRIVATE napkin_ui Qt6::Widgets)
 target_include_directories(bench_load PRIVATE src)
 
 # GUI tests drive the real widget tree offscreen.
-foreach(t test_editing test_sweep test_lifecycle test_images test_multiitem test_review_fixes test_canvas test_theme test_chips)
+foreach(t test_editing test_sweep test_lifecycle test_images test_multiitem test_review_fixes test_canvas test_theme test_chips test_accessibility)
   qt_add_executable(${t} tests/${t}.cpp)
   target_link_libraries(${t} PRIVATE napkin_ui Qt6::Test)
   add_test(NAME ${t} COMMAND ${t})

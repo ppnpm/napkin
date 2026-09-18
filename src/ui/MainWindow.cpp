@@ -5,6 +5,7 @@
 #include "ItemCanvas.h"
 #include "Tokens.h"
 #include "Lightbox.h"
+#include "../media/Exporter.h"
 #include "SettingsDialog.h"
 #include "EmptyStateView.h"
 #include "WelcomeView.h"
@@ -38,6 +39,7 @@
 #include <QMimeData>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QStandardPaths>
 #include <QPushButton>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -409,6 +411,11 @@ void MainWindow::buildMenuBar()
     file->addSeparator();
     file->addAction(named("pasteAction"));
     file->addSeparator();
+    exportBufferAction_ = file->addAction(tr("Export this buffer…"));
+    connect(exportBufferAction_, &QAction::triggered, this, &MainWindow::exportCurrentBuffer);
+    auto* exportAll = file->addAction(tr("Export everything…"));
+    connect(exportAll, &QAction::triggered, this, &MainWindow::exportEverything);
+    file->addSeparator();
     auto* quit = file->addAction(tr("&Quit"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
@@ -474,6 +481,78 @@ void MainWindow::goHome()
     if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
     view_->setFocus(Qt::OtherFocusReason);
     updateEmptyState();
+}
+
+// SPEC.md §13. A folder of ordinary files, not an archive format only Napkin
+// can open: the point of an export is to be readable by something that is not
+// this application, including by a person with a file manager.
+void MainWindow::exportCurrentBuffer()
+{
+    const int row = view_->currentIndex().row();
+    const BufferId id = row >= 0 ? model_->idAt(row) : kNoBuffer;
+    if (id == kNoBuffer) {
+        QMessageBox::information(this, tr("Export"),
+                                 tr("Select a buffer first, then export it."));
+        return;
+    }
+
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, tr("Export this buffer to…"),
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
+    if (dir.isEmpty()) return;
+
+    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
+    Exporter exporter(buffers_, items_, blobs_);
+    const auto result = exporter.exportBuffer(id, dir);
+    QGuiApplication::restoreOverrideCursor();
+
+    reportExport(result, tr("This buffer"));
+}
+
+void MainWindow::exportEverything()
+{
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, tr("Export everything to…"),
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
+    if (dir.isEmpty()) return;
+
+    QGuiApplication::setOverrideCursor(Qt::WaitCursor);
+    Exporter exporter(buffers_, items_, blobs_);
+    const auto result = exporter.exportAll(dir);
+    QGuiApplication::restoreOverrideCursor();
+
+    reportExport(result, tr("Everything"));
+}
+
+void MainWindow::reportExport(const Exporter::Result& result, const QString& what)
+{
+    if (!result.ok) {
+        // §14: plain language, and say what happened to the content.
+        QMessageBox::warning(this, tr("Export"),
+                             tr("%1 could not be exported.\n\n%2\n\n"
+                                "Nothing in Napkin has been changed.")
+                                 .arg(what, result.error));
+        return;
+    }
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("Export"));
+    box.setText(tr("%1 was exported.").arg(what));
+    box.setInformativeText(tr("%n item(s) written to:\n%1", "", result.items)
+                               .arg(QDir::toNativeSeparators(result.rootDir)));
+
+    // An export that skipped something has to say so where the user is already
+    // looking. A backup that quietly is not one is worse than no backup.
+    if (!result.problems.isEmpty()) {
+        box.setIcon(QMessageBox::Warning);
+        box.setInformativeText(box.informativeText()
+                               + tr("\n\n%n item(s) could not be written.", "",
+                                    int(result.problems.size())));
+        box.setDetailedText(result.problems.join(QChar(u'\n')));
+    } else {
+        box.setIcon(QMessageBox::Information);
+    }
+    box.exec();
 }
 
 void MainWindow::openSettings()

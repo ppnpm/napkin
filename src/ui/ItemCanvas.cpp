@@ -33,6 +33,12 @@ ItemCanvas::ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
     viewport()->setAutoFillBackground(true);
     viewport()->setBackgroundRole(QPalette::Window);
     setFocusPolicy(Qt::StrongFocus);
+    // The board is a focusable surface you arrow around, so it has to say what
+    // it is when focus lands on it. Without this, tabbing from the buffer list
+    // announced nothing and there was no way to tell you had arrived.
+    setAccessibleName(tr("Board"));
+    setAccessibleDescription(tr("The items in the selected buffer. "
+                                "Arrow keys move between them, Enter opens one."));
     // Horizontal scrolling only appears if the window is narrower than one
     // full-width card, which is the honest outcome of a real minimum width.
     setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
