@@ -193,6 +193,9 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
         selected_ = {cards_[size_t(target)]->itemId()};
         anchor_ = *selected_.begin();
         cards_[size_t(target)]->setSelected(true);
+        // setItems destroyed whatever had focus, including the card the user
+        // was deleting. Take it back, or the *second* Delete goes nowhere.
+        setFocus(Qt::OtherFocusReason);
         emit selectionChanged();
     }
 }
@@ -252,6 +255,10 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
     }
 
     for (auto* card : cards_) card->setSelected(selected_.contains(card->itemId()));
+    // Selecting in the canvas moves the keyboard here. Without this, clicking a
+    // card left focus on the buffer list, so Delete was delivered to the list —
+    // which trashes a whole buffer — rather than to the selected item.
+    if (!keyboardIsHere()) setFocus(Qt::MouseFocusReason);
     emit selectionChanged();
 }
 
@@ -377,6 +384,16 @@ bool ItemCanvas::rebindTextIds(const std::vector<Item>& items)
 }
 
 
+
+bool ItemCanvas::keyboardIsHere() const
+{
+    // window()->focusWidget(), not QApplication::focusWidget(): the latter is
+    // only populated while the window is ACTIVE, so it answers null for a
+    // background window and always null under a headless platform.
+    const QWidget* top = window();
+    QWidget* focus = top ? top->focusWidget() : nullptr;
+    return focus && (focus == this || isAncestorOf(focus));
+}
 
 bool ItemCanvas::textHasFocus() const
 {

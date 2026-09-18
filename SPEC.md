@@ -525,6 +525,18 @@ is under it:
 | Click empty canvas | clear the selection, focus the composer |
 | `Ctrl+A` | select every item (not the unwritten composer) |
 
+**Three states, three treatments.** At rest: hairline border. Selected: accent
+border at 2px plus a faint tint. **Editing: accent border and no tint at all** —
+a wash behind text you are actively reading and typing is the thing that makes
+it unreadable, and the border plus the caret are two signals already. Editing
+also clears the selection, so the two can never stack.
+
+**Selecting in the canvas moves the keyboard there.** Without that, clicking a
+card left focus on the buffer list, so `Delete` was delivered to the *list* —
+which trashes a whole buffer. And because a delete destroys the card that had
+focus, the canvas takes focus back after every one; otherwise the first `Delete`
+worked and the second went nowhere.
+
 > **Corrected.** An earlier build put the caret straight into text on a single
 > click, on the reasoning that typing is the primary act. That made a text block
 > the one thing in the canvas the mouse could not select or delete — you could

@@ -480,6 +480,53 @@ private slots:
         QCOMPARE(f.buffers.countLive(), 0);
     }
 
+    // --- keyboard and editing state ------------------------------------------
+    void deleteCanBePressedRepeatedly()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        for (int i = 0; i < 5; ++i)
+            f.service.appendTo(id, Item::makeText(QStringLiteral("item %1").arg(i)));
+        f.model()->reload();
+        f.select(id);
+
+        auto* first = f.canvas()->findChildren<TextItemCard*>().first();
+        QTest::mouseClick(first, Qt::LeftButton);
+
+        // Clicking a card must move the keyboard to the canvas: otherwise
+        // Delete is delivered to the buffer list, which trashes a whole buffer.
+        QVERIFY(f.canvas()->keyboardIsHere());
+
+        for (int expected = 4; expected >= 1; --expected) {
+            QTest::keyClick(f.canvas(), Qt::Key_Delete);
+            QCOMPARE(f.items.countForBuffer(id), expected);
+            // And after each one the canvas still owns the keyboard, which is
+            // what makes the NEXT press work.
+            QVERIFY2(f.canvas()->keyboardIsHere(),
+                     qPrintable(QString("lost focus with %1 items left").arg(expected)));
+            QCOMPARE(f.canvas()->selection().size(), 1);
+        }
+    }
+
+    void anEditingCardIsNotWashedOverWithTheSelectionTint()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f);
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        QTest::mouseClick(card, Qt::LeftButton);
+        QVERIFY(card->isSelected());
+
+        card->beginEditing();
+
+        // Editing clears the selection, so the tint that made the whole card
+        // blue while typing has nothing to draw from — only the border remains.
+        QVERIFY(card->hasEditFocus());
+        QVERIFY(!card->isSelected());
+        QVERIFY(!f.canvas()->hasSelection());
+    }
+
     // --- card chrome and sizing ----------------------------------------------
     void aPastedParagraphGetsACardTallEnoughToReadIt()
     {

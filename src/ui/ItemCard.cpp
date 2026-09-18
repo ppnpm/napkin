@@ -128,7 +128,10 @@ void ItemCard::paintEvent(QPaintEvent*)
     // made the board read as loose text rather than as things you can pick up.
     p.fillPath(path, pal.color(QPalette::Base));
 
-    if (selected_ || editing)
+    // Selection tints the card; EDITING deliberately does not. A wash behind
+    // text you are actively reading and typing makes it hard to read, and the
+    // border plus the caret are two signals already.
+    if (selected_ && !editing)
         p.fillPath(path, highlight(pal, isLightTheme(pal) ? 20 : 34));
 
     const QColor border = selected_ || editing
@@ -237,12 +240,12 @@ void TextItemCard::focusText()
     edit_->moveCursor(QTextCursor::End);
 }
 
-void TextItemCard::beginEditing()
+void TextItemCard::beginEditing(bool moveToEnd)
 {
     if (hasEditFocus()) return;
     focusTextInteraction();
     edit_->setFocus(Qt::MouseFocusReason);
-    edit_->moveCursor(QTextCursor::End);
+    if (moveToEnd) edit_->moveCursor(QTextCursor::End);
     emit editingStarted(itemId());
     update();
 }
@@ -286,9 +289,21 @@ void TextItemCard::mouseDoubleClickEvent(QMouseEvent* e)
     e->accept();
 }
 
+void TextItemCard::selectAllText()
+{
+    edit_->selectAll();
+}
+
 bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
 {
-    if (event->type() == QEvent::MouseButtonDblClick) { beginEditing(); return true; }
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        // Turn interaction on, then let the editor handle the click itself, so
+        // the caret lands on the word you double-clicked instead of jumping to
+        // the end of the text.
+        const bool wasReadOnly = !hasEditFocus();
+        beginEditing(/*moveToEnd=*/false);
+        return !wasReadOnly ? false : (edit_->setFocus(Qt::MouseFocusReason), false);
+    }
     if (event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);
         // While read-only the press means "select me"; once editing, it belongs

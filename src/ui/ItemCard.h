@@ -82,7 +82,8 @@ public:
     void markClean() { dirty_ = false; }
     void setItemId(ItemId id) { item_.id = id; }
     void focusText();
-    void beginEditing();
+    void beginEditing(bool moveToEnd = true);
+    void selectAllText();
     void focusTextInteraction();
     void endEditing();
     bool textHasFocus() const;

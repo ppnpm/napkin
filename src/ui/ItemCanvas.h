@@ -63,6 +63,11 @@ public:
     void addPendingTextCard();
     bool textHasFocus() const;
 
+    // True when the keyboard is anywhere inside the board. Not hasFocus(),
+    // which also requires the window to be active — so it answers false for a
+    // background window, and always false under a headless platform.
+    bool keyboardIsHere() const;
+
 signals:
     void edited();
     void imagePasted(const QByteArray& bytes, const QString& mime);
