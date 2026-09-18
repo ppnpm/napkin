@@ -171,6 +171,16 @@ void WelcomeView::changeEvent(QEvent* e)
         logo_->setPixmap(loadMark());
         applyPalette();
     }
+    if (e->type() == QEvent::FontChange || e->type() == QEvent::ApplicationFontChange) {
+        // The shortcut rows are sized in characters, so a new face or size
+        // means new widths — otherwise the key column clips "Ctrl+Shift+I".
+        for (QLabel* key : findChildren<QLabel*>(QStringLiteral("shortcutKey")))
+            key->setFixedWidth(keyColumn(key->font()));
+        for (QLabel* what : findChildren<QLabel*>(QStringLiteral("shortcutWhat")))
+            what->setFixedWidth(whatColumn(what->font()));
+        for (QWidget* row : findChildren<QPushButton*>())
+            row->setFixedWidth(row->layout() ? row->layout()->sizeHint().width() : row->width());
+    }
     QWidget::changeEvent(e);
 }
 

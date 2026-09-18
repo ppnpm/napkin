@@ -27,8 +27,13 @@ void BoardLayout::setViewport(int width) { viewportWidth_ = width; }
 
 void BoardLayout::setFont(const QFont& body)
 {
+    if (body_ && *body_ == body) return;
     delete body_;
     body_ = new QFont(body);
+    // Every cached height was measured against the old font, and the key does
+    // not mention the font — so without this a text-size change left every card
+    // at the height its old face happened to need.
+    cache_.clear();
 }
 
 int BoardLayout::heightFor(const Item& item, int columnWidth, bool* clipped) const

@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QMimeData>
 #include <QDesktopServices>
+#include <QEvent>
 #include <QUrl>
 #include "../domain/Links.h"
 #include <QMouseEvent>
@@ -196,6 +197,22 @@ void ItemCanvas::addPendingTextCard()
 // Keeps the board's copy of an item in step with the widget the user is typing
 // into. Both lists are updated: allItems_ is what a filter is re-derived from,
 // and items_ is what the layout measures.
+// A font change invalidates more than it looks like it does: the board's
+// measurements were taken against the old face, and every card cached
+// font-derived metrics when it was built. Rebuilding from the items we already
+// hold is cheaper to reason about than trying to nudge each one.
+void ItemCanvas::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::ApplicationFontChange || e->type() == QEvent::FontChange) {
+        board_.setFont(font());   // also clears the measurement cache
+        if (!allItems_.empty()) {
+            const auto items = allItems_;
+            setItems(items, -1);
+        }
+    }
+    QScrollArea::changeEvent(e);
+}
+
 void ItemCanvas::openUrl(const QString& url)
 {
     // Checked again here, at the boundary. The chip only appears for an http or

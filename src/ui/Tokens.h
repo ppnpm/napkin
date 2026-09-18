@@ -79,6 +79,35 @@ inline constexpr int kCardBorderHoverBoost = 46;
 // carries the contrast. Used as a hairline against Base it is often far below
 // 3:1 — Breeze Light's is 2.1:1 at full strength. Darken (or lighten, in a dark
 // theme) until it genuinely reads as an edge.
+// WCAG relative luminance and the ratio between two opaque colours. Exported
+// because more than one place needs to CHOOSE a colour by contrast rather than
+// assert one after the fact.
+inline qreal relativeLuminance(const QColor& c)
+{
+    auto channel = [](int v) {
+        const qreal s = v / 255.0;
+        return s <= 0.04045 ? s / 12.92 : std::pow((s + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(c.red()) + 0.7152 * channel(c.green())
+           + 0.0722 * channel(c.blue());
+}
+
+inline qreal contrastRatio(const QColor& a, const QColor& b)
+{
+    const qreal la = relativeLuminance(a), lb = relativeLuminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+// What to write on top of a fill. Measured, not guessed: choosing by
+// QColor::lightness() looked equivalent and put white on a mid green at 2.9:1,
+// because HSL lightness is not luminance — green carries most of the visible
+// energy and blue almost none, which a lightness value does not know.
+inline QColor textOn(const QColor& fill)
+{
+    const QColor light(252, 252, 252), dark(35, 38, 41);
+    return contrastRatio(light, fill) >= contrastRatio(dark, fill) ? light : dark;
+}
+
 inline QColor readableAccent(const QPalette& pal, qreal strength = 1.0)
 {
     const QColor base = pal.color(QPalette::Base);

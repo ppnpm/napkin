@@ -1305,12 +1305,37 @@ app can do — the header buttons and the key chords are shortcuts *to* these, n
 a separate set. **Home → All buffers** is one gesture back to the ordinary view
 from wherever you are: out of the trash, out of a search, back to the top.
 
-Settings is deliberately small. Napkin's premise is that you do not configure it,
-you throw things at it, so it holds only the choices that change how the app
-behaves *over time* — appearance, when a buffer becomes "older", how long the
-trash keeps things — and nothing that merely changes how it looks for its own
-sake. The lifecycle values are read through `BufferService` from `QSettings`, so
-the domain layer picks them up without depending on any dialog.
+Settings is deliberately small, in two groups: **Appearance** and **Lifecycle**.
+Napkin's premise is that you do not configure it, you throw things at it — so
+nothing here is a knob for its own sake. The lifecycle values are read through
+`BufferService` from `QSettings`, so the domain layer picks them up without
+depending on any dialog.
+
+Appearance holds theme, accent, typeface and text size. That is not fiddling:
+it is legibility. Someone who needs a larger face or a different typeface to
+read comfortably is not configuring the app, they are making it usable at all
+(§14). A live preview shows the chosen face and size, because a font named in a
+drop-down is a font you have to imagine.
+
+- **Accent** is a short named set with swatches, not a colour wheel — Napkin is
+  not a theming engine. It applies under *every* theme including "Follow the
+  system", since the accent is the one part of the platform theme worth
+  inheriting and therefore the one worth being able to override.
+- **The paired text colour is measured, not guessed.** Choosing it by
+  `QColor::lightness()` put white on a mid green at **2.9:1**: HSL lightness is
+  not luminance — green carries most of the visible energy and blue almost none,
+  which a lightness value does not know. `tokens::textOn()` computes both
+  candidates and takes the better. All six accents now clear 3:1 with margin.
+- **Text size scales from the platform's font, never from the current one.**
+  Scaling the already-scaled font is the obvious way to write it and grows
+  without bound every time the dialog is saved.
+- **A font change invalidates the board.** `BoardLayout`'s measurement cache is
+  keyed on the item, its last edit and the column width — the font is not in
+  that key, so `setFont()` clears the cache. Without it every card kept the
+  height its old face needed: *117px at 1x and 117px at 2x*. Widgets that derive
+  metrics from the font at construction (the card footer, the link chip, the
+  start page's columns, the empty-state column) re-derive them on
+  `ApplicationFontChange`.
 
 **Phase 8 — Linux delivery.** `.desktop`, icon, Flatpak and AppImage, optional
 tray mode, and the global capture hotkey (see below).

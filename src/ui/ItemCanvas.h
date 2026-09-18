@@ -122,6 +122,13 @@ protected:
     void keyPressEvent(QKeyEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
 
+protected:
+    // The application font can change under a running window (Settings ▸
+    // Appearance). Cards cache font-derived metrics at construction, and the
+    // board's measurements were taken against the old face, so both are rebuilt
+    // rather than nudged.
+    void changeEvent(QEvent* e) override;
+
 private slots:
     // Handing a URL to the desktop is the one thing in Napkin that leaves the
     // machine, so it goes through one function that re-checks the scheme rather

@@ -115,6 +115,10 @@ void EmptyStateView::changeEvent(QEvent* e)
 {
     if (e->type() == QEvent::PaletteChange || e->type() == QEvent::ApplicationPaletteChange)
         applyPalette();
+    if (e->type() == QEvent::FontChange || e->type() == QEvent::ApplicationFontChange) {
+        title_->setFixedWidth(textColumn(title_->font()));
+        detail_->setFixedWidth(textColumn(detail_->font()));
+    }
     QWidget::changeEvent(e);
 }
 

@@ -59,7 +59,7 @@ int main(int argc, char** argv)
     if (!instance.acquire())
         return 0;  // an existing Napkin was asked to raise itself
 
-    SettingsDialog::applyTheme();   // before any window exists, so nothing flashes
+    SettingsDialog::applyAppearance();   // before any window exists, so nothing flashes
 
     BufferService service(db, buffers, items);
     service.purgeExpiredTrash();  // the only automatic hard delete (§6)

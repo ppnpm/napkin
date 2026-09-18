@@ -1,4 +1,5 @@
 #include "../src/ui/CardFooter.h"
+#include "../src/ui/ItemCanvas.h"
 #include "../src/ui/LinkChip.h"
 #include "GuiFixture.h"
 
@@ -146,6 +147,41 @@ private slots:
         }
 
         QApplication::setFont(original);
+    }
+
+    void changingTheFontOnARunningWindowReflowsTheBoard()
+    {
+        // Settings ▸ Appearance can change the typeface and size of a window
+        // that is already open. The board caches measurements keyed on the item
+        // and the column width — the font is not in that key, so without an
+        // explicit invalidation every card kept the height its old face needed.
+        const QFont original = QApplication::font();
+
+        GuiFixture f;
+        const auto id = f.seed("A shipping address\n12 Mill Lane\nBristol BS1 4AA");
+        f.select(id);
+
+        auto tallest = [&] {
+            int h = 0;
+            for (auto* card : f.canvas()->findChildren<ItemCard*>())
+                h = std::max(h, card->height());
+            return h;
+        };
+        const int before = tallest();
+        QVERIFY(before > 0);
+
+        QFont big = original;
+        big.setPointSizeF(original.pointSizeF() * 2.0);
+        QApplication::setFont(big);
+        QCoreApplication::processEvents();
+
+        const int after = tallest();
+        QApplication::setFont(original);
+        QCoreApplication::processEvents();
+
+        QVERIFY2(after > before,
+                 qPrintable(QStringLiteral("card was %1px at 1x and %2px at 2x")
+                                .arg(before).arg(after)));
     }
 
     void theBoardAndTheListSayWhatTheyAre()

@@ -36,6 +36,7 @@ signals:
     void actionTriggered();
 
 protected:
+    void changeEvent(QEvent* e) override;
     void paintEvent(QPaintEvent* e) override;
     void mousePressEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;

@@ -3,6 +3,7 @@
 #include "GuiFixture.h"
 
 #include <QLabel>
+#include <QFont>
 #include <QSettings>
 #include <QtTest>
 #include <cmath>
@@ -77,7 +78,7 @@ private slots:
         QApplication::setPalette(darkPlatformPalette());
         QSettings().setValue(QStringLiteral("appearance/theme"),
                              int(SettingsDialog::Theme::System));
-        SettingsDialog::applyTheme();
+        SettingsDialog::applyAppearance();
     }
 
     void cleanupTestCase() { QSettings().clear(); }
@@ -95,7 +96,7 @@ private slots:
 
         for (auto theme : {SettingsDialog::Theme::Light, SettingsDialog::Theme::Dark}) {
             QSettings().setValue(QStringLiteral("appearance/theme"), int(theme));
-            SettingsDialog::applyTheme();
+            SettingsDialog::applyAppearance();
             const QPalette p = QApplication::palette();
 
             for (const auto& [fg, bg] : pairs) {
@@ -113,11 +114,67 @@ private slots:
         }
     }
 
+    void theChosenTypefaceAndSizeReachTheApplication()
+    {
+        const QFont before = QApplication::font();
+
+        QSettings().setValue(QStringLiteral("appearance/textScalePercent"), 150);
+        SettingsDialog::applyAppearance();
+        const qreal scaled = QApplication::font().pointSizeF();
+        QVERIFY2(qAbs(scaled - before.pointSizeF() * 1.5) < 0.51,
+                 qPrintable(QStringLiteral("%1 -> %2").arg(before.pointSizeF()).arg(scaled)));
+
+        // Applying twice must not compound. Scaling the already-scaled font is
+        // the obvious way to write this and it grows without bound every time
+        // the settings dialog is saved.
+        SettingsDialog::applyAppearance();
+        QCOMPARE(QApplication::font().pointSizeF(), scaled);
+
+        QSettings().setValue(QStringLiteral("appearance/textScalePercent"), 100);
+        SettingsDialog::applyAppearance();
+        QCOMPARE(QApplication::font().pointSizeF(), before.pointSizeF());
+    }
+
+    void aCorruptTextScaleCannotMakeNapkinUnreadable()
+    {
+        QSettings().setValue(QStringLiteral("appearance/textScalePercent"), 0);
+        SettingsDialog::applyAppearance();
+        QVERIFY(QApplication::font().pointSizeF() >= 5.0);
+
+        QSettings().setValue(QStringLiteral("appearance/textScalePercent"), 100000);
+        QVERIFY(SettingsDialog::textScalePercent() <= 300);
+
+        QSettings().setValue(QStringLiteral("appearance/textScalePercent"), 100);
+        SettingsDialog::applyAppearance();
+    }
+
+    void aChosenAccentSurvivesEveryTheme()
+    {
+        QSettings().setValue(QStringLiteral("appearance/accent"), QStringLiteral("#27ae60"));
+
+        for (auto theme : {SettingsDialog::Theme::System, SettingsDialog::Theme::Light,
+                           SettingsDialog::Theme::Dark}) {
+            QSettings().setValue(QStringLiteral("appearance/theme"), int(theme));
+            SettingsDialog::applyAppearance();
+            const QPalette p = QApplication::palette();
+
+            QCOMPARE(p.color(QPalette::Highlight), QColor(QStringLiteral("#27ae60")));
+            // Whatever the user picks, what is written on top of it still has to
+            // be readable — the accent is theirs, the pairing is ours.
+            QVERIFY2(contrast(p.color(QPalette::HighlightedText),
+                              p.color(QPalette::Highlight)) >= 3.0,
+                     qPrintable(QStringLiteral("theme %1").arg(int(theme))));
+        }
+
+        QSettings().remove(QStringLiteral("appearance/accent"));
+        SettingsDialog::applyAppearance();
+    }
+
     void theStartPageIsReadableWhenTheThemeOpposesThePlatform()
     {
         QSettings().setValue(QStringLiteral("appearance/theme"),
                              int(SettingsDialog::Theme::Light));
-        SettingsDialog::applyTheme();
+        SettingsDialog::applyAppearance();
 
         GuiFixture f;   // no buffers, so the start page is what is showing
         const QColor window = QApplication::palette().color(QPalette::Window);
@@ -149,7 +206,7 @@ private slots:
         // ButtonText is now a perfectly readable colour.
         QSettings().setValue(QStringLiteral("appearance/theme"),
                              int(SettingsDialog::Theme::Light));
-        SettingsDialog::applyTheme();
+        SettingsDialog::applyAppearance();
 
         GuiFixture f;
         auto* key = f.window.findChild<QLabel*>(QStringLiteral("shortcutKey"));

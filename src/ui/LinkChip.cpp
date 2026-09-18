@@ -131,6 +131,11 @@ void LinkChip::changeEvent(QEvent* e)
 {
     if (e->type() == QEvent::PaletteChange || e->type() == QEvent::ApplicationPaletteChange)
         applyPalette();
+    if (e->type() == QEvent::FontChange || e->type() == QEvent::ApplicationFontChange) {
+        host_->setFont(scaled(font(), 0.5, QFont::DemiBold));
+        rest_->setFont(scaled(font(), -1.0));
+        elidePath();
+    }
     QWidget::changeEvent(e);
 }
 

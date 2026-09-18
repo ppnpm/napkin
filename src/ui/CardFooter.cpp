@@ -1,4 +1,5 @@
 #include "CardFooter.h"
+#include <QEvent>
 #include "Icons.h"
 #include "Tokens.h"
 #include "../domain/Clock.h"
@@ -72,6 +73,16 @@ QRect CardFooter::actionRect() const
     const QFontMetrics fm(font());
     const int w = kIcon + kIconGap + fm.horizontalAdvance(label_);
     return QRect(0, 0, w + 8, height());
+}
+
+void CardFooter::changeEvent(QEvent* e)
+{
+    // The footer's height is derived from the font, so it has to be re-derived
+    // when the font moves under it — Settings ▸ Appearance can change the face
+    // and the size of a window that is already open.
+    if (e->type() == QEvent::FontChange || e->type() == QEvent::ApplicationFontChange)
+        setFixedHeight(footerHeight(font()));
+    QWidget::changeEvent(e);
 }
 
 void CardFooter::paintEvent(QPaintEvent*)
