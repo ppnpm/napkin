@@ -1,6 +1,8 @@
 #pragma once
 #include <QWidget>
 
+class QTimer;
+
 class QLabel;
 
 namespace napkin {
@@ -20,6 +22,11 @@ public:
     void setTimestamp(qint64 modifiedAt);
     // Shown when the card cannot display all of its content.
     void setClipped(bool clipped);
+
+    // Shows a message in place of the age for a moment, then reverts. The only
+    // way a user can tell that a copy happened, or that an edit was written.
+    void flash(const QString& message);
+    bool isFlashing() const { return !flash_.isEmpty(); }
     void refreshTimestamp();
 
 signals:
@@ -41,6 +48,8 @@ private:
     bool    hoveringAction_ = false;
     bool    pressed_ = false;
     bool    clipped_ = false;
+    QString flash_;
+    QTimer* flashTimer_ = nullptr;
 };
 
 }  // namespace napkin

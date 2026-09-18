@@ -7,6 +7,7 @@
 #include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QTimer>
 
 namespace napkin {
 namespace {
@@ -28,6 +29,18 @@ void CardFooter::setTimestamp(qint64 modifiedAt)
 {
     modifiedAt_ = modifiedAt;
     refreshTimestamp();
+}
+
+void CardFooter::flash(const QString& message)
+{
+    flash_ = message;
+    if (!flashTimer_) {
+        flashTimer_ = new QTimer(this);
+        flashTimer_->setSingleShot(true);
+        connect(flashTimer_, &QTimer::timeout, this, [this] { flash_.clear(); update(); });
+    }
+    flashTimer_->start(1600);
+    update();
 }
 
 void CardFooter::setClipped(bool clipped)
@@ -76,8 +89,12 @@ void CardFooter::paintEvent(QPaintEvent*)
     // a 1 MB paste looked identical to a 21-line note.
     QString right = age_;
     if (clipped_) right = right.isEmpty() ? tr("more…") : tr("more…   %1").arg(age_);
+    if (!flash_.isEmpty()) right = flash_;
     if (right.isEmpty()) return;
-    p.setPen(text(pal, kTextTertiary));
+
+    // The flash is the acknowledgement, so it is drawn at full strength rather
+    // than the quiet tertiary the age uses.
+    p.setPen(flash_.isEmpty() ? text(pal, kTextTertiary) : readableAccent(pal, 1.0));
     p.drawText(rect(), Qt::AlignRight | Qt::AlignVCenter, right);
 }
 

@@ -50,6 +50,8 @@ public:
     bool isClipped() const { return clipped_; }
     // Set by the board, which is what computes heights now.
     void setClipped(bool clipped);
+    void acknowledge(const QString& message);
+    void noteSaved(Timestamp when);
 
     virtual bool hasEditFocus() const { return false; }
 
@@ -60,6 +62,13 @@ signals:
     void copyRequested(ItemId id);
 
 protected:
+    // Re-reads every colour this card derived from the palette. A colour cached
+    // on a child widget goes stale when the desktop theme changes — card text
+    // stayed the old colour until the buffer was reopened — so anything that
+    // caches one overrides this.
+    virtual void applyPalette() {}
+    void changeEvent(QEvent* e) override;
+
     // Subclasses call this once, with the widget that fills the content area.
     void setContent(QWidget* content, const QString& copyLabel);
     virtual int contentHeightForWidth(int innerWidth) const = 0;
@@ -130,6 +139,7 @@ public:
 
 protected:
     int contentHeightForWidth(int innerWidth) const override;
+    void applyPalette() override;
     void mouseDoubleClickEvent(QMouseEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
 

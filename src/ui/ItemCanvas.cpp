@@ -95,6 +95,9 @@ void ItemCanvas::wireCard(ItemCard* card)
         // clipboard matches what is visibly selected.
         applySelection(id, Qt::NoModifier);
         copySelection();
+        // Copying is otherwise completely silent — nothing on screen changes,
+        // so there is no way to know it worked.
+        if (auto* c = live_.value(id, nullptr)) c->acknowledge(tr("Copied"));
     });
     connect(card, &ItemCard::escaped, this, [this, card] {
         applySelection(card->itemId(), Qt::NoModifier);
@@ -466,6 +469,12 @@ std::vector<ItemCanvas::DirtyText> ItemCanvas::dirtyText() const
     for (auto* card : textCards_)
         if (card->isDirty()) out.push_back({card->itemId(), card->text()});
     return out;
+}
+
+void ItemCanvas::acknowledgeSaved(const QList<ItemId>& ids, Timestamp when)
+{
+    for (ItemId id : ids)
+        if (auto* card = live_.value(id, nullptr)) card->noteSaved(when);
 }
 
 void ItemCanvas::markClean()

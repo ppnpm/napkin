@@ -11,6 +11,7 @@
 #include "../data/Database.h"
 #include "../data/ItemRepository.h"
 #include "../domain/BufferService.h"
+#include "../domain/Clock.h"
 #include "../domain/Preview.h"
 #include "../domain/TimeFormat.h"
 #include "../app/Paths.h"
@@ -855,6 +856,14 @@ bool MainWindow::flushEditor()
                 }
             }
         }
+        // Editing and saved looked identical, so there was no way to tell
+        // whether a change had been written. The card's own footer says so and
+        // its age resets to "just now".
+        QList<ItemId> saved;
+        for (const auto& d : dirty)
+            if (d.id != kNoItem) saved << d.id;
+        editor->acknowledgeSaved(saved, nowMs());
+
         editor->markClean();
         model_->invalidatePreview(editingBuffer_);
         saveFailures_ = 0;

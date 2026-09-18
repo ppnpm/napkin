@@ -47,6 +47,8 @@ public:
     };
     std::vector<DirtyText> dirtyText() const;
     void markClean();
+    // Tells the cards that just saved to say so.
+    void acknowledgeSaved(const QList<ItemId>& ids, Timestamp when);
     // Binds the one unwritten card to the row that was just created for it.
     //
     // NOT by position. An earlier version paired textCards_[i] with the i-th

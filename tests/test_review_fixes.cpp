@@ -9,7 +9,9 @@
 #include <cmath>
 
 #include <QBuffer>
+#include <QBuffer>
 #include <QDir>
+#include <QLabel>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -406,6 +408,79 @@ private slots:
         QVERIFY(footer);
         QVERIFY2(!footer->toolTip().isEmpty(),
                  "a clipped card must announce that there is more in it");
+    }
+
+    // --- feedback the user can see -------------------------------------------
+    void copyingAcknowledgesItself()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("copy me")));
+        f.model()->reload();
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        auto* footer = card->findChild<CardFooter*>();
+        QVERIFY(footer);
+        emit card->copyRequested(card->itemId());
+        // Copying changes nothing on screen otherwise, so there is no way to
+        // know it worked.
+        QVERIFY(footer->isFlashing());
+    }
+
+    void savingAnEditAcknowledgesItselfAndResetsTheAge()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        f.service.appendTo(id, Item::makeText(QStringLiteral("before")));
+        f.model()->reload();
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        QTest::keyClicks(card->findChild<QPlainTextEdit*>(), " and after");
+        QTRY_VERIFY_WITH_TIMEOUT(card->findChild<CardFooter*>()->isFlashing(), 3000);
+    }
+
+    void aComposerLooksLikeEveryOtherCard()
+    {
+        GuiFixture f;
+        const auto id = f.seed("something");
+        f.select(id);
+        f.canvas()->addPendingTextCard();
+
+        for (auto* card : f.canvas()->findChildren<TextItemCard*>())
+            QVERIFY2(card->findChild<CardFooter*>(),
+                     "a card made with Ctrl+T had no copy action and no age, so it "
+                     "was visibly a different kind of object from every other card");
+    }
+
+    void aThemeChangeRepaintsTheCards()
+    {
+        GuiFixture f;
+        const auto id = f.buffers.create();
+        const auto stored = f.blobs.store([]{
+            QImage i(20, 20, QImage::Format_RGB32); i.fill(Qt::blue);
+            QByteArray b; QBuffer buf(&b); buf.open(QIODevice::WriteOnly);
+            i.save(&buf, "PNG"); return b; }());
+        f.service.appendTo(id, Item::makeImage(stored.hash, 20, 20, stored.byteSize,
+                                               {}, stored.mime));
+        f.model()->reload();
+        f.select(id);
+
+        auto* card = f.canvas()->findChildren<ImageItemCard*>().first();
+        auto* caption = card->findChildren<QLabel*>().last();
+        const QColor before = caption->palette().color(QPalette::WindowText);
+
+        QPalette dark;
+        dark.setColor(QPalette::Base, QColor(27, 30, 32));
+        dark.setColor(QPalette::Window, QColor(35, 38, 41));
+        dark.setColor(QPalette::Text, QColor(252, 252, 252));
+        card->setPalette(dark);
+
+        // Colours captured at construction went stale on a theme change: card
+        // text stayed the old colour until the buffer was reopened.
+        QVERIFY(caption->palette().color(QPalette::WindowText) != before);
     }
 
     void thePreviewCacheIsBounded()

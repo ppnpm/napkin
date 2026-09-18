@@ -75,13 +75,14 @@ void ItemCard::setContent(QWidget* content, const QString& copyLabel)
     layout->setSpacing(kGapTight);
     layout->addWidget(content, 1);
 
-    if (!isComposer()) {
-        footer_ = new CardFooter(copyLabel, this);
-        footer_->setTimestamp(item_.modifiedAt ? item_.modifiedAt : item_.createdAt);
-        connect(footer_, &CardFooter::actionTriggered, this,
-                [this] { emit copyRequested(item_.id); });
-        layout->addWidget(footer_);
-    }
+    // Every card gets one, the composer included. Without it a card made with
+    // Ctrl+T was visibly a different kind of object from every other card —
+    // no copy action, no age — until it happened to be saved.
+    footer_ = new CardFooter(copyLabel, this);
+    footer_->setTimestamp(item_.modifiedAt ? item_.modifiedAt : item_.createdAt);
+    connect(footer_, &CardFooter::actionTriggered, this,
+            [this] { emit copyRequested(item_.id); });
+    layout->addWidget(footer_);
 }
 
 void ItemCard::setSelected(bool selected)
@@ -89,6 +90,29 @@ void ItemCard::setSelected(bool selected)
     if (selected_ == selected) return;
     selected_ = selected;
     update();
+}
+
+void ItemCard::acknowledge(const QString& message)
+{
+    if (footer_) footer_->flash(message);
+}
+
+void ItemCard::noteSaved(Timestamp when)
+{
+    item_.modifiedAt = when;
+    if (footer_) {
+        footer_->setTimestamp(when);
+        footer_->flash(tr("Saved"));
+    }
+}
+
+// Palettes captured at construction go stale the moment the desktop theme
+// changes: card text stayed the old colour until the buffer was reopened.
+void ItemCard::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::PaletteChange || e->type() == QEvent::ApplicationPaletteChange)
+        applyPalette();
+    QWidget::changeEvent(e);
 }
 
 void ItemCard::setClipped(bool clipped)
@@ -275,6 +299,8 @@ void TextItemCard::beginEditing(bool moveToEnd)
     if (hasEditFocus()) return;
     focusTextInteraction();
     edit_->setFocus(Qt::MouseFocusReason);
+    // A visible, blinking caret is the whole signal that a card is editable.
+    edit_->setCursorWidth(2);
     if (moveToEnd) edit_->moveCursor(QTextCursor::End);
     emit editingStarted(itemId());
     update();
@@ -315,7 +341,9 @@ int TextItemCard::contentHeightForWidth(int innerWidth) const
 
 void TextItemCard::mouseDoubleClickEvent(QMouseEvent* e)
 {
+    // Double-clicked the card's padding rather than the text itself.
     beginEditing();
+    edit_->moveCursor(QTextCursor::End);
     e->accept();
 }
 
@@ -327,12 +355,19 @@ void TextItemCard::selectAllText()
 bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
 {
     if (event->type() == QEvent::MouseButtonDblClick) {
-        // Turn interaction on, then let the editor handle the click itself, so
-        // the caret lands on the word you double-clicked instead of jumping to
-        // the end of the text.
-        const bool wasReadOnly = !hasEditFocus();
+        // Enable interaction, then place the caret ourselves from the click
+        // position. Letting the editor handle the event did not work: the press
+        // that began the double-click arrived while the widget was still
+        // read-only, so the editor had no cursor to move and none appeared
+        // until an arrow key was pressed.
+        auto* mouse = static_cast<QMouseEvent*>(event);
+        const QPoint pos = edit_->viewport()->mapFrom(
+            qobject_cast<QWidget*>(watched), mouse->position().toPoint());
         beginEditing(/*moveToEnd=*/false);
-        return !wasReadOnly ? false : (edit_->setFocus(Qt::MouseFocusReason), false);
+        QTextCursor cursor = edit_->cursorForPosition(pos);
+        cursor.select(QTextCursor::WordUnderCursor);
+        edit_->setTextCursor(cursor);
+        return true;
     }
     if (event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);
@@ -423,6 +458,14 @@ int ImageItemCard::contentHeightForWidth(int innerWidth) const
     const int drawn = source_.height() * std::min(innerWidth, source_.width())
                       / std::max(1, source_.width());
     return drawn + captionH;
+}
+
+void ImageItemCard::applyPalette()
+{
+    if (!caption_) return;
+    QPalette pal = caption_->palette();
+    pal.setColor(QPalette::WindowText, text(palette(), kTextTertiary));
+    caption_->setPalette(pal);
 }
 
 void ImageItemCard::rescale()

@@ -50,8 +50,10 @@ int BufferCardDelegate::collapsedHeight() const
 {
     const QFontMetrics fm(QApplication::font());
     const QFontMetrics tfm(timestampFont(QApplication::font()));
-    // padding + primary + gap + secondary + gap + timestamp + padding
-    return kPadding + fm.height() + 4 + fm.height() + 8 + tfm.height() + kPadding;
+    // Two lines, not three. The old row reserved a secondary slot that was
+    // empty on most buffers and a separate timestamp line below it — 96px of
+    // which a third was blank. Count and age now share one line.
+    return kPadding + fm.height() + 3 + tfm.height() + kPadding;
 }
 
 int BufferCardDelegate::sectionHeight(const QModelIndex& index) const
@@ -181,7 +183,6 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
         const int size = count == 1 ? kThumbSize : kThumbSizeMulti;
         const int gap = 5;
         const bool live = index.row() == animatedRow_ && !animatedFrame_.isNull();
-        const int imageCount = index.data(BufferListModel::ImageCountRole).toInt();
 
         int x = content.left();
         for (int i = 0; i < count; ++i) {
@@ -236,49 +237,48 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     }
 
     // --- content ---------------------------------------------------------------
-    const QFontMetrics fm(option.font);
     const QFontMetrics tfm(timestampFont(option.font));
 
-    const QString primary   = index.data(BufferListModel::PrimaryRole).toString();
-    const QString secondary = index.data(BufferListModel::SecondaryRole).toString();
+    const QString primary = index.data(BufferListModel::PrimaryRole).toString();
 
     int y = content.top();
-    p->setFont(option.font);
+
+    // One weight step on one line is the largest "modern and sleek" return
+    // available for zero pixels and zero colour. Everything else stays 400.
+    QFont primaryFont = option.font;
+    primaryFont.setWeight(QFont::Medium);
+    p->setFont(primaryFont);
+    const QFontMetrics pfm(primaryFont);
+
     if (primary.isEmpty()) {
         p->setPen(dimmed(pal, kTextTertiary));
-        p->drawText(QRect(content.left(), y, content.width(), fm.height()),
+        p->drawText(QRect(content.left(), y, content.width(), pfm.height()),
                     Qt::AlignLeft | Qt::AlignVCenter,
-                    isDraft ? QObject::tr("Type or paste something…") : QObject::tr("Empty"));
+                    isDraft ? QObject::tr("Empty — paste something into it")
+                            : QObject::tr("Empty"));
     } else {
-        // One weight step on one line is the largest "modern and sleek" return
-        // available for zero pixels and zero colour. Everything else stays 400.
-        QFont primaryFont = option.font;
-        primaryFont.setWeight(QFont::Medium);
-        p->setFont(primaryFont);
-        const QFontMetrics pfm(primaryFont);
         p->setPen(pal.color(QPalette::Text));
-        p->drawText(QRect(content.left(), y, content.width(), fm.height()),
+        p->drawText(QRect(content.left(), y, content.width(), pfm.height()),
                     Qt::AlignLeft | Qt::AlignVCenter,
                     pfm.elidedText(primary, Qt::ElideRight, content.width()));
-        p->setFont(option.font);
     }
-    y += fm.height() + 4;
+    y += pfm.height() + 3;
 
-    if (!secondary.isEmpty()) {
-        p->setPen(dimmed(pal));
-        p->drawText(QRect(content.left(), y, content.width(), fm.height()),
-                    Qt::AlignLeft | Qt::AlignVCenter,
-                    fm.elidedText(secondary, Qt::ElideRight, content.width()));
-    }
-
-    // --- timestamp -------------------------------------------------------------
+    // Count and age on one line: "4 items · 2 minutes ago". A buffer holding one
+    // thing does not need telling that it holds one thing.
     if (!isDraft) {
+        QStringList meta;
+        const int count = index.data(BufferListModel::ItemCountRole).toInt();
+        if (count > 1) meta << QObject::tr("%1 items").arg(count);
         const auto modified = index.data(BufferListModel::ModifiedAtRole).value<Timestamp>();
+        meta << relativeTime(modified, nowMs());
+
         p->setFont(timestampFont(option.font));
         p->setPen(dimmed(pal, kTextTertiary));
-        p->drawText(QRect(content.left(), content.bottom() - tfm.height(),
-                          content.width(), tfm.height()),
-                    Qt::AlignLeft | Qt::AlignVCenter, relativeTime(modified, nowMs()));
+        p->drawText(QRect(content.left(), y, content.width(), tfm.height()),
+                    Qt::AlignLeft | Qt::AlignVCenter,
+                    tfm.elidedText(meta.join(QStringLiteral("  ·  ")), Qt::ElideRight,
+                                   content.width()));
     }
 
     p->restore();
