@@ -478,6 +478,15 @@ sole indicator of a state.
   — `Ctrl+C` acts on the *selection*, so it needs a selection first, while the
   footer is the one-click path for "give me that one thing". Two mechanisms for
   two intents, not one job done twice. Using it does not disturb the selection.
+> **Measure against your own document, not the editor's.** `QPlainTextEdit` uses
+> `QPlainTextDocumentLayout`, which ignores `setTextWidth` and wraps to the
+> *viewport's current width*, then reports its height in **lines rather than
+> pixels**. A card measured at construction — before its viewport has a width —
+> therefore came back as one line, which is why a freshly pasted paragraph
+> arrived as a single scrollable line. Height is now measured against a plain
+> `QTextDocument`, which honours `setTextWidth` and answers in pixels before the
+> widget has ever been shown.
+
 - **Sizes are per-card and absolute.** Min 92px tall so a two-word paste is still
   something you can aim at, max 420px so one screenshot cannot own the board,
   columns 280–400px wide. A card's height is computed from its own content and

@@ -4,6 +4,7 @@
 
 class QLabel;
 class QPlainTextEdit;
+class QTextDocument;
 
 namespace napkin {
 
@@ -100,6 +101,11 @@ protected:
 private:
     QPlainTextEdit* edit_ = nullptr;
     bool dirty_ = false;
+
+    // Measuring happens against our own document, not the editor's. See the
+    // note on contentHeightForWidth.
+    mutable QTextDocument* measure_ = nullptr;
+    mutable QString measured_;
 };
 
 class ImageItemCard : public ItemCard {

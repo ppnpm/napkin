@@ -616,7 +616,9 @@ void MainWindow::appendTextBlock(const QString& text)
     if (editingBuffer_ != kNoBuffer)
         canvas_->setItems(items_.listForBuffer(editingBuffer_));
     model_->invalidatePreview(editingBuffer_);
-    canvas_->addPendingTextCard();
+    // Deliberately no pending card here. Pasting text produces a card; it is
+    // not also a request to write another one. Ctrl+T is that request, and it
+    // returns above.
     updateEmptyState();
 }
 

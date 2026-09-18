@@ -18,6 +18,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPlainTextEdit>
+#include <QScrollBar>
 #include <QTextDocument>
 #include <QVBoxLayout>
 #include <functional>
@@ -167,7 +168,12 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
 {
     auto* edit = new PasteAwareTextEdit;
     edit->setPlainText(item.text);
-    edit->moveCursor(QTextCursor::End);
+    // Start at the beginning, not the end. moveCursor(End) here left the
+    // viewport scrolled — horizontally as well as vertically — so the first few
+    // pixels of every line were clipped off the left edge. A card is read from
+    // the top anyway; the caret only needs to be at the end when you are about
+    // to append to it.
+    edit->moveCursor(QTextCursor::Start);
     edit->setFrameShape(QFrame::NoFrame);
     edit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     edit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -175,7 +181,7 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
     edit->setTabChangesFocus(true);
     edit->viewport()->setAutoFillBackground(false);
     edit->setStyleSheet(QStringLiteral("QPlainTextEdit { background: transparent; }"));
-    edit->document()->setDocumentMargin(0);
+    edit->document()->setDocumentMargin(1);
     // Read-only until you ask to edit, so a click lands on the card rather than
     // in the text. The composer is born editable: it has nothing to select.
     edit->setTextInteractionFlags(Qt::NoTextInteraction);
@@ -186,6 +192,11 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
         return true;
     };
     edit_ = edit;
+
+    // Belt and braces: with the horizontal bar off, a stray scroll offset is
+    // invisible but still clips the text.
+    edit_->horizontalScrollBar()->setValue(0);
+    edit_->verticalScrollBar()->setValue(0);
 
     setContent(edit_, tr("Copy text"));
 
@@ -240,13 +251,28 @@ void TextItemCard::endEditing()
 
 int TextItemCard::contentHeightForWidth(int innerWidth) const
 {
-    // QPlainTextDocumentLayout reports documentSize().height() in LINES, not
-    // pixels — a quirk of the plain-text layout that an earlier version took at
-    // face value, which is why short notes were clipped after two lines.
-    QTextDocument* doc = edit_->document();
-    doc->setTextWidth(innerWidth);
-    const int lines = std::max(1, int(doc->size().height()));
-    return lines * edit_->fontMetrics().lineSpacing() + 2;
+    // Measured against a document of our own, never the editor's.
+    //
+    // QPlainTextEdit uses QPlainTextDocumentLayout, which ignores setTextWidth
+    // and wraps to the *viewport's* current width instead — and reports its
+    // height in LINES rather than pixels. A card measured at construction, when
+    // the viewport has no width yet, therefore came back as one line. That is
+    // why a freshly pasted paragraph appeared as a single scrollable line.
+    //
+    // A plain QTextDocument honours setTextWidth and answers in pixels, so it
+    // gives the right height before the widget has ever been shown.
+    if (!measure_) {
+        measure_ = new QTextDocument(const_cast<TextItemCard*>(this));
+        measure_->setDocumentMargin(1);   // match the editor's, or heights drift
+    }
+    const QString current = edit_->toPlainText();
+    if (current != measured_) {
+        measure_->setDefaultFont(edit_->font());
+        measure_->setPlainText(current.isEmpty() ? edit_->placeholderText() : current);
+        measured_ = current;
+    }
+    measure_->setTextWidth(innerWidth);
+    return int(std::ceil(measure_->size().height())) + 2;
 }
 
 void TextItemCard::mouseDoubleClickEvent(QMouseEvent* e)

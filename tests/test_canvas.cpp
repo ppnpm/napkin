@@ -4,6 +4,7 @@
 #include "../src/ui/CardFooter.h"
 
 #include <QApplication>
+#include <QScrollBar>
 #include <QBuffer>
 #include <QClipboard>
 #include <QMimeData>
@@ -480,6 +481,45 @@ private slots:
     }
 
     // --- card chrome and sizing ----------------------------------------------
+    void aPastedParagraphGetsACardTallEnoughToReadIt()
+    {
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral(
+            "This is some of the multilined text that got accumulated into lines and can "
+            "be showcased, and this has to be a very cool napkin where you can store "
+            "things temporarily without having to name them."));
+        f.trigger("pasteAction");
+
+        auto* card = f.canvas()->findChildren<TextItemCard*>().first();
+        auto* edit = card->findChild<QPlainTextEdit*>();
+
+        // The card must be tall enough that the text does not need scrolling:
+        // a paragraph that wraps to five lines used to arrive as one visible
+        // line, because the height was measured against a viewport that did not
+        // have a width yet.
+        const int lines = 5;
+        QVERIFY2(card->height() >= edit->fontMetrics().lineSpacing() * lines,
+                 qPrintable(QString("card is only %1px tall").arg(card->height())));
+        QVERIFY(!card->isClipped());
+
+        // And nothing is scrolled out of view horizontally or vertically: the
+        // card shows the text from its very first character.
+        QCOMPARE(edit->horizontalScrollBar()->value(), 0);
+        QCOMPARE(edit->verticalScrollBar()->value(), 0);
+    }
+
+    void pastingTextDoesNotAlsoOpenABlankCard()
+    {
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral("just this"));
+        f.trigger("pasteAction");
+
+        const auto cards = f.canvas()->findChildren<TextItemCard*>();
+        QCOMPARE(cards.size(), 1);          // the pasted card, and nothing else
+        QVERIFY(!cards.first()->isComposer());
+        QCOMPARE(f.items.countForBuffer(f.buffers.listLive(10).front().id), 1);
+    }
+
     void doubleClickingABufferDoesNotAddATextBlock()
     {
         GuiFixture f;
