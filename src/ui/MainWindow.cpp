@@ -6,6 +6,7 @@
 #include "Tokens.h"
 #include "Lightbox.h"
 #include "SettingsDialog.h"
+#include "EmptyStateView.h"
 #include "WelcomeView.h"
 #include "SweepDialog.h"
 #include "UndoToast.h"
@@ -74,22 +75,10 @@ void MainWindow::buildUi()
         search_->setFocus(Qt::ShortcutFocusReason);
     });
 
-    // A terser screen for the states that are not "you have nothing yet": an
-    // empty trash or a search with no hits should not be greeted like a first
-    // run.
-    auto* message = new QWidget;
-    auto* messageLayout = new QVBoxLayout(message);
-    messageLayout->setAlignment(Qt::AlignCenter);
-    emptyLine1_ = new QLabel;
-    emptyLine1_->setAlignment(Qt::AlignCenter);
-    emptyLine2_ = new QLabel;
-    emptyLine2_->setAlignment(Qt::AlignCenter);
-    QPalette dim = emptyLine2_->palette();
-    dim.setColor(QPalette::WindowText, tokens::text(palette(), tokens::kTextTertiary));
-    emptyLine2_->setPalette(dim);
-    messageLayout->addWidget(emptyLine1_);
-    messageLayout->addSpacing(4);
-    messageLayout->addWidget(emptyLine2_);
+    // Not "you have nothing yet", so not the start page — but a bare line of
+    // text would leave you on a screen with nothing to do and no way back.
+    emptyState_ = new EmptyStateView;
+    connect(emptyState_, &EmptyStateView::actionTriggered, this, &MainWindow::goHome);
 
     canvas_ = new ItemCanvas(thumbs_, blobs_);
 
@@ -177,7 +166,7 @@ void MainWindow::buildUi()
     stack_ = new QStackedWidget;
     stack_->addWidget(splitter_);   // 0: the app
     stack_->addWidget(welcome_);    // 1: nothing here yet
-    stack_->addWidget(message);     // 2: empty trash, or a search with no hits
+    stack_->addWidget(emptyState_); // 2: empty trash, or a search with no hits
 
     auto* central = new QWidget;
     auto* rootLayout = new QVBoxLayout(central);
@@ -427,19 +416,7 @@ void MainWindow::buildMenuBar()
     auto* home = bar->addMenu(tr("&Home"));
     auto* showAll = home->addAction(tr("All buffers"));
     showAll->setShortcut(QKeySequence(QStringLiteral("Ctrl+Home")));
-    connect(showAll, &QAction::triggered, this, [this] {
-        // One gesture back to the ordinary view from wherever you are: out of
-        // the trash, out of a search, back to the top of the list. The query is
-        // cleared immediately rather than through the debounce, because a menu
-        // action that takes effect a beat later reads as not having worked.
-        search_->clear();
-        searchDebounce_->stop();
-        model_->setQuery(QString());
-        showTrash(false);
-        if (trashToggle_) trashToggle_->setChecked(false);
-        if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
-        view_->setFocus(Qt::OtherFocusReason);
-    });
+    connect(showAll, &QAction::triggered, this, &MainWindow::goHome);
     home->addAction(named("findAction"));
     home->addSeparator();
     auto* cleanUp = home->addAction(tr("Clean up…"));
@@ -479,6 +456,24 @@ void MainWindow::buildMenuBar()
                "<br><br>Everything stays on this machine. Napkin makes no network "
                "requests."));
     });
+}
+
+// One gesture back to the ordinary view from wherever you are: out of the
+// trash, out of a search, back to the top of the list. Shared by the Home menu
+// and by every empty state, so they cannot drift apart.
+void MainWindow::goHome()
+{
+    // Cleared immediately rather than through the debounce: an action that
+    // takes effect a beat later reads as not having worked.
+    search_->clear();
+    searchDebounce_->stop();
+    model_->setQuery(QString());
+    showTrash(false);
+    if (trashToggle_) trashToggle_->setChecked(false);
+    if (showTrashAction_) showTrashAction_->setChecked(false);
+    if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
+    view_->setFocus(Qt::OtherFocusReason);
+    updateEmptyState();
 }
 
 void MainWindow::openSettings()
@@ -777,15 +772,22 @@ void MainWindow::updateEmptyState()
     if (model_->rowCount() > 0) { stack_->setCurrentIndex(0); return; }
 
     if (model_->isSearching()) {
-        emptyLine1_->setText(tr("Nothing matches “%1”.").arg(model_->query()));
-        emptyLine2_->setText(tr("Search looks at your text and your filenames."));
+        // The query is echoed back so you can see the typo, but truncated: a
+        // pasted paragraph in the search box must not become the headline.
+        QString shown = model_->query();
+        if (shown.size() > 42) shown = shown.left(41) + QChar(0x2026);
+        emptyState_->setContent({}, tr("Nothing matches “%1”").arg(shown),
+                                tr("Search looks at your text and at your filenames."),
+                                tr("Clear search"));
         stack_->setCurrentIndex(2);
         return;
     }
     if (model_->mode() == BufferListModel::Mode::Trash) {
-        emptyLine1_->setText(tr("Nothing in the trash."));
-        emptyLine2_->setText(tr("Deleted buffers stay here for %1 days.")
-                                 .arg(BufferService::trashRetentionDays()));
+        emptyState_->setContent(QStringLiteral(":/resources/icons/trash-empty-256.png"),
+                          tr("The trash is empty"),
+                          tr("Deleted buffers stay here for %1 days.")
+                              .arg(BufferService::trashRetentionDays()),
+                          tr("Back to your buffers"));
         stack_->setCurrentIndex(2);
         return;
     }

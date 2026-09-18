@@ -70,6 +70,7 @@ qt_add_library(napkin_ui STATIC
   src/ui/SweepDialog.cpp
   src/ui/SettingsDialog.cpp
   src/ui/WelcomeView.cpp
+  src/ui/EmptyStateView.cpp
   src/app/SingleInstance.cpp
   src/app/Application.cpp
 )
@@ -83,6 +84,8 @@ qt_add_resources(napkin_ui "icons" PREFIX "/" FILES
   resources/icons/64x64/napkin.png
   resources/icons/128x128/napkin.png
   resources/icons/256x256/napkin.png
+  resources/icons/trash-empty-128.png
+  resources/icons/trash-empty-256.png
 )
 target_link_libraries(napkin_ui PUBLIC napkin_core napkin_media Qt6::Widgets Qt6::Network)
 

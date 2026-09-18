@@ -295,6 +295,30 @@ A query, not a counter — so no refcount drift is possible.
 Directory mode `0700`, DB file `0600`. A scratch surface *will* contain tokens
 and passwords in practice.
 
+### The three empty screens
+
+An empty list is not one state, it is three, and they mean different things:
+
+| When | What it says | The way out |
+|---|---|---|
+| Nothing stored yet | `WelcomeView`: mark, name, tagline, the five keys that get you started | every row is clickable and runs its action |
+| Trash, nothing in it | `EmptyStateView`: the bin illustration, "The trash is empty", the retention period | **Back to your buffers** |
+| Search, no hits | `EmptyStateView`: the query echoed back (truncated at 42 characters so a pasted paragraph cannot become the headline) | **Clear search** |
+
+The first-run screen is only for the first case. Greeting someone who has just
+emptied the trash as though they had never used the application would be wrong,
+and a bare line of centred text in the other two leaves you on a screen with
+nothing to do and no obvious way back — so each carries one action, and both of
+them call `MainWindow::goHome()`, the same slot the Home ▸ All buffers menu item
+uses. One implementation, so the menu and the buttons cannot drift apart.
+
+The illustration is the user's own PNG, trimmed of its transparent margin and
+rendered at two sizes (`resources/icons/trash-empty-{128,256}.png`), compiled
+into `napkin_ui` rather than into the executable so that every consumer of the
+library — including the tests — can load it. A test asserts the pixmap is
+non-null: a missing resource is an invisible label at runtime, not a build
+failure, so nothing else would catch it.
+
 ### Search
 
 ```sql
@@ -622,6 +646,64 @@ you are looking at nothing. This holds for text and images alike.
 every flush, so the list would still re-sort under the buffer being edited. The
 canvas freezes the order on the first keystroke and releases it when the
 selection moves on or the window loses focus.
+
+### Theming
+
+Three choices: follow the system, Light, Dark. The two explicit ones build a
+**complete** palette — every role a widget can draw with, plus the Disabled
+group — rather than patching a few roles onto the platform's.
+
+Patching was the original design and it was wrong in a way that only showed up
+when the user's desktop disagreed with their choice. `applyTheme()` set Window,
+Base, Text and WindowText and inherited the other sixteen roles, so a dark
+desktop with Light selected kept `ButtonText` at white: the menu bar, the header
+buttons and the start page's shortcut rows were white text on a light window,
+measured at 1.00:1. The mirror-image fault applied to Dark under a light
+desktop. A palette is every role or it is none of them.
+
+The one thing still inherited is `QPalette::Highlight` — the accent belongs to
+the user, and a saturated accent reads against either background. Its partner
+`HighlightedText` is chosen here rather than inherited, because a light theme's
+highlighted-text colour carried into a dark theme is how selected text
+disappears.
+
+**Tint the role a widget paints with, not the one you assume it paints with.**
+A `QLabel` inherits its parent's foreground role, so the labels inside the
+start page's clickable shortcut rows draw with `ButtonText`, not `WindowText`.
+`applyPalette()` set `WindowText` on them, which was a silent no-op — the rows
+took whatever the platform's `ButtonText` happened to be, and the emphasis
+difference between a key and its description was lost even when both were
+legible. Both `WelcomeView` and `EmptyStateView` now write to
+`label->foregroundRole()`.
+
+`tests/test_theme.cpp` pins both faults, starting from a deliberately dark
+platform palette: one test measures WCAG contrast for every paired role in both
+themes, the other asserts the emphasis tokens actually reached the painting
+role. Each fails if its own fix is reverted — checked by reverting them.
+
+### The three empty screens
+
+An empty list is not one state, it is three, and they mean different things:
+
+| When | What it says | The way out |
+|---|---|---|
+| Nothing stored yet | `WelcomeView`: mark, name, tagline, the five keys that get you started | every row is clickable and runs its action |
+| Trash, nothing in it | `EmptyStateView`: the bin illustration, "The trash is empty", the retention period | **Back to your buffers** |
+| Search, no hits | `EmptyStateView`: the query echoed back (truncated at 42 characters so a pasted paragraph cannot become the headline) | **Clear search** |
+
+The first-run screen is only for the first case. Greeting someone who has just
+emptied the trash as though they had never used the application would be wrong,
+and a bare line of centred text in the other two leaves you on a screen with
+nothing to do and no obvious way back — so each carries one action, and both of
+them call `MainWindow::goHome()`, the same slot the Home ▸ All buffers menu item
+uses. One implementation, so the menu and the buttons cannot drift apart.
+
+The illustration is the user's own PNG, trimmed of its transparent margin and
+rendered at two sizes (`resources/icons/trash-empty-{128,256}.png`), compiled
+into `napkin_ui` rather than into the executable so that every consumer of the
+library — including the tests — can load it. A test asserts the pixmap is
+non-null: a missing resource is an invisible label at runtime, not a build
+failure, so nothing else would catch it.
 
 ### Search
 

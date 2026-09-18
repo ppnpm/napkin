@@ -24,6 +24,7 @@ class BufferListView;
 class ItemCanvas;
 class BufferRepository;
 class BufferService;
+class EmptyStateView;
 class WelcomeView;
 class BlobStore;
 class Database;
@@ -76,6 +77,7 @@ private:
     QMenu* buildOverflowMenu();
     void buildMenuBar();
     void openSettings();
+    void goHome();
     // Returns false when the write failed. The caller must NOT collapse or close
     // on a false: doing so strands the text in a widget that is about to go
     // away, and the next flush returns early because nothing is being edited.
@@ -133,8 +135,7 @@ private:
     QLabel*          sweepLabel_ = nullptr;
     bool             nudgeDismissed_ = false;
     WelcomeView*     welcome_ = nullptr;
-    QLabel*          emptyLine1_ = nullptr;
-    QLabel*          emptyLine2_ = nullptr;
+    EmptyStateView*  emptyState_ = nullptr;
 
     // What the open editor is bound to. kNoBuffer means an uncommitted draft,
     // which by invariant 5 has no row in the database yet.

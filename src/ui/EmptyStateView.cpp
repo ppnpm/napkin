@@ -1,0 +1,104 @@
+#include "EmptyStateView.h"
+#include "Tokens.h"
+
+#include <QEvent>
+#include <QGuiApplication>
+#include <QLabel>
+#include <QPixmap>
+#include <QPushButton>
+#include <QVBoxLayout>
+
+namespace napkin {
+namespace {
+using namespace tokens;
+constexpr int kArtHeight = 128;
+constexpr int kTextColumn = 380;
+}  // namespace
+
+EmptyStateView::EmptyStateView(QWidget* parent) : QWidget(parent)
+{
+    auto* outer = new QVBoxLayout(this);
+    outer->setAlignment(Qt::AlignCenter);
+    outer->setSpacing(0);
+
+    art_ = new QLabel;
+    art_->setAlignment(Qt::AlignCenter);
+    outer->addWidget(art_, 0, Qt::AlignHCenter);
+    outer->addSpacing(20);
+
+    title_ = new QLabel;
+    title_->setAlignment(Qt::AlignCenter);
+    title_->setWordWrap(true);
+    title_->setFixedWidth(kTextColumn);
+    title_->setFont(scaled(font(), 3.0, QFont::Medium));
+    outer->addWidget(title_);
+    outer->addSpacing(6);
+
+    detail_ = new QLabel;
+    detail_->setAlignment(Qt::AlignCenter);
+    detail_->setWordWrap(true);
+    // Fixed, not merely bounded: a word-wrapped label asks for the narrowest
+    // width it can survive at, so left to itself it wrapped a six-word sentence
+    // onto two lines in the middle of an empty window.
+    detail_->setFixedWidth(kTextColumn);
+    outer->addWidget(detail_);
+    outer->addSpacing(22);
+
+    action_ = new QPushButton;
+    action_->setCursor(Qt::PointingHandCursor);
+    action_->setObjectName(QStringLiteral("emptyStateAction"));
+    connect(action_, &QPushButton::clicked, this, &EmptyStateView::actionTriggered);
+    outer->addWidget(action_, 0, Qt::AlignHCenter);
+
+    applyPalette();
+}
+
+void EmptyStateView::setContent(const QString& artwork, const QString& title,
+                                const QString& detail, const QString& actionLabel)
+{
+    if (artwork.isEmpty()) {
+        art_->clear();
+        art_->hide();
+    } else {
+        // Loaded at twice the drawn size so it stays sharp on a HiDPI screen.
+        QPixmap art(artwork);
+        art_->setPixmap(art.isNull()
+            ? QPixmap()
+            : art.scaledToHeight(kArtHeight, Qt::SmoothTransformation));
+        art_->setVisible(!art.isNull());
+    }
+
+    title_->setText(title);
+    detail_->setText(detail);
+    action_->setText(actionLabel);
+    action_->setVisible(!actionLabel.isEmpty());
+}
+
+bool EmptyStateView::hasArtwork() const
+{
+    const QPixmap art = art_->pixmap();
+    return !art.isNull();
+}
+
+void EmptyStateView::applyPalette()
+{
+    const QPalette pal = QGuiApplication::palette();
+    auto tint = [&](QLabel* label, int alpha) {
+        QPalette p = label->palette();
+        // The role the label paints with, which is not always WindowText —
+        // see the note in WelcomeView::applyPalette.
+        p.setColor(label->foregroundRole(), text(pal, alpha));
+        label->setPalette(p);
+    };
+    tint(title_, kTextPrimary);
+    tint(detail_, kTextTertiary);
+}
+
+void EmptyStateView::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::PaletteChange || e->type() == QEvent::ApplicationPaletteChange)
+        applyPalette();
+    QWidget::changeEvent(e);
+}
+
+}  // namespace napkin

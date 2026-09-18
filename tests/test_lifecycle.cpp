@@ -1,5 +1,7 @@
 
 #include <QPushButton>
+#include <QStackedWidget>
+#include "../src/ui/EmptyStateView.h"
 #include "GuiFixture.h"
 #include <QtTest>
 
@@ -196,6 +198,65 @@ private slots:
         QCOMPARE(f.buffers.countLive(), 1);
         QVERIFY(f.buffers.find(second)->deletedAt == std::nullopt);
         QVERIFY(f.buffers.find(first)->inTrash());
+    }
+
+    // --- the empty states ---------------------------------------------------
+    // A trash with nothing in it and a search with no hits are dead ends. Each
+    // has to say which dead end it is and offer the way out of it.
+
+    void anEmptyTrashShowsTheBinAndAWayBack()
+    {
+        GuiFixture f;
+        f.seed("kept");
+        auto* empty = f.window.findChild<EmptyStateView*>();
+        QVERIFY(empty);
+
+        f.window.showTrash(true);
+        QCOMPARE(f.model()->rowCount(), 0);
+        auto* stack = f.window.findChild<QStackedWidget*>();
+        QCOMPARE(stack->currentWidget(), static_cast<QWidget*>(empty));
+
+        // The illustration has to have decoded — a missing resource shows up as
+        // a null pixmap and an invisible label, not as a build failure.
+        QVERIFY(empty->hasArtwork());
+
+        auto* back = empty->findChild<QPushButton*>(QStringLiteral("emptyStateAction"));
+        QVERIFY(back && back->isVisible());
+        back->click();
+
+        QCOMPARE(f.model()->mode(), BufferListModel::Mode::Live);
+        QCOMPARE(f.model()->rowCount(), 1);
+        QCOMPARE(stack->currentIndex(), 0);
+    }
+
+    void aSearchWithNoHitsGetsNoIllustration()
+    {
+        GuiFixture f;
+        f.seed("kept");
+        auto* empty = f.window.findChild<EmptyStateView*>();
+        f.model()->setQuery(QStringLiteral("zzzznothinghere"));
+        QCOMPARE(f.model()->rowCount(), 0);
+
+        auto* stack = f.window.findChild<QStackedWidget*>();
+        QCOMPARE(stack->currentWidget(), static_cast<QWidget*>(empty));
+        // The bin belongs to the trash. Borrowing it here would say the wrong
+        // thing about a search that simply missed.
+        QVERIFY(!empty->hasArtwork());
+
+        empty->findChild<QPushButton*>(QStringLiteral("emptyStateAction"))->click();
+        QVERIFY(!f.model()->isSearching());
+        QCOMPARE(f.model()->rowCount(), 1);
+    }
+
+    void theTrashIsStillAListWhenItHasSomethingInIt()
+    {
+        GuiFixture f;
+        const auto id = f.seed("doomed");
+        f.window.trashRow(f.model()->rowForId(id));
+        f.window.showTrash(true);
+
+        QCOMPARE(f.model()->rowCount(), 1);
+        QCOMPARE(f.window.findChild<QStackedWidget*>()->currentIndex(), 0);
     }
 };
 
