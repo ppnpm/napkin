@@ -13,6 +13,10 @@ class ItemRepository;
 // age only moves it into the collapsed OLDER section.
 inline constexpr int kOlderThresholdDays  = 30;
 inline constexpr int kTrashRetentionDays  = 30;
+
+// Below this the nudge would be noise. Napkin tolerates accumulation — the
+// offer to clean up should feel like a convenience, not a scolding.
+inline constexpr int kSweepNudgeThreshold = 12;
 inline constexpr qint64 kMsPerDay = 24LL * 60 * 60 * 1000;
 
 // An unpersisted buffer. Ctrl+N produces one of these and nothing else:

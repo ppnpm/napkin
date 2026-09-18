@@ -5,6 +5,7 @@
 #include "ItemCanvas.h"
 #include "Tokens.h"
 #include "Lightbox.h"
+#include "SweepDialog.h"
 #include "UndoToast.h"
 
 #include "../data/BufferRepository.h"
@@ -125,16 +126,48 @@ void MainWindow::buildUi()
                            .arg(canvas_->matchCount()).arg(model_->query()));
     });
 
+    // The nudge. Cleaning up is never automatic and never silent, so the only
+    // thing that happens on its own is this one quiet line appearing.
+    sweepNudge_ = new QWidget;
+    auto* nudgeRow = new QHBoxLayout(sweepNudge_);
+    nudgeRow->setContentsMargins(16, 8, 10, 8);
+    sweepLabel_ = new QLabel;
+    auto* review = new QPushButton(tr("Review"));
+    review->setFlat(true);
+    review->setCursor(Qt::PointingHandCursor);
+    review->setObjectName(QStringLiteral("sweepReviewButton"));
+    auto* dismissNudge = new QPushButton(QStringLiteral("✕"));
+    dismissNudge->setFlat(true);
+    dismissNudge->setCursor(Qt::PointingHandCursor);
+    dismissNudge->setToolTip(tr("Not now"));
+    connect(review, &QPushButton::clicked, this, &MainWindow::reviewSweep);
+    connect(dismissNudge, &QPushButton::clicked, this, [this] {
+        nudgeDismissed_ = true;
+        sweepNudge_->hide();
+    });
+    nudgeRow->addWidget(sweepLabel_);
+    nudgeRow->addStretch();
+    nudgeRow->addWidget(review);
+    nudgeRow->addWidget(dismissNudge);
+    sweepNudge_->hide();
+
+    auto* listSide = new QWidget;
+    auto* listColumn = new QVBoxLayout(listSide);
+    listColumn->setContentsMargins(0, 0, 0, 0);
+    listColumn->setSpacing(0);
+    listColumn->addWidget(sweepNudge_);
+    listColumn->addWidget(view_, 1);
+
     // The list keeps its own width; the canvas takes the rest. Below ~820px the
     // splitter lets the user collapse either side rather than cramming both.
     splitter_ = new QSplitter(Qt::Horizontal);
-    splitter_->addWidget(view_);
+    splitter_->addWidget(listSide);
     splitter_->addWidget(canvasSide);
     splitter_->setStretchFactor(0, 0);
     splitter_->setStretchFactor(1, 1);
     splitter_->setChildrenCollapsible(false);
-    view_->setMinimumWidth(260);
-    view_->setMaximumWidth(520);
+    listSide->setMinimumWidth(260);
+    listSide->setMaximumWidth(520);
     canvasSide->setMinimumWidth(tokens::kCardMinWidth + tokens::kPadX * 2);
     splitter_->setSizes({340, 660});
 
@@ -192,7 +225,10 @@ void MainWindow::buildUi()
         }
     });
 
-    connect(model_, &BufferListModel::countChanged, this, [this] { updateEmptyState(); });
+    connect(model_, &BufferListModel::countChanged, this, [this] {
+        updateEmptyState();
+        updateSweepNudge();
+    });
 
     // Searching on every keystroke is affordable — 5 ms across 2000 buffers —
     // but a short debounce keeps a fast typist from re-querying mid-word.
@@ -287,6 +323,7 @@ void MainWindow::buildUi()
     // selected could press P, K, Delete or Enter and have nothing happen at all.
     if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
     view_->setFocus(Qt::OtherFocusReason);
+    updateSweepNudge();
 }
 
 QWidget* MainWindow::buildHeaderWidget()
@@ -362,6 +399,9 @@ QMenu* MainWindow::buildOverflowMenu()
     auto* menu = new QMenu(this);
     for (QAction* action : actions()) menu->addAction(action);
     menu->addSeparator();
+    auto* cleanUp = menu->addAction(tr("Clean up…"));
+    connect(cleanUp, &QAction::triggered, this, &MainWindow::reviewSweep);
+    menu->addSeparator();
     auto* help = menu->addAction(tr("Keyboard shortcuts…"));
     connect(help, &QAction::triggered, this, &MainWindow::showShortcuts);
     return menu;
@@ -423,6 +463,68 @@ void MainWindow::restoreRow(int row)
     emptyTrashButton_->setVisible(model_->rowCount() > 0);
 }
 
+// A quiet line, shown only when there is genuinely something to clean up and
+// only until it is waved away. Napkin tolerates accumulation; this is an offer,
+// not a complaint.
+void MainWindow::updateSweepNudge()
+{
+    if (!sweepNudge_) return;
+    const bool relevant = !nudgeDismissed_
+                       && !model_->isSearching()
+                       && model_->mode() == BufferListModel::Mode::Live;
+    const int sweepable = relevant ? model_->sweepableCount() : 0;
+    const bool worth = sweepable >= kSweepNudgeThreshold;
+
+    sweepNudge_->setVisible(worth);
+    if (worth) {
+        // Short: the list pane is narrow, and a nudge that elides mid-word
+        // reads as a fault rather than an offer.
+        sweepLabel_->setText(tr("%1 over %2 days old")
+                                 .arg(sweepable).arg(kOlderThresholdDays));
+        sweepLabel_->setToolTip(tr("%1 buffers have not been touched in %2 days")
+                                    .arg(sweepable).arg(kOlderThresholdDays));
+    }
+}
+
+void MainWindow::reviewSweep()
+{
+    canvas_->commitEditing();
+    SweepDialog dialog(buffers_, items_, this);
+    if (dialog.exec() != QDialog::Accepted) return;
+    sweepForTest(dialog.accepted());
+}
+
+// The sweep itself, separated from the dialog that chooses what goes into it.
+void MainWindow::sweepForTest(const QList<BufferId>& chosen)
+{
+    if (chosen.isEmpty()) return;
+
+    int swept = 0;
+    const bool ok = guarded(tr("Could not clean up"), [&] {
+        for (BufferId id : chosen) {
+            // trash(), never a hard delete: a sweep must stay undoable, and a
+            // kept buffer refuses outright, which is the guarantee (SPEC.md §6).
+            if (service_.trash(id)) ++swept;
+        }
+    });
+    if (!ok) return;
+
+    if (editingBuffer_ != kNoBuffer && chosen.contains(editingBuffer_)) {
+        editingBuffer_ = kNoBuffer;
+        canvas_->showNothingSelected();
+    }
+    reloadPreservingSelection();
+    updateSweepNudge();
+
+    toast_->offer(tr("%n buffer(s) moved to trash", nullptr, swept), [this, chosen] {
+        guarded(tr("Could not undo that"), [&] {
+            for (BufferId id : chosen) service_.restore(id);
+        });
+        reloadPreservingSelection();
+        updateSweepNudge();
+    });
+}
+
 void MainWindow::showTrash(bool trash)
 {
     flushAndReportFailure();
@@ -430,6 +532,7 @@ void MainWindow::showTrash(bool trash)
     model_->setMode(trash ? BufferListModel::Mode::Trash : BufferListModel::Mode::Live);
     emptyTrashButton_->setVisible(trash && model_->rowCount() > 0);
     updateEmptyState();
+    updateSweepNudge();
 }
 
 void MainWindow::reloadPreservingSelection()

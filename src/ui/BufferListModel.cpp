@@ -1,6 +1,7 @@
 #include "BufferListModel.h"
 #include "../data/BufferRepository.h"
 #include "../data/ItemRepository.h"
+#include "../domain/BufferService.h"
 #include "../domain/Clock.h"
 #include "../domain/Search.h"
 #include "../domain/TimeFormat.h"
@@ -121,12 +122,17 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     case PinnedRole:     return b.pinned;
     case KeptRole:       return b.kept;
     case IsDraftRole:    return isDraft;
-    case SectionFirstRole:
+    case SectionFirstRole: {
         if (isSearching()) return row == 0;
         if (mode_ == Mode::Trash) return row == 0;
         if (row == 0) return true;
-        return rows_[size_t(row) - 1].pinned != b.pinned;
-    case SectionNameRole:
+        const Buffer& above = rows_[size_t(row) - 1];
+        if (above.pinned != b.pinned) return true;
+        // RECENT gives way to OLDER at the cutoff. Age changes where a buffer
+        // sits, never whether it exists (SPEC.md §6).
+        return !b.pinned && isOlder(above) != isOlder(b);
+    }
+    case SectionNameRole: {
         if (isSearching()) {
             // Spelled out rather than tr("%n RESULT(S)"): without a loaded
             // translation Qt uses the source string verbatim, so the header
@@ -135,7 +141,10 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
             return n == 1 ? tr("1 RESULT") : tr("%1 RESULTS").arg(n);
         }
         if (mode_ == Mode::Trash) return QStringLiteral("TRASH");
-        return b.pinned ? QStringLiteral("PINNED") : QStringLiteral("RECENT");
+        if (b.pinned) return QStringLiteral("PINNED");
+        return isOlder(b) ? QStringLiteral("OLDER") : QStringLiteral("RECENT");
+    }
+    case IsOlderRole: return isOlder(b);
     default:
         break;
     }
@@ -236,6 +245,25 @@ void BufferListModel::removeDraftRow()
     rows_.erase(rows_.begin() + row);
     endRemoveRows();
     emit countChanged(int(rows_.size()));
+}
+
+bool BufferListModel::isOlder(const Buffer& buffer) const
+{
+    return !buffer.pinned && buffer.modifiedAt < BufferService::olderThanCutoff();
+}
+
+int BufferListModel::sweepableCount() const
+{
+    // Deliberately NOT isOlder(), which answers a different question. isOlder is
+    // about placement and so excludes pinned buffers, because a pinned buffer is
+    // not in the recency order at all. Sweep eligibility is about lifecycle:
+    // only Keep protects. Pinning does not, and conflating the two would make
+    // pinning a silent second Keep — exactly the confusion §3 exists to prevent.
+    const Timestamp cutoff = BufferService::olderThanCutoff();
+    int n = 0;
+    for (const auto& b : rows_)
+        if (!b.kept && b.modifiedAt < cutoff) ++n;
+    return n;
 }
 
 std::vector<ImageRef> BufferListModel::thumbsAt(int row) const

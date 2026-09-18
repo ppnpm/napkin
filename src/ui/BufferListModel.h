@@ -36,6 +36,7 @@ public:
         SectionFirstRole,   // this row starts a section
         SectionNameRole,    // "PINNED" / "RECENT" / "TRASH" / "RESULTS"
         SnippetRole,        // why this buffer matched, when searching
+        IsOlderRole,        // past the age cutoff, so drawn quieter
     };
 
     // Live shows the stack; Trash shows what is recoverable. Same rows, same
@@ -86,6 +87,15 @@ public:
     // a flag does not cost the selection or the scroll position.
     void refreshRow(BufferId id);
     void refreshTimestamps();
+
+    // Past the age cutoff AND in the recency order — so pinned buffers are
+    // never "older", because they are not sorted by recency at all. This is a
+    // question about PLACEMENT.
+    bool isOlder(const Buffer& buffer) const;
+
+    // How many a sweep would offer. A question about LIFECYCLE, so only Keep
+    // excludes a buffer; pinning does not.
+    int  sweepableCount() const;
     int previewCacheSize() const { return int(previewCache_.size()); }
 
 signals:

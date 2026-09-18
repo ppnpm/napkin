@@ -1025,7 +1025,31 @@ debounce that only exists to stop a fast typist re-querying mid-word.
 > somewhere they refuse with *"unable to use function bm25 in the requested
 > context"*.
 
-**Phase 6 — Sweep.** Older section, nudge, review dialog, sweep-to-trash, trash purge.
+**Phase 6 — Sweep. ✅ COMPLETE.** The `OLDER` section, the nudge, the review
+dialog and sweep-to-trash. 14 new test functions.
+
+§6 has described this lifecycle since v2 and nothing implemented it:
+`olderThanCutoff()` was dead code, there were only PINNED and RECENT sections,
+and there was no sweep at all. The spec described an app that did not exist.
+
+- **`OLDER`** is a third section below RECENT, drawn a touch quieter. Age changes
+  where a buffer sits, never whether it exists — a year-old buffer is still
+  there, still searchable, still one click away.
+- **The nudge** is one quiet line above the list, and only when at least 12
+  buffers are past the cutoff. Napkin tolerates accumulation; the offer should
+  feel like a convenience, not a scolding. It can be waved away for the session.
+- **The review dialog** shows exactly what it proposes to take, everything
+  ticked, and says what it is leaving alone and why. Untick anything you want to
+  keep.
+- **A sweep trashes, never deletes.** It goes through the ordinary undo toast,
+  and the whole sweep is undoable as one action.
+
+> **Placement and lifecycle are different questions, and the code now says so.**
+> `isOlder()` excludes pinned buffers — a pinned buffer is not in the recency
+> order at all, so it cannot be "older" within it. `sweepableCount()` does *not*
+> reuse that: only **Keep** exempts a buffer from a sweep. Conflating them would
+> have made pinning a silent second Keep, which is exactly the confusion §3
+> exists to prevent. A test asserts a pinned, un-kept, old buffer is offered.
 
 **Phase 7 — Refinement.** Link chips, themes, accessibility pass, settings, error
 handling, export.

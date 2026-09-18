@@ -46,10 +46,13 @@ public slots:
     void toggleKeep(int row);
     void trashRow(int row);
     void showTrash(bool trash);
+    void reviewSweep();
     void restoreRow(int row);
     void showShortcuts();
     void emptyTrashForTest();
     QSet<QString> undoProtectedBlobsForTest() const { return undoProtectedBlobs_; }
+    void updateSweepNudgeForTest() { updateSweepNudge(); }
+    void sweepForTest(const QList<BufferId>& ids);
     // The undo path normally runs from the toast; tests drive it directly.
     void undoLastTrashForTest(BufferId id, bool wasKept, Timestamp modifiedAt);
     void emptyTrash();
@@ -76,6 +79,7 @@ private:
     bool flushEditor();
     bool flushAndReportFailure();
     void updateEmptyState();
+    void updateSweepNudge();
     void showContextMenu(int row, const QPoint& globalPos);
     void reloadPreservingSelection();
     bool addImageToCurrent(const QByteArray& bytes, const QString& mime, const QString& sourceName);
@@ -120,6 +124,9 @@ private:
     QTimer*          searchDebounce_ = nullptr;
     QWidget*         filterBanner_ = nullptr;
     QLabel*          filterLabel_ = nullptr;
+    QWidget*         sweepNudge_ = nullptr;
+    QLabel*          sweepLabel_ = nullptr;
+    bool             nudgeDismissed_ = false;
     QLabel*          emptyTitle_ = nullptr;
     QLabel*          emptyLine1_ = nullptr;
     QLabel*          emptyLine2_ = nullptr;

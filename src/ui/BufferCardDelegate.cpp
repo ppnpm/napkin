@@ -159,6 +159,9 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     QPainterPath path;
     path.addRoundedRect(QRectF(card), kRadius, kRadius);
 
+    // A buffer past the cutoff is drawn a touch quieter: still perfectly
+    // readable, but the eye lands on what is current first.
+    const bool older = index.data(BufferListModel::IsOlderRole).toBool();
     QColor fill = pal.color(QPalette::Base);
     if (hovered) {
         // A 2% shift is not a hover state, it is a rounding error. This is
@@ -290,7 +293,7 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
                     isDraft ? QObject::tr("Empty — paste something into it")
                             : QObject::tr("Empty"));
     } else {
-        p->setPen(pal.color(QPalette::Text));
+        p->setPen(older ? dimmed(pal, 210) : pal.color(QPalette::Text));
         p->drawText(QRect(content.left(), y, content.width(), pfm.height()),
                     Qt::AlignLeft | Qt::AlignVCenter,
                     pfm.elidedText(primary, Qt::ElideRight, content.width()));
