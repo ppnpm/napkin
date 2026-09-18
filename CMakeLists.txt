@@ -72,7 +72,28 @@ target_link_libraries(napkin_ui PUBLIC napkin_core napkin_media Qt6::Widgets Qt6
 
 # --- application --------------------------------------------------------------
 qt_add_executable(napkin src/main.cpp)
+qt_add_resources(napkin "icons" PREFIX "/" FILES
+  resources/icons/16x16/napkin.png
+  resources/icons/32x32/napkin.png
+  resources/icons/48x48/napkin.png
+  resources/icons/64x64/napkin.png
+  resources/icons/128x128/napkin.png
+  resources/icons/256x256/napkin.png
+)
 target_link_libraries(napkin PRIVATE napkin_ui)
+
+# --- installation -------------------------------------------------------------
+# SPEC's phase plan claimed packaging was wired up in Phase 0 and kept green. It
+# was not: there was no desktop entry, no icon and no install rule, while
+# main.cpp promised the compositor a desktop file that did not exist.
+include(GNUInstallDirs)
+install(TARGETS napkin RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES resources/napkin.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+foreach(size 16 22 24 32 48 64 128 256 512)
+  install(FILES resources/icons/${size}x${size}/napkin.png
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps)
+endforeach()
 set_target_properties(napkin PROPERTIES WIN32_EXECUTABLE OFF MACOSX_BUNDLE OFF)
 
 # --- Phase 0 spike (disposable) -----------------------------------------------

@@ -11,6 +11,7 @@
 #include "ui/MainWindow.h"
 
 #include <QApplication>
+#include <QIcon>
 #include <QMessageBox>
 
 using namespace napkin;
@@ -20,7 +21,19 @@ int main(int argc, char** argv)
     Application app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("napkin"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    // Must match the .desktop file's basename, or Wayland gives the window no
+    // icon and no taskbar identity. Until now this named a file that did not
+    // exist anywhere.
     QGuiApplication::setDesktopFileName(QStringLiteral("napkin"));
+
+    // Prefer the installed theme icon; fall back to the copies compiled in, so
+    // a build straight out of the source tree still has an icon.
+    QIcon icon = QIcon::fromTheme(QStringLiteral("napkin"));
+    if (icon.isNull()) {
+        for (const char* size : {"16", "32", "48", "64", "128", "256"})
+            icon.addFile(QStringLiteral(":/resources/icons/%1x%1/napkin.png").arg(size));
+    }
+    QApplication::setWindowIcon(icon);
 
     Database db;
     BufferRepository buffers(db);

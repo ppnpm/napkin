@@ -997,11 +997,20 @@ tray mode, and the global capture hotkey (see below).
 
 **Phase 9 — Windows and macOS.** Only after Linux is genuinely good.
 
-Packaging **was supposed to be** wired up in Phase 0 and kept green. It was not:
-there is no `.desktop` file, no icon, no `install()` rule and no CI, and
-`resources/` is empty. `main.cpp` calls `setDesktopFileName("napkin")`, promising
-the compositor a file that does not exist. This is Phase 8 work that has not
-started, and the claim that it was done in Phase 0 was false.
+Packaging was claimed as Phase 0 work and was in fact never started. It is now
+**partly** done, and the rest is honestly outstanding.
+
+**Done:** the application has an identity. `resources/napkin-source.png` is the
+artwork; the hicolor set (16 → 512) is generated from it and committed, so there
+is no build-time image dependency. `resources/napkin.desktop` passes
+`desktop-file-validate`. `install()` puts the binary, the desktop entry and the
+icons where XDG expects them, verified by installing to a scratch prefix. The
+icons are also compiled into the binary, so a build run straight out of the
+source tree still has a window and taskbar icon — `setDesktopFileName("napkin")`
+previously promised the compositor a file that existed nowhere.
+
+**Still outstanding:** no CI, no Flatpak or AppImage, no `.desktop` MIME
+association, and no release process.
 
 ---
 
