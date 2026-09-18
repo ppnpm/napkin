@@ -169,9 +169,14 @@ foreach(t test_migrations test_invariants test_buffers test_items test_paths tes
 endforeach()
 
 # Export writes real image files, so it needs the blob store from napkin_media.
+# Linking napkin_media pulls in Qt6::Gui, which makes QTEST_MAIN construct a
+# QGuiApplication — and that aborts on a machine with no display. It passed here
+# because this machine has one; CI has none, and reported "Subprocess aborted".
+# The offscreen platform is not a GUI-test concern, it is a Qt6::Gui concern.
 qt_add_executable(test_export tests/test_export.cpp)
 target_link_libraries(test_export PRIVATE napkin_media Qt6::Test)
 add_test(NAME test_export COMMAND test_export)
+set_tests_properties(test_export PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # Load-testing tool. Not installed: it exists to fill a throwaway profile.
 qt_add_executable(napkin_seed tools/seed_corpus.cpp)
