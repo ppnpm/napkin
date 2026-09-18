@@ -303,12 +303,20 @@ void MainWindow::undoLastTrashForTest(BufferId id, bool wasKept, Timestamp modif
     reloadPreservingSelection();
 }
 
+void MainWindow::emptyTrashForTest()
+{
+    editingBuffer_ = kNoBuffer;
+    canvas_->showNothingSelected();
+    service_.emptyTrash();
+    reloadPreservingSelection();
+}
+
 void MainWindow::restoreRow(int row)
 {
     if (model_->mode() != BufferListModel::Mode::Trash) return;
     const BufferId id = model_->idAt(row);
     if (id == kNoBuffer) return;
-    service_.restore(id);
+    if (!guarded(tr("Could not restore that buffer"), [&] { service_.restore(id); })) return;
     reloadPreservingSelection();
     emptyTrashButton_->setVisible(model_->rowCount() > 0);
 }
@@ -338,7 +346,9 @@ void MainWindow::togglePin(int row)
 
     const auto buffer = buffers_.find(id);
     if (!buffer) return;
-    service_.setPinned(id, !buffer->pinned);
+    if (!guarded(tr("Could not pin that buffer"),
+                 [&] { service_.setPinned(id, !buffer->pinned); }))
+        return;
     reloadPreservingSelection();   // pinning moves the card; that is the point
 }
 
@@ -349,7 +359,9 @@ void MainWindow::toggleKeep(int row)
 
     const auto buffer = buffers_.find(id);
     if (!buffer) return;
-    service_.setKept(id, !buffer->kept);
+    if (!guarded(tr("Could not change that buffer"),
+                 [&] { service_.setKept(id, !buffer->kept); }))
+        return;
     model_->refreshRow(id);        // keeping changes nothing about placement
 }
 
@@ -373,8 +385,11 @@ void MainWindow::trashRow(int row)
         box.exec();
         if (box.clickedButton() != confirm) return;
 
-        buffers_.hardDeleteEvenIfKept(id);
-        reconcileBlobs(items_, blobs_, paths::thumbsDir());
+        if (!guarded(tr("Could not delete that buffer"), [&] {
+                buffers_.hardDeleteEvenIfKept(id);
+                reconcileBlobs(items_, blobs_, paths::thumbsDir());
+            }))
+            return;
         reloadPreservingSelection();
         emptyTrashButton_->setVisible(model_->rowCount() > 0);
         return;
@@ -402,6 +417,10 @@ void MainWindow::trashRow(int row)
         service_.trashConfirmed(id);
     }
 
+    if (editingBuffer_ == id) {
+        editingBuffer_ = kNoBuffer;
+        canvas_->showNothingSelected();
+    }
     reloadPreservingSelection();
 
     // Confirming the deletion of a kept buffer releases the keep, so undo has to
@@ -409,9 +428,12 @@ void MainWindow::trashRow(int row)
     // protection they asked for, and the next sweep offers it up.
     const auto state = lastTrashed_;
     toast_->offer(tr("Buffer moved to trash"), [this, state] {
-        service_.restore(state.id);
-        if (state.kept) service_.setKept(state.id, true);
-        buffers_.setModifiedAt(state.id, state.modifiedAt);
+        if (!guarded(tr("Could not undo that"), [&] {
+                service_.restore(state.id);
+                if (state.kept) service_.setKept(state.id, true);
+                buffers_.setModifiedAt(state.id, state.modifiedAt);
+            }))
+            return;
         reloadPreservingSelection();
     });
 }
@@ -460,10 +482,40 @@ void MainWindow::reportProblem(const QString& title, const QString& detail)
     box.exec();
 }
 
+bool MainWindow::guarded(const QString& title, const std::function<void()>& work)
+{
+    try {
+        work();
+        return true;
+    } catch (const std::exception& e) {
+        reportProblem(title,
+                      tr("Napkin could not complete that, and has changed nothing.\n\n%1")
+                          .arg(QString::fromUtf8(e.what())));
+        return false;
+    }
+}
+
+// A buffer can be trashed from the list, or purged by Empty trash, while the
+// canvas is still showing it. Writing to that id then violates the foreign key
+// and throws — which is what crashed the application after a paste into a
+// buffer that had been deleted.
+bool MainWindow::currentBufferIsLive()
+{
+    if (editingBuffer_ == kNoBuffer) return false;
+
+    const auto buffer = buffers_.find(editingBuffer_);
+    if (buffer && !buffer->inTrash()) return true;
+
+    editingBuffer_ = kNoBuffer;
+    canvas_->showNothingSelected();
+    return false;
+}
+
 bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
                                    const QString& sourceName)
 {
     if (model_->mode() != BufferListModel::Mode::Live) return false;
+    if (editingBuffer_ != kNoBuffer && !currentBufferIsLive()) return false;
 
     const auto stored = blobs_.store(bytes, mime);
     if (!stored.ok) {
@@ -524,7 +576,7 @@ void MainWindow::pasteFromClipboard()
     // nothing. Text used to always create a buffer while images appended to the
     // current one, which meant the same gesture did two different things
     // depending on what you had copied.
-    if (editingBuffer_ == kNoBuffer && !model_->hasDraft()) newDraft();
+    if (!currentBufferIsLive() && !model_->hasDraft()) newDraft();
 
     if (content.kind == ClipboardContent::Kind::Image) {
         addImageToCurrent(content.imageBytes, content.imageMime, QString());
@@ -537,23 +589,26 @@ void MainWindow::pasteFromClipboard()
 void MainWindow::appendTextBlock(const QString& text)
 {
     if (model_->mode() != BufferListModel::Mode::Live) return;
-    if (editingBuffer_ == kNoBuffer && !model_->hasDraft()) { newDraft(); }
-
+    if (!currentBufferIsLive() && !model_->hasDraft()) newDraft();
     if (!flushAndReportFailure()) return;
 
-    if (editingBuffer_ == kNoBuffer) {
-        if (text.trimmed().isEmpty()) { canvas_->focusComposer(); return; }
-        Draft draft;
-        draft.setText(text);
-        editingBuffer_ = service_.commitDraft(draft);
-        if (editingBuffer_ == kNoBuffer) return;
-        if (model_->hasDraft()) model_->promoteDraft(editingBuffer_);
-        else                    reloadPreservingSelection();
-    } else if (!text.trimmed().isEmpty()) {
-        service_.appendTo(editingBuffer_, Item::makeText(text));
-    }
+    const bool ok = guarded(tr("Could not add that text"), [this, &text] {
+        if (editingBuffer_ == kNoBuffer) {
+            if (text.trimmed().isEmpty()) return;
+            Draft draft;
+            draft.setText(text);
+            editingBuffer_ = service_.commitDraft(draft);
+            if (editingBuffer_ == kNoBuffer) return;
+            if (model_->hasDraft()) model_->promoteDraft(editingBuffer_);
+            else                    reloadPreservingSelection();
+        } else if (!text.trimmed().isEmpty()) {
+            service_.appendTo(editingBuffer_, Item::makeText(text));
+        }
+    });
+    if (!ok) return;
 
-    canvas_->setItems(items_.listForBuffer(editingBuffer_));
+    if (editingBuffer_ != kNoBuffer)
+        canvas_->setItems(items_.listForBuffer(editingBuffer_));
     model_->invalidatePreview(editingBuffer_);
     canvas_->focusComposer();
     updateEmptyState();
@@ -602,6 +657,8 @@ void MainWindow::emptyTrash()
     if (box.clickedButton() != confirm) return;
 
     toast_->dismiss();   // whatever it was offering no longer exists
+    editingBuffer_ = kNoBuffer;
+    canvas_->showNothingSelected();
     service_.emptyTrash();
     reconcileBlobs(items_, blobs_, paths::thumbsDir());  // reclaim blobs AND thumbnails
     reloadPreservingSelection();
@@ -666,7 +723,7 @@ void MainWindow::openRow(int row)
 
 void MainWindow::removeItems(const QList<ItemId>& ids)
 {
-    if (editingBuffer_ == kNoBuffer || ids.isEmpty()) return;
+    if (ids.isEmpty() || !currentBufferIsLive()) return;
 
     // Capture before deleting: undo has to hand the content back, not an empty
     // shell. An earlier version deleted the rows and unlinked the blobs at once,
@@ -679,7 +736,9 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
 
     const BufferId buffer = editingBuffer_;
     const int firstRemovedIndex = canvas_->indexOf(ids.first());
-    for (ItemId id : ids) service_.removeItem(buffer, id);
+    if (!guarded(tr("Could not delete those items"),
+                 [&] { for (ItemId id : ids) service_.removeItem(buffer, id); }))
+        return;
 
     // Deliberately NOT reconciling blobs here. A blob whose last reference has
     // just gone is exactly the one undo is about to need. Orphans are collected
@@ -689,7 +748,9 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
     if (emptied) {
         before = buffers_.find(buffer);
         // An item-level delete that leaves an empty husk behind is just litter.
-        if (!service_.trash(buffer)) service_.trashConfirmed(buffer);
+        guarded(tr("Could not remove the empty buffer"), [&] {
+            if (!service_.trash(buffer)) service_.trashConfirmed(buffer);
+        });
         editingBuffer_ = kNoBuffer;
         canvas_->showNothingSelected();
         reloadPreservingSelection();
@@ -706,12 +767,15 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
 
     toast_->offer(emptied ? tr("Buffer moved to trash") : message,
                   [this, buffer, removed, before, emptied] {
-                      for (const auto& item : removed) items_.restoreAt(item);
-                      if (emptied) {
-                          service_.restore(buffer);
-                          if (before && before->kept) service_.setKept(buffer, true);
-                          if (before) buffers_.setModifiedAt(buffer, before->modifiedAt);
-                      }
+                      if (!guarded(tr("Could not undo that"), [&] {
+                              for (const auto& item : removed) items_.restoreAt(item);
+                              if (emptied) {
+                                  service_.restore(buffer);
+                                  if (before && before->kept) service_.setKept(buffer, true);
+                                  if (before) buffers_.setModifiedAt(buffer, before->modifiedAt);
+                              }
+                          }))
+                          return;
                       model_->invalidatePreview(buffer);
                       reloadPreservingSelection();
                       if (const int row = model_->rowForId(buffer); row >= 0)

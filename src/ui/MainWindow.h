@@ -1,6 +1,7 @@
 #pragma once
 #include "../domain/Types.h"
 #include <QList>
+#include <functional>
 #include <QMainWindow>
 
 class QAction;
@@ -44,6 +45,7 @@ public slots:
     void showTrash(bool trash);
     void restoreRow(int row);
     void showShortcuts();
+    void emptyTrashForTest();
     // The undo path normally runs from the toast; tests drive it directly.
     void undoLastTrashForTest(BufferId id, bool wasKept, Timestamp modifiedAt);
     void emptyTrash();
@@ -74,6 +76,16 @@ private:
     void reloadPreservingSelection();
     bool addImageToCurrent(const QByteArray& bytes, const QString& mime, const QString& sourceName);
     void reportProblem(const QString& title, const QString& detail);
+
+    // Runs work that touches the database and turns a failure into a message
+    // rather than a crash. An exception thrown inside a slot unwinds into Qt's
+    // event loop, which calls std::terminate — so nothing that can throw may
+    // reach it uncaught.
+    bool guarded(const QString& title, const std::function<void()>& work);
+
+    // editingBuffer_ names a row that may have been trashed or purged since it
+    // was selected. Anything that writes to it must check first.
+    bool currentBufferIsLive();
 
     Database&         db_;
     BufferRepository& buffers_;

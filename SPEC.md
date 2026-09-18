@@ -1169,7 +1169,34 @@ And the adversarial path, which v1 omitted entirely:
 
 ---
 
-## 19. Review findings and corrections
+## 19. Two crashes from real use, and what they had in common
+
+Both came from the same root: **`editingBuffer_` kept naming a row after that row
+stopped being live.** A buffer trashed from the list, or purged by *Empty trash*,
+left the canvas still pointing at it.
+
+| Symptom | Cause |
+|---|---|
+| Pasting after deleting the buffer **crashed the application** | Appending to a purged row violates the foreign key. `DbError` unwound into Qt's event loop, which calls `std::terminate`. |
+| A buffer stayed in the list with no items, still showing its old text | Milder form of the same thing: the paste landed *inside* the trashed buffer, so the text accumulated somewhere invisible. |
+
+Two rules now hold, and both are tested:
+
+1. **`currentBufferIsLive()` is checked before any write.** If the row has gone,
+   the canvas lets go of it and the next capture starts a new buffer.
+2. **No slot may let an exception reach the event loop.** Every database-writing
+   slot runs through `guarded()`, which turns a failure into a message. This was
+   latent everywhere, not only in paste — a disk error during pin, keep, trash,
+   restore, empty-trash or undo would have terminated the process just as
+   readily.
+
+> The lesson generalises past these two: a `DbError` escaping a Qt slot is always
+> a crash, never an error dialog. The type has existed since Phase 1 and the
+> boundary that catches it did not.
+
+---
+
+## 20. Review findings and corrections
 
 An independent adversarial review (security/performance and UI/UX, run as two
 separate agents with an explicit brief to find what is wrong and to treat this
@@ -1217,7 +1244,7 @@ not fail.**
 
 ---
 
-## 20. The test that governs every future feature
+## 21. The test that governs every future feature
 
 > Does this make it easier to **put something in**, **find it**, **use it**,
 > **keep it**, or **get rid of it**?

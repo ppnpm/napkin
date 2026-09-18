@@ -396,6 +396,87 @@ private slots:
                  QStringLiteral("written after Ctrl+T"));
     }
 
+    // --- crashes reported from real use --------------------------------------
+    void pastingAfterTheSelectedBufferIsPurgedDoesNotCrash()
+    {
+        // editingBuffer_ kept naming a row that trashing, then Empty trash, had
+        // removed. Appending to it violated the foreign key, and the DbError
+        // unwound into Qt's event loop, which calls std::terminate.
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral("first"));
+        f.trigger("pasteAction");
+        const auto id = f.buffers.listLive(10).front().id;
+
+        f.window.trashRow(f.model()->rowForId(id));
+        f.window.emptyTrashForTest();
+        QVERIFY(!f.buffers.find(id).has_value());
+
+        QApplication::clipboard()->setText(QStringLiteral("second"));
+        f.trigger("pasteAction");
+
+        // A fresh buffer holding the new text, rather than a crash. (SQLite
+        // reuses rowids after a delete, so the id may well be the same one.)
+        QCOMPARE(f.buffers.countLive(), 1);
+        const auto fresh = f.buffers.listLive(10).front().id;
+        QCOMPARE(f.items.countForBuffer(fresh), 1);
+        QCOMPARE(f.items.listForBuffer(fresh).front().text, QStringLiteral("second"));
+    }
+
+    void pastingAfterTheSelectedBufferIsTrashedStartsAFreshOne()
+    {
+        // Same stale reference, milder symptom: the paste landed inside the
+        // trashed buffer, so the text vanished from view while quietly
+        // accumulating somewhere the user could not see.
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral("first"));
+        f.trigger("pasteAction");
+        const auto id = f.buffers.listLive(10).front().id;
+        const int itemsBefore = f.items.countForBuffer(id);
+
+        f.window.trashRow(f.model()->rowForId(id));
+        QApplication::clipboard()->setText(QStringLiteral("second"));
+        f.trigger("pasteAction");
+
+        QCOMPARE(f.items.countForBuffer(id), itemsBefore);   // the dead one is untouched
+        QCOMPARE(f.buffers.countLive(), 1);
+    }
+
+    void aLiveBufferNeverHasZeroItems()
+    {
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral("only item"));
+        f.trigger("pasteAction");
+        const auto id = f.buffers.listLive(10).front().id;
+
+        f.canvas()->selectAll();
+        f.canvas()->deleteSelection();
+
+        // The card used to stay in the list with no items, still showing the
+        // text it no longer contained.
+        QCOMPARE(f.model()->rowCount(), 0);
+        for (const auto& b : f.buffers.listLive(100))
+            QVERIFY(f.items.countForBuffer(b.id) > 0);
+        QVERIFY(f.buffers.find(id)->inTrash());
+    }
+
+    void deleteAllThenUndoThenDeleteAgainSurvives()
+    {
+        GuiFixture f;
+        QApplication::clipboard()->setText(QStringLiteral("resilient"));
+        f.trigger("pasteAction");
+        const auto id = f.buffers.listLive(10).front().id;
+
+        f.canvas()->selectAll();
+        f.canvas()->deleteSelection();
+        f.toast()->findChild<QPushButton*>()->click();
+        QCOMPARE(f.items.countForBuffer(id), 1);
+
+        f.select(id);
+        f.canvas()->selectAll();
+        f.canvas()->deleteSelection();
+        QCOMPARE(f.buffers.countLive(), 0);
+    }
+
     // --- editing -------------------------------------------------------------
     void typingIntoTheComposerAppendsANewTextItem()
     {
