@@ -1,4 +1,5 @@
 #include "BufferCardDelegate.h"
+#include <algorithm>
 #include "BufferListModel.h"
 #include "Icons.h"
 #include "../media/Thumbnailer.h"
@@ -86,7 +87,11 @@ int BufferCardDelegate::collapsedHeight() const
     // Two lines, not three. The old row reserved a secondary slot that was
     // empty on most buffers and a separate timestamp line below it — 96px of
     // which a third was blank. Count and age now share one line.
-    return kPadding + fm.height() + 3 + tfm.height() + kPadding;
+    const int text = kPadding + fm.height() + 3 + tfm.height() + kPadding;
+    // A row carrying a thumbnail has to be tall enough for one. Derived from
+    // text alone, the content area came to 35px and the thumbnail is 52px, so
+    // it overflowed the card and painted straight over its own bottom border.
+    return std::max(text, kThumbSize + kPadding * 2);
 }
 
 int BufferCardDelegate::sectionHeight(const QModelIndex& index) const
@@ -157,7 +162,12 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     // --- card ------------------------------------------------------------------
     const QRect card = cardRect(option.rect, index);
     QPainterPath path;
-    path.addRoundedRect(QRectF(card), kRadius, kRadius);
+    // Half-pixel inset, as the board's cards already do. On integral
+    // coordinates an antialiased 1px stroke straddles two rows of pixels and
+    // each gets about half the coverage: the list's edges measured 1.67:1
+    // against the card while the board's identical token measured 3.3:1. The
+    // colour was right and the geometry was throwing half of it away.
+    path.addRoundedRect(QRectF(card).adjusted(0.5, 0.5, -0.5, -0.5), kRadius, kRadius);
 
     // A buffer past the cutoff is drawn a touch quieter: still perfectly
     // readable, but the eye lands on what is current first.
@@ -180,7 +190,7 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
     // solid accent rule down its leading edge (SPEC.md §14).
     if (selected) {
         QPainterPath clip;
-        clip.addRoundedRect(QRectF(card), kRadius, kRadius);
+        clip.addRoundedRect(QRectF(card).adjusted(0.5, 0.5, -0.5, -0.5), kRadius, kRadius);
         p->save();
         p->setClipPath(clip);
         p->fillRect(QRect(card.left(), card.top(), 3, card.height()),

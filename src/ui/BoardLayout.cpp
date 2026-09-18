@@ -5,6 +5,7 @@
 
 #include <QFont>
 #include <QFontMetrics>
+#include <QFontMetricsF>
 #include <QTextDocument>
 
 namespace napkin {
@@ -86,8 +87,22 @@ int BoardLayout::heightFor(const Item& item, int columnWidth, bool* clipped) con
         }
     }
     const int natural = content + chrome;
-    const Measurement measured{std::clamp(natural, kCardMinHeight, kCardMaxHeight),
-                               natural > kCardMaxHeight};
+    int height = std::clamp(natural, kCardMinHeight, kCardMaxHeight);
+    const bool overflows = natural > kCardMaxHeight;
+
+    // A clipped text card is cut wherever kCardMaxHeight happens to fall, which
+    // is usually through the middle of a line — leaving a row of severed
+    // ascenders above the footer that reads as breakage. Land the cut in the
+    // leading instead, by giving the card a whole number of lines.
+    if (overflows && item.type == ItemType::Text) {
+        const qreal line = QFontMetricsF(body_ ? *body_ : QFont()).lineSpacing();
+        if (line > 1.0) {
+            const int lines = int((height - chrome) / line);
+            if (lines > 0) height = chrome + int(lines * line);
+        }
+    }
+
+    const Measurement measured{height, overflows};
     if (item.id != kNoItem) {
         // Bounded: a buffer nobody is looking at should not pin its measurements
         // for the life of the process.

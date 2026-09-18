@@ -1271,7 +1271,15 @@ private slots:
         // paste is work whose result is already known.
         auto* card = f.canvas()->findChildren<TextItemCard*>().first();
         QVERIFY(card->isClipped());
-        QCOMPARE(card->height(), tokens::kCardMaxHeight);
+        // At the cap, give or take one line. A clipped card is trimmed to a
+        // whole number of lines so the cut lands in the leading rather than
+        // through the middle of a row of glyphs; what matters here is that a
+        // 140 KB paste does not grow the card, not that it hits the cap to the
+        // pixel.
+        QVERIFY2(card->height() <= tokens::kCardMaxHeight
+                     && card->height() > tokens::kCardMaxHeight - card->fontMetrics().lineSpacing(),
+                 qPrintable(QString("card is %1px, cap is %2px")
+                                .arg(card->height()).arg(tokens::kCardMaxHeight)));
         QVERIFY2(ms < 250, qPrintable(QString("opening took %1 ms").arg(ms)));
     }
 

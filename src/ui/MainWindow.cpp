@@ -703,6 +703,12 @@ void MainWindow::showTrash(bool trash)
     toast_->dismiss();
     model_->setMode(trash ? BufferListModel::Mode::Trash : BufferListModel::Mode::Live);
     emptyTrashButton_->setVisible(trash && model_->rowCount() > 0);
+    // Switching modes leaves nothing selected, so the board must stop showing
+    // the buffer that was selected in the other one. It did not: entering the
+    // trash kept the previous live buffer's cards on screen, and a mode next to
+    // deletion that looks identical to ordinary working is the worst kind of
+    // ambiguity about which one you are in.
+    canvas_->showNothingSelected();
     updateEmptyState();
     updateSweepNudge();
 }

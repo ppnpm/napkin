@@ -195,7 +195,14 @@ void ItemCard::paintEvent(QPaintEvent*)
     // Keyboard focus is its own signal, drawn inside the border so it never
     // collides with it. Without this a focused card was pixel-identical to its
     // neighbours and the board could not be operated by keyboard at all.
-    if (current_) {
+    //
+    // Only when it is adding something, though. Clicking a card makes it both
+    // current and selected, so the common case drew a solid accent edge with a
+    // dotted accent ring 1px inside it — two near-coincident strokes that read
+    // as a rendering artefact rather than as one confident selection. The
+    // ring's job is to show where the keyboard is when the selection is not
+    // already saying so.
+    if (current_ && !selected_ && !editing) {
         QPainterPath ring;
         ring.addRoundedRect(box.adjusted(3, 3, -3, -3), kCardRadius - 3, kCardRadius - 3);
         QPen focusPen(readableAccent(pal, 1.0), 2.0, Qt::DotLine);

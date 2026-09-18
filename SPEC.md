@@ -581,6 +581,35 @@ sole indicator of a state.
   scrolls horizontally, which is visible, instead of silently breaching the
   stated minimum.
 
+### Five defects an independent audit found
+
+A subagent rendered 21 states, read every one as an image and probed the pixels.
+These five it called "not a matter of taste"; all are fixed.
+
+1. **A thumbnail hung outside its own row.** `collapsedHeight()` derived the
+   row from text metrics alone — 35px of content area for a 52px thumbnail, so
+   it overflowed the card and painted over its own bottom border, on the first
+   thing in the window. A row carrying a thumbnail is now tall enough for one.
+2. **Every list border rendered at half strength.** `BufferCardDelegate` built
+   its path from *integral* coordinates, so a 1px antialiased stroke straddled
+   two rows of pixels and each got half the coverage: the list measured
+   **1.67:1** where the board's identical token measured 3.3:1. The colour was
+   right; the geometry was throwing half of it away. This is the same fault §7
+   already records fixing once, shipping again three files over — which is the
+   argument for the half-pixel inset being a rule rather than a remembered
+   detail.
+3. **A clipped card cut a line of type in half**, leaving severed ascenders
+   above the footer. Clipped text cards are now trimmed to a whole number of
+   lines so the cut lands in the leading. (The fade §7 once promised is still
+   gone — `CardFooter` explains why, and `more…` is the affordance.)
+4. **A selected card drew two accent rings 1px apart.** Clicking makes a card
+   both selected and current, so the common case was a solid accent edge with a
+   dotted accent ring just inside it — read as an artefact, not a selection. The
+   focus ring now draws only when the selection is not already saying so.
+5. **The trash left the previous buffer's cards on the board.** A mode next to
+   deletion that looks identical to ordinary working is the worst kind of
+   ambiguity about which one you are in. Switching modes clears the board.
+
 ### The board is virtualized
 
 > **Virtualization has a cost the design has to pay back.** Heights come from
