@@ -903,6 +903,52 @@ Requires: list virtualization, windowed queries (never `SELECT *` over all
 buffers), pre-generated fixed-size thumbnails, lazy full-resolution image
 loading. **All of these are Phase 2 architecture, not Phase 10 polish.**
 
+### Measured, 500 images + 500 text blocks
+
+`tools/seed_corpus.cpp` fills a throwaway profile; `tools/bench_load.cpp`
+measures the real widget tree against it. 1000 items, 500 of them images
+(41 MB of blobs: PNG, JPEG, WebP, SVG, 27 animated GIFs).
+
+| | Realistic shape (238 buffers, largest 120 items) | Pathological (1 buffer, 1000 items) |
+|---|---|---|
+| Cold start to interactive | **235 ms** | **913 ms** — over |
+| Search keystroke to results | **3–4 ms** | 3–5 ms |
+| Open a buffer (mean / worst of 40) | 60 / 197 ms | 30 / 30 ms |
+| Scroll the whole buffer list, thumbs cold | 1388 ms (5 ms/row) | n/a |
+| … thumbs warm | 211 ms (<1 ms/row) | n/a |
+| Scroll the board, first pass | 706 ms | **20 493 ms** |
+| … second and third pass | 665 / 647 ms | 3938 / 3905 ms |
+| Live memory (after `malloc_trim`) | **38 MB** | **53 MB** |
+| RSS as the OS reports it | 208 MB | 1035 MB |
+
+**Two things this measurement got wrong before it got them right**, both worth
+recording because either would have been published as a finding:
+
+1. The seeder reconstructed the profile path as `<XDG_DATA_HOME>/napkin`.
+   `AppDataLocation` is `<XDG_DATA_HOME>/<organization>/<application>`, so the
+   corpus landed one directory above where the benchmark then looked, and the
+   first run reported every target met against an empty database. The tool now
+   resolves the path through `paths::` — the application's own code — rather
+   than restating the rule.
+2. The first memory figure was 688 MB. `QCoreApplication::processEvents()` does
+   not dispatch `DeferredDelete`, so a harness built on it accumulates every
+   widget the canvas retired and blames the application. Draining them
+   explicitly moved the same measurement to 192 MB.
+
+**RSS is not the footprint.** Clearing `QPixmapCache` frees 6 MB; `malloc_trim`
+frees the other ~170 MB (~980 MB in the pathological case). That memory is
+glibc arena retention from decoding hundreds of multi-megapixel images, not
+live data — the application holds 38–53 MB. It is still what a system monitor
+shows, so it is still worth a periodic trim on idle.
+
+**The board does not scale to a thousand items in one buffer.** Virtualization
+works — 12 cards materialized out of 1000 — but two costs are O(n) regardless:
+the board measures every item's height up front (332 ms of the 913 ms cold
+start), and the first scroll pays 920px thumbnail generation on the UI thread,
+about 108 ms per image. That first pass rendered 190 of the 500 images in
+20.5 s; touching all of them would be roughly a minute of frozen UI. The
+realistic shape never shows this because no single buffer is large enough.
+
 ---
 
 ## 13. Export

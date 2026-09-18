@@ -119,6 +119,15 @@ foreach(t test_migrations test_invariants test_buffers test_items test_paths tes
   add_test(NAME ${t} COMMAND ${t})
 endforeach()
 
+# Load-testing tool. Not installed: it exists to fill a throwaway profile.
+qt_add_executable(napkin_seed tools/seed_corpus.cpp)
+target_link_libraries(napkin_seed PRIVATE napkin_core napkin_media Qt6::Gui)
+target_include_directories(napkin_seed PRIVATE src)
+
+qt_add_executable(bench_load tools/bench_load.cpp)
+target_link_libraries(bench_load PRIVATE napkin_ui Qt6::Widgets)
+target_include_directories(bench_load PRIVATE src)
+
 # GUI tests drive the real widget tree offscreen.
 foreach(t test_editing test_sweep test_lifecycle test_images test_multiitem test_review_fixes test_canvas test_theme)
   qt_add_executable(${t} tests/${t}.cpp)
