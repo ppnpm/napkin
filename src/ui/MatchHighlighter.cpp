@@ -1,5 +1,6 @@
 #include "MatchHighlighter.h"
 #include "Tokens.h"
+#include "../domain/Links.h"
 
 #include <QGuiApplication>
 #include <QTextDocument>
@@ -15,8 +16,24 @@ void MatchHighlighter::setTerms(const QStringList& terms)
     rehighlight();
 }
 
+void MatchHighlighter::setMarkLinks(bool mark)
+{
+    if (markLinks_ == mark) return;
+    markLinks_ = mark;
+    rehighlight();
+}
+
 void MatchHighlighter::highlightBlock(const QString& text)
 {
+    // Links first, so a search term inside a URL still gets its wash on top.
+    if (markLinks_) {
+        QTextCharFormat linkFormat;
+        linkFormat.setForeground(tokens::readableAccent(QGuiApplication::palette(), 1.0));
+        linkFormat.setFontUnderline(true);
+        for (const auto& span : links::findUrls(text, 64))
+            setFormat(span.start, span.length, linkFormat);
+    }
+
     if (terms_.isEmpty()) return;
 
     QTextCharFormat format;

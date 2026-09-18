@@ -14,6 +14,9 @@ void drawKeep(QPainter* p, const QRect& box, const QColor& colour);
 // Two offset sheets: the universal copy glyph.
 void drawCopy(QPainter* p, const QRect& box, const QColor& colour);
 
+// Two interlocking links, for the chip a lone URL renders as.
+void drawLink(QPainter* p, const QRect& box, const QColor& colour);
+
 inline constexpr int kGlyphSize = 13;
 
 }  // namespace napkin::icons

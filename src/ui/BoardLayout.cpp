@@ -1,4 +1,6 @@
 #include "BoardLayout.h"
+#include "../domain/Links.h"
+#include "LinkChip.h"
 #include "Tokens.h"
 
 #include <QFont>
@@ -44,7 +46,17 @@ int BoardLayout::heightFor(const Item& item, int columnWidth, bool* clipped) con
     const int chrome = kCardPad * 2 - 6 + kCardFooterH + kGapTight;
 
     int content = 0;
-    if (item.type == ItemType::Text) {
+    if (item.type == ItemType::Text && links::soleUrl(item.text)) {
+        // A chip is a fixed object. The rule for what becomes one lives in
+        // links::soleUrl and is consulted here as well as in the card, because
+        // the board measures from item data and never constructs a card — so a
+        // chip the board did not know about got a card too short to draw it in.
+        //
+        // This height also applies while the card is being edited, when the
+        // editor is showing instead. That is deliberate: the alternative is a
+        // card that changes size the moment you click into it.
+        content = LinkChip::preferredHeight();
+    } else if (item.type == ItemType::Text) {
         QTextDocument& doc = scratch();
         if (body_) doc.setDefaultFont(*body_);
         // Only as much text as can still change the answer. A card caps at

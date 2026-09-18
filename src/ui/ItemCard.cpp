@@ -1,5 +1,7 @@
 #include "ItemCard.h"
 #include "CardFooter.h"
+#include "LinkChip.h"
+#include "../domain/Links.h"
 #include "MatchHighlighter.h"
 #include "Tokens.h"
 #include "../domain/Clock.h"
@@ -67,6 +69,11 @@ ItemCard::ItemCard(const Item& item, QWidget* parent) : QWidget(parent), item_(i
 {
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_Hover, true);
+}
+
+void ItemCard::setFooterAction(const QString& label)
+{
+    if (footer_) footer_->setActionLabel(label);
 }
 
 void ItemCard::setContent(QWidget* content, const QString& copyLabel)
@@ -254,7 +261,20 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
     edit_->horizontalScrollBar()->setValue(0);
     edit_->verticalScrollBar()->setValue(0);
 
-    setContent(edit_, tr("Copy text"));
+    // The chip and the editor share the content slot: exactly one is visible.
+    // A stack rather than a swap, so switching between them costs no rebuild
+    // and the card keeps its identity across edits.
+    auto* content = new QWidget;
+    auto* slot = new QVBoxLayout(content);
+    slot->setContentsMargins(0, 0, 0, 0);
+    slot->setSpacing(0);
+    chip_ = new LinkChip;
+    chip_->hide();
+    connect(chip_, &LinkChip::openRequested, this, &TextItemCard::openUrlRequested);
+    slot->addWidget(chip_);
+    slot->addWidget(edit_, 1);
+
+    setContent(content, tr("Copy text"));
 
     lastText_ = edit_->toPlainText();
     connect(edit_, &QPlainTextEdit::textChanged, this, [this] {
@@ -268,10 +288,17 @@ TextItemCard::TextItemCard(const Item& item, QWidget* parent) : ItemCard(item, p
 
         dirty_ = true;
         updateAccessibleName();
+        refreshChip(hasEditFocus());
         emit edited();
         emit heightChanged();
     });
     updateAccessibleName();
+    refreshChip(/*editing=*/false);
+
+    // Created for every text card, not lazily on first search: URLs in prose
+    // are marked all the time, so there is always something to highlight.
+    highlighter_ = new MatchHighlighter(edit_->document());
+
     edit_->installEventFilter(this);
     edit_->viewport()->installEventFilter(this);
 }
@@ -280,9 +307,22 @@ QString TextItemCard::text() const { return edit_->toPlainText(); }
 
 void TextItemCard::setSearchTerms(const QStringList& terms)
 {
-    if (terms.isEmpty() && !highlighter_) return;
-    if (!highlighter_) highlighter_ = new MatchHighlighter(edit_->document());
     highlighter_->setTerms(terms);
+}
+
+// The URL under a point, or empty. Used for Ctrl+click: a plain click has to go
+// on meaning "select this card", because that is what a click means on every
+// other card, and a link in the middle of a paragraph is not a reason to make
+// one card behave differently from its neighbours.
+QString TextItemCard::urlAt(const QPoint& viewportPos) const
+{
+    const QTextCursor cursor = edit_->cursorForPosition(viewportPos);
+    const QString block = cursor.block().text();
+    const int offset = cursor.positionInBlock();
+    for (const auto& span : links::findUrls(block, 64))
+        if (offset >= span.start && offset <= span.start + span.length)
+            return span.url;
+    return {};
 }
 
 // A screen reader gets the same thing a sighted user does: the first line, and
@@ -324,6 +364,7 @@ void TextItemCard::beginEditing(bool moveToEnd)
 {
     if (hasEditFocus()) return;
     focusTextInteraction();
+    refreshChip(/*editing=*/true);   // out of the way before the caret arrives
     edit_->setFocus(Qt::MouseFocusReason);
     if (moveToEnd) edit_->moveCursor(QTextCursor::End);
     emit editingStarted(itemId());
@@ -340,12 +381,44 @@ void TextItemCard::endEditing()
     edit_->setTextInteractionFlags(Qt::NoTextInteraction);
     edit_->setFocusPolicy(Qt::NoFocus);
     edit_->clearFocus();
+    refreshChip(/*editing=*/false);   // what you typed may now be a link, or not
     update();
+    emit heightChanged();
     emit editingFinished(itemId(), text().trimmed().isEmpty());
+}
+
+QString TextItemCard::linkUrl() const
+{
+    return links::soleUrl(edit_->toPlainText()).value_or(QString());
+}
+
+bool TextItemCard::showingChip() const
+{
+    return chipShown_;
+}
+
+// A chip is how the card is *drawn*, so the one thing that must never happen is
+// the chip standing between you and the text. It steps aside for the whole of
+// editing and comes back when editing ends — including when what you typed has
+// stopped being a URL, or has just become one.
+void TextItemCard::refreshChip(bool editing)
+{
+    if (!chip_) return;
+    const QString url = editing ? QString() : linkUrl();
+    const bool show = !url.isEmpty();
+
+    if (show) chip_->setUrl(url);
+    chipShown_ = show;
+    chip_->setVisible(show);
+    edit_->setVisible(!show);
+    setFooterAction(show ? tr("Copy link") : tr("Copy text"));
 }
 
 int TextItemCard::contentHeightForWidth(int innerWidth) const
 {
+    // A chip is a fixed object; it does not wrap and does not grow.
+    if (showingChip()) return LinkChip::preferredHeight();
+
     // Measured against a document of our own, never the editor's.
     //
     // QPlainTextEdit uses QPlainTextDocumentLayout, which ignores setTextWidth
@@ -404,6 +477,22 @@ bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
     }
     if (event->type() == QEvent::MouseButtonPress) {
         auto* mouse = static_cast<QMouseEvent*>(event);
+
+        // Ctrl+click follows a link in prose, editing or not. Ctrl is also the
+        // selection modifier on a card, so this is checked first and only wins
+        // when the click actually landed on a URL — clicking Ctrl anywhere else
+        // in the text still extends the selection.
+        if (mouse->button() == Qt::LeftButton
+            && (mouse->modifiers() & Qt::ControlModifier)) {
+            const QPoint pos = edit_->viewport()->mapFrom(
+                qobject_cast<QWidget*>(watched), mouse->position().toPoint());
+            const QString url = urlAt(pos);
+            if (!url.isEmpty()) {
+                emit openUrlRequested(url);
+                return true;
+            }
+        }
+
         // While read-only the press means "select me"; once editing, it belongs
         // to the caret.
         if (!hasEditFocus()) {

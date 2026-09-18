@@ -74,4 +74,27 @@ void drawCopy(QPainter* p, const QRect& box, const QColor& colour)
     p->restore();
 }
 
+void drawLink(QPainter* p, const QRect& box, const QColor& colour)
+{
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    const QRectF r(box);
+    const qreal w = r.width(), h = r.height();
+    QPen pen(colour, std::max(1.2, w * 0.10));
+    pen.setCapStyle(Qt::RoundCap);
+    p->setPen(pen);
+    p->setBrush(Qt::NoBrush);
+
+    // Two capsules on a diagonal with the bar between them: a chain link, at a
+    // size where a more literal drawing turns to mush.
+    const qreal cw = w * 0.46, ch = h * 0.30;
+    QRectF upper(r.left() + w * 0.06, r.top() + h * 0.10, cw, ch);
+    QRectF lower(r.left() + w * 0.48, r.top() + h * 0.60, cw, ch);
+    p->drawRoundedRect(upper, ch / 2, ch / 2);
+    p->drawRoundedRect(lower, ch / 2, ch / 2);
+    p->drawLine(QPointF(r.left() + w * 0.36, r.top() + h * 0.56),
+                QPointF(r.left() + w * 0.64, r.top() + h * 0.44));
+    p->restore();
+}
+
 }  // namespace napkin::icons

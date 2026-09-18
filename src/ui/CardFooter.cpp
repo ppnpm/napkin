@@ -25,6 +25,13 @@ CardFooter::CardFooter(QString actionLabel, QWidget* parent)
     setAccessibleName(label_);
 }
 
+void CardFooter::setActionLabel(const QString& label)
+{
+    if (label_ == label) return;
+    label_ = label;
+    update();
+}
+
 void CardFooter::setTimestamp(qint64 modifiedAt)
 {
     modifiedAt_ = modifiedAt;

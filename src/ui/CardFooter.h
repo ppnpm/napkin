@@ -20,6 +20,9 @@ public:
     CardFooter(QString actionLabel, QWidget* parent = nullptr);
 
     void setTimestamp(qint64 modifiedAt);
+    // The label changes when what the card *is* changes: editing a note until
+    // it is nothing but a URL turns "Copy text" into "Copy link".
+    void setActionLabel(const QString& label);
     // Shown when the card cannot display all of its content.
     void setClipped(bool clipped);
 

@@ -11,6 +11,7 @@ namespace napkin {
 
 class BlobStore;
 class CardFooter;
+class LinkChip;
 class Thumbnailer;
 
 // One item on the board, as a card.
@@ -53,6 +54,7 @@ public:
     void setClipped(bool clipped);
     void acknowledge(const QString& message);
     void noteSaved(Timestamp when);
+    void setFooterAction(const QString& label);
 
     virtual bool hasEditFocus() const { return false; }
 
@@ -110,8 +112,18 @@ public:
     void updateAccessibleName();
     void setSearchTerms(const QStringList& terms);
 
+    // SPEC.md §3: a text item whose whole content is one URL is *rendered* as a
+    // chip. Derived presentation — the item is still text and still editable,
+    // so the chip steps aside the moment editing starts.
+    QString linkUrl() const;
+    bool showingChip() const;
+    // Ctrl+click follows a URL inside prose; a plain click still selects the
+    // card, because that is what a click means on every other card.
+    QString urlAt(const QPoint& viewportPos) const;
+
 signals:
     void edited();
+    void openUrlRequested(const QString& url);
     void imagePasted(const QByteArray& bytes, const QString& mime);
     void heightChanged();
     void editingStarted(ItemId id);
@@ -123,7 +135,22 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* e) override;
 
 private:
+    // Takes the editing intent rather than reading it back off the widget.
+    // Inferring it from hasEditFocus() also works today — beginEditing() sets
+    // the interaction flags before it gets here, so the inference happens to be
+    // right — but only because of that call order, and the cost of getting it
+    // wrong is a chip left covering the editor the caret just moved into.
+    // Checked: the inferring version passes these tests too, so this is a
+    // hazard removed, not a bug fixed.
+    void refreshChip(bool editing);
+
     QPlainTextEdit* edit_ = nullptr;
+    LinkChip*       chip_ = nullptr;
+    // Not chip_->isVisible(): a widget reports itself invisible until its whole
+    // ancestor chain is shown, and the board measures cards before the window
+    // exists. Measuring through isVisible() therefore took the text path for
+    // every chip and produced a card too short to draw one in.
+    bool            chipShown_ = false;
     class MatchHighlighter* highlighter_ = nullptr;
     bool dirty_ = false;
     QString lastText_;   // to tell a real edit from a reformat

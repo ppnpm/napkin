@@ -136,6 +136,30 @@ This is derived presentation, consistent with "preview is derived data." It cost
 one function, survives any future change to URL-detection rules with no
 migration, and gives URL search for free via the text index.
 
+**Only http and https.** `file:`, `data:`, `javascript:` and every other scheme
+are not links — not hidden behind a confirmation, simply never rendered as a
+chip and never opened. A scratch surface holds whatever was on the clipboard,
+and Open hands it to the desktop. The scheme is checked in `links::isOpenable()`
+and again at `ItemCanvas::openUrl()`, the call that actually starts a browser:
+the second check costs nothing and the alternative is trusting a caller.
+
+**The chip names the host `QUrl` resolves, never the raw string.**
+`https://bank.example@evil.example/` reads as bank.example to anyone skimming
+it, and a chip repeating that would lend the deception its own credibility.
+
+**The chip steps aside for editing.** The item is text; nothing may stand
+between the user and it. A card being edited keeps the chip's height rather than
+shrinking to the text's, so clicking into a link card does not make it jump size.
+
+**`BoardLayout` consults the same rule.** The board measures heights from item
+data and never constructs a card, so `links::soleUrl()` is called there too.
+Teaching only `TextItemCard` about chips drew every one of them into a card
+sized for a single line of text.
+
+URLs inside prose are underlined *and* coloured — §14 forbids meaning carried by
+colour alone — and followed with **Ctrl+click**. A plain click still selects the
+card, because that is what a click means on every other card.
+
 ---
 
 ## 4. Input

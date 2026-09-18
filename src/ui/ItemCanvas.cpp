@@ -9,7 +9,9 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMimeData>
+#include <QDesktopServices>
 #include <QUrl>
+#include "../domain/Links.h"
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QVBoxLayout>
@@ -188,6 +190,16 @@ void ItemCanvas::addPendingTextCard()
 // Keeps the board's copy of an item in step with the widget the user is typing
 // into. Both lists are updated: allItems_ is what a filter is re-derived from,
 // and items_ is what the layout measures.
+void ItemCanvas::openUrl(const QString& url)
+{
+    // Checked again here, at the boundary. The chip only appears for an http or
+    // https URL, but this is the call that starts a browser — the cost of the
+    // second check is nothing and the cost of trusting a caller is a scratch
+    // surface that will execute whatever was on someone's clipboard.
+    if (!links::isOpenable(url)) return;
+    QDesktopServices::openUrl(QUrl(url, QUrl::StrictMode));
+}
+
 void ItemCanvas::syncCardText(TextItemCard* card)
 {
     if (!card) return;
@@ -218,6 +230,7 @@ ItemCard* ItemCanvas::cardFor(const Item& item)
         auto* text = new TextItemCard(item, body_);
         connect(text, &TextItemCard::edited, this, &ItemCanvas::edited);
         connect(text, &TextItemCard::imagePasted, this, &ItemCanvas::imagePasted);
+        connect(text, &TextItemCard::openUrlRequested, this, &ItemCanvas::openUrl);
         connect(text, &TextItemCard::heightChanged, this, [this, text] {
             // The board measures heights from the ITEM data, which goes stale
             // the moment you type — so a card being edited stayed at its

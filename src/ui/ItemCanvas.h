@@ -122,6 +122,12 @@ protected:
     void keyPressEvent(QKeyEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
 
+private slots:
+    // Handing a URL to the desktop is the one thing in Napkin that leaves the
+    // machine, so it goes through one function that re-checks the scheme rather
+    // than trusting that whatever produced the chip got it right.
+    void openUrl(const QString& url);
+
 private:
     void wireCard(ItemCard* card);
     void applySelection(ItemId id, Qt::KeyboardModifiers modifiers);
