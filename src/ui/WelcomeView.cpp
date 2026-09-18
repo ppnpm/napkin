@@ -57,7 +57,7 @@ WelcomeView::WelcomeView(QWidget* parent) : QWidget(parent)
 
     name_ = new QLabel(tr("Napkin"));
     name_->setAlignment(Qt::AlignCenter);
-    QFont nameFont = scaled(font(), 14.0, QFont::Medium);
+    QFont nameFont = scaledBy(font(), kTypeDisplay, QFont::Medium);
     nameFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.5);
     name_->setFont(nameFont);
     column->addWidget(name_);
@@ -65,7 +65,7 @@ WelcomeView::WelcomeView(QWidget* parent) : QWidget(parent)
 
     tagline_ = new QLabel(tr("A persistent scratch surface for your computer"));
     tagline_->setAlignment(Qt::AlignCenter);
-    tagline_->setFont(scaled(font(), 1.5));
+    tagline_->setFont(scaledBy(font(), kTypeLead));
     column->addWidget(tagline_);
     column->addSpacing(4);
 
@@ -91,7 +91,7 @@ WelcomeView::WelcomeView(QWidget* parent) : QWidget(parent)
     footer_ = new QLabel(tr("Nothing here needs a name, a folder or a tag.\n"
                             "Everything stays on this machine."));
     footer_->setAlignment(Qt::AlignCenter);
-    footer_->setFont(scaled(font(), -1.0));
+    footer_->setFont(scaledBy(font(), kTypeCaption));
     column->addWidget(footer_);
 
     outer->addLayout(column);

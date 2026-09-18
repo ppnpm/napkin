@@ -117,7 +117,7 @@ void BoardLayout::rebuild(const std::vector<Item>& items)
 {
     placements_.clear();
     const int usable = std::max(kCardMinWidth, viewportWidth_ - kPadX * 2);
-    int columns = std::max(1, (usable + kCardGap) / (kCardMinWidth + kCardGap));
+    int columns = std::max(1, (usable + kCardGap) / (kCardTargetWidth + kCardGap));
     columnWidth_ = std::clamp((usable - (columns - 1) * kCardGap) / columns,
                               kCardMinWidth, kCardMaxWidth);
     // Recompute the count against the settled width so the two agree; an

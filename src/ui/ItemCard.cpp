@@ -180,7 +180,8 @@ void ItemCard::paintEvent(QPaintEvent*)
     // text you are actively reading and typing makes it hard to read, and the
     // border plus the caret are two signals already.
     if (selected_ && !editing)
-        p.fillPath(path, highlight(pal, isLightTheme(pal) ? 20 : 34));
+        p.fillPath(path, highlight(pal, isLightTheme(pal) ? kFillSelectedLight
+                                                          : kFillSelectedDark));
 
     // The accent is darkened until it actually meets 3:1 against the card. The
     // raw Highlight at alpha 160 measured 1.74:1 in Breeze Light — FAINTER than
@@ -571,7 +572,7 @@ ImageItemCard::ImageItemCard(const Item& item, Thumbnailer& thumbs, BlobStore& b
     if (item.animated) facts << tr("animated");
 
     caption_ = new QLabel(facts.join(QStringLiteral(" · ")));
-    caption_->setFont(scaled(caption_->font(), -1.5));
+    caption_->setFont(scaledBy(caption_->font(), kTypeCaption));
     QPalette capPal = caption_->palette();
     capPal.setColor(QPalette::WindowText, text(palette(), kTextTertiary));
     caption_->setPalette(capPal);

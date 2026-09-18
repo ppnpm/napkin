@@ -534,6 +534,36 @@ is large.
 > Link previews, code snippets with syntax colouring, and map coordinates are
 > further subclasses and nothing else has to change.
 
+### The type scale is ratios, not point offsets
+
+Every size used to be `base ± n points`, which is a fixed *proportion* only at
+one base size. A −1.5pt caption is 15% smaller at 10pt and 6% smaller at 24pt,
+so at the 150% and 200% text settings the card collapsed into one
+undifferentiated size — and the people who need large type are exactly the
+people who need hierarchy most. Point offsets also do not survive a change of
+typeface, where point sizes are not comparable between faces.
+
+| step | ratio | used for |
+|---|---|---|
+| `kTypeMicro` | 0.70 | the GIF badge — a glyph, not prose |
+| `kTypeCaption` | 0.85 | timestamps, captions, section labels |
+| `kTypeBody` | 1.00 | everything the user wrote |
+| `kTypeLead` | 1.15 | the line that leads a small block, e.g. a chip's host |
+| `kTypeTitle` | 1.45 | an empty state's headline |
+| `kTypeDisplay` | 2.40 | the wordmark, once, on first run |
+
+`scaledBy()` takes a ratio; `scaled()` survives for the few places that want an
+absolute nudge. There were eight ad-hoc offsets before this, including a `+0.5`
+that was imperceptible as a size.
+
+### A wide board widens its columns, it does not add more
+
+Columns were packed at `kCardMinWidth`, so the reading measure got **worse** the
+bigger the window was: 1920px gave five 280px columns of about 34 characters,
+while 1280px gave 417px columns. Columns are now aimed at `kCardTargetWidth`
+(360) and then widened to fill, so 1920px gives four columns of ~364px. A board
+is for reading, and a wide screen should not be punished for being wide.
+
 ### The visual system
 
 Tokenised in `src/ui/Tokens.h` rather than scattered as literals, so contrast is

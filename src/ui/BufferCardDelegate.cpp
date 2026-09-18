@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "BufferListModel.h"
 #include "Icons.h"
+#include "Tokens.h"
 #include "../media/Thumbnailer.h"
 #include "../domain/Preview.h"
 
@@ -15,21 +16,17 @@
 #include <QPainterPath>
 
 namespace napkin {
+
+using namespace tokens;
+
 namespace {
 
-// Text that is present but secondary. Not placeholderText: on several themes
-// that is faint enough to fail contrast for content the user needs to read.
-//
-// The alphas below are not taste. Composited over QPalette::Base and measured
-// against Breeze Light — the harsher of the two themes — alpha 161 is the
-// threshold for WCAG AA 4.5:1 on text, and 126 for the 3:1 that non-text
-// affordances need. An earlier build used 115 for timestamps (2.71:1 in light),
-// which made the recency signal the least legible thing in an application whose
-// whole organizing principle is recency.
-constexpr int kTextSecondary = 170;   // 5.06:1 light — comfortably past AA
-constexpr int kTextTertiary  = 161;   // 4.51:1 light — timestamps, section labels
-constexpr int kBorderResting = 128;   // 3.07:1 light — a card must read as a card
-constexpr int kBorderActive  = 178;
+// These four used to be declared here, with their own copy of the reasoning,
+// identical in value to the ones in Tokens.h. A second copy of a design system
+// is a second thing to forget to change: the file that calls itself the single
+// visual system was not the file this delegate was painting from.
+constexpr int kBorderResting = kCardBorderLight;
+constexpr int kBorderActive  = kCardActive;
 
 QColor dimmed(const QPalette& pal, int alpha = kTextSecondary)
 {
@@ -75,9 +72,7 @@ void BufferCardDelegate::drawSnippet(QPainter* p, const QRect& box, const QStrin
 
 QFont BufferCardDelegate::timestampFont(const QFont& base) const
 {
-    QFont f = base;
-    f.setPointSizeF(std::max(7.5, base.pointSizeF() - 1.5));
-    return f;
+    return tokens::scaledBy(base, tokens::kTypeCaption);
 }
 
 int BufferCardDelegate::collapsedHeight() const
@@ -146,8 +141,7 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
 
     // --- section label --------------------------------------------------------
     if (index.data(BufferListModel::SectionFirstRole).toBool()) {
-        QFont f = option.font;
-        f.setPointSizeF(std::max(7.5, option.font.pointSizeF() - 1.0));
+        QFont f = tokens::scaledBy(option.font, tokens::kTypeCaption);
         f.setBold(true);
         f.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
         p->setFont(f);
@@ -261,8 +255,7 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
             // An animation showing only its first frame says so, rather than
             // looking like a still that happens not to move.
             if (thumbs[size_t(i)].animated && !(live && i == 0)) {
-                QFont badge = option.font;
-                badge.setPointSizeF(std::max(6.0, option.font.pointSizeF() - 3.5));
+                QFont badge = tokens::scaledBy(option.font, tokens::kTypeMicro);
                 badge.setBold(true);
                 p->setFont(badge);
                 const QFontMetrics bfm(badge);

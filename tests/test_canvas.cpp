@@ -1,3 +1,4 @@
+#include "../src/ui/BoardLayout.h"
 #include "GuiFixture.h"
 #include "../src/media/BlobGc.h"
 #include "../src/ui/Tokens.h"
@@ -1251,6 +1252,38 @@ private slots:
         for (auto* card : f.canvas()->findChildren<ItemCard*>())
             QVERIFY2(card->width() <= tokens::kCardMaxWidth,
                      qPrintable(QString("card is %1px wide").arg(card->width())));
+    }
+
+    void aWideBoardWidensItsColumnsRatherThanAddingMore()
+    {
+        // Columns used to be packed at kCardMinWidth, so the reading measure
+        // got WORSE the bigger the window was: 1920px gave five 280px columns
+        // of about 34 characters while 1280px gave 417px columns. A board is
+        // for reading, and a wide screen should not be punished for it.
+        std::vector<Item> items;
+        for (int i = 0; i < 12; ++i) {
+            Item item = Item::makeText(QStringLiteral("x"));
+            item.id = ItemId(i + 1);
+            items.push_back(item);
+        }
+
+        int previous = 0;
+        for (int board : {600, 940, 1260, 1580, 2220}) {
+            BoardLayout layout;
+            layout.setViewport(board);
+            layout.rebuild(items);
+            const int width = layout.columnWidth();
+
+            QVERIFY2(width >= tokens::kCardMinWidth && width <= tokens::kCardMaxWidth,
+                     qPrintable(QStringLiteral("board %1 -> column %2").arg(board).arg(width)));
+            // Never pinned to the floor once there is room to be wider.
+            if (board >= 940)
+                QVERIFY2(width > tokens::kCardMinWidth + 40,
+                         qPrintable(QStringLiteral("board %1 -> column %2, at the minimum")
+                                        .arg(board).arg(width)));
+            previous = width;
+        }
+        Q_UNUSED(previous);
     }
 
     void aHugePasteIsNotFullyMeasuredJustToFindItsHeight()

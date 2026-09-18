@@ -31,9 +31,9 @@ LinkChip::LinkChip(QWidget* parent) : QWidget(parent)
     auto* column = new QVBoxLayout;
     column->setSpacing(1);
     host_ = new QLabel;
-    host_->setFont(scaled(font(), 0.5, QFont::DemiBold));
+    host_->setFont(scaledBy(font(), kTypeLead, QFont::DemiBold));
     rest_ = new QLabel;
-    rest_->setFont(scaled(font(), -1.0));
+    rest_->setFont(scaledBy(font(), kTypeCaption));
     column->addWidget(host_);
     column->addWidget(rest_);
     row->addLayout(column, 1);
@@ -92,8 +92,8 @@ void LinkChip::resizeEvent(QResizeEvent* e)
 int LinkChip::preferredHeight()
 {
     const QFont base = QApplication::font();
-    const int host = QFontMetrics(scaled(base, 0.5, QFont::DemiBold)).height();
-    const int path = QFontMetrics(scaled(base, -1.0)).height();
+    const int host = QFontMetrics(scaledBy(base, kTypeLead, QFont::DemiBold)).height();
+    const int path = QFontMetrics(scaledBy(base, kTypeCaption)).height();
     // Tall enough for a push button too: at small fonts the button, not the
     // text, is what sets the floor.
     const int button = QFontMetrics(base).height() + 14;
@@ -109,7 +109,7 @@ void LinkChip::paintEvent(QPaintEvent*)
     const QRectF box = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
     p.setPen(QPen(text(pal, kHairline), 1.0));
     p.setBrush(text(pal, isLightTheme(pal) ? 10 : 16));
-    p.drawRoundedRect(box, kRadiusCard, kRadiusCard);
+    p.drawRoundedRect(box, kInsetRadius, kInsetRadius);
 
     const QRect glyph(kPad, (height() - kGlyph) / 2, kGlyph, kGlyph);
     icons::drawLink(&p, glyph, text(pal, kTextSecondary));
@@ -132,8 +132,8 @@ void LinkChip::changeEvent(QEvent* e)
     if (e->type() == QEvent::PaletteChange || e->type() == QEvent::ApplicationPaletteChange)
         applyPalette();
     if (e->type() == QEvent::FontChange || e->type() == QEvent::ApplicationFontChange) {
-        host_->setFont(scaled(font(), 0.5, QFont::DemiBold));
-        rest_->setFont(scaled(font(), -1.0));
+        host_->setFont(scaledBy(font(), kTypeLead, QFont::DemiBold));
+        rest_->setFont(scaledBy(font(), kTypeCaption));
         elidePath();
     }
     QWidget::changeEvent(e);

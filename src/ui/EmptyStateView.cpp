@@ -38,7 +38,7 @@ EmptyStateView::EmptyStateView(QWidget* parent) : QWidget(parent)
     title_->setAlignment(Qt::AlignCenter);
     title_->setWordWrap(true);
     title_->setFixedWidth(textColumn(title_->font()));
-    title_->setFont(scaled(font(), 3.0, QFont::Medium));
+    title_->setFont(scaledBy(font(), kTypeTitle, QFont::Medium));
     outer->addWidget(title_);
     outer->addSpacing(6);
 

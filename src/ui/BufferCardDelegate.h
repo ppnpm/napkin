@@ -1,5 +1,6 @@
 #pragma once
 #include <QPixmap>
+#include "Tokens.h"
 #include <QStyledItemDelegate>
 
 namespace napkin {
@@ -40,7 +41,10 @@ public:
     static constexpr int kMarginX  = 16;
     static constexpr int kMarginY  = 4;
     static constexpr int kPadding  = 14;
-    static constexpr int kRadius   = 6;
+    // The list's rows are cards too, so they use the card radius. They were 6
+    // against the board's 10, which is why the two panes read as two different
+    // levels of finish even when everything else matched.
+    static constexpr int kRadius   = tokens::kCardRadius;
     static constexpr int kSectionH = 36;
 
     // A card holding two words was 1360px wide on a wide window, with the state

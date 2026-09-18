@@ -20,28 +20,39 @@ inline constexpr int kTextTertiary  = 161;  // 4.51:1  — timestamps, captions,
                                             //           text and get no exemption
 
 // --- non-text ----------------------------------------------------------------
-inline constexpr int kHairline      = 36;   // dividers, image edges
-inline constexpr int kItemHover     = 60;
-inline constexpr int kRailHover     = 90;
-inline constexpr int kCardResting   = 128;  // 3.07:1 — floor for a meaningful affordance
-inline constexpr int kCardActive    = 178;
-inline constexpr int kBorderSelected = 160;
-inline constexpr int kBorderEditing  = 200;
-inline constexpr int kFillSelectedLight = 26;
-inline constexpr int kFillSelectedDark  = 44;
+// Only what something actually paints from. An audit found that over half of
+// this file was unreferenced while the live values were literals elsewhere that
+// disagreed with it — a design system nothing consults is not a design system,
+// it is a second thing to forget to change.
+inline constexpr int kHairline   = 36;   // dividers, image edges
+inline constexpr int kCardActive = 178;  // the list's hovered / current row
+
+// The wash behind a selected card. Measured, not chosen: this is how much of
+// the accent a card can take before the text on it loses contrast, and it
+// differs by theme because the accent sits on a light or a dark Base.
+inline constexpr int kFillSelectedLight = 20;
+inline constexpr int kFillSelectedDark  = 34;
 
 // --- spacing, on a 4px scale -------------------------------------------------
 inline constexpr int kGapTight  = 8;
-inline constexpr int kGapItem   = 24;
 inline constexpr int kPadX      = 32;
 inline constexpr int kPadTop    = 28;
-inline constexpr int kPadBottom = 120;   // clickable dead space below the composer
 
 // --- geometry ----------------------------------------------------------------
 // Cards, not a column. A board of pasted things wants a uniform width and each
 // card's own height; a single 780px column gave a three-word note a 780px row.
 inline constexpr int kCardMinWidth = 280;
 inline constexpr int kCardMaxWidth = 460;
+
+// The width a column WANTS, as opposed to the narrowest it will tolerate.
+//
+// Packing as many columns as fit at kCardMinWidth means the reading measure
+// gets worse the bigger the window is: a 1920px board gave five 280px columns
+// of about 34 characters, while a 1280px board gave 417px columns. Aiming at a
+// target and then widening to fill inverts that — 1920 now gives four columns
+// of ~365px. A board is for reading, and a line of 34 characters is not a
+// reward for having a large screen.
+inline constexpr int kCardTargetWidth = 360;
 
 // Enough for roughly 18 lines of body text or a landscape screenshot. Past this
 // a card would own the board, so it clips with a fade and opens on double-click.
@@ -64,7 +75,6 @@ inline constexpr int kCardPad      = 16;   // content inset
 inline constexpr int kCardFooterH  = 28;   // the copy action and the timestamp,
                                           // at the default font — use
                                           // footerHeight() for the real one
-inline constexpr int kCardRadius   = 10;
 inline constexpr int kCardGap      = 20;
 
 // A card's edge is a meaningful affordance, so it obeys the same 3:1 floor as
@@ -144,15 +154,14 @@ inline int cardBorderAlpha(const QPalette& pal, bool hovered)
     return hovered ? std::min(255, base + kCardBorderHoverBoost) : base;
 }
 
-inline constexpr int kRailOffset     = 26;
-inline constexpr int kRailWidth      = 3;
-inline constexpr int kSelectionBleed = 12;   // so the text never moves between states
+inline constexpr int kRailWidth = 3;
 
-// --- radii, nothing above 8 --------------------------------------------------
-inline constexpr int kRadiusImage     = 4;
-inline constexpr int kRadiusSelection = 5;
-inline constexpr int kRadiusCard      = 6;
-inline constexpr int kRadiusToast     = 8;
+// --- radii --------------------------------------------------------------------
+// Two scales, named for what they are on rather than left to be guessed at. The
+// old file declared "nothing above 8" four lines above a card that paints 10,
+// which meant the rule and the pixels had never agreed.
+inline constexpr int kCardRadius = 10;  // a card on the board, and the list's rows
+inline constexpr int kInsetRadius = 6;  // something drawn INSIDE a card: the chip
 
 inline QColor text(const QPalette& pal, int alpha)
 {
@@ -188,6 +197,32 @@ inline int cardChromeHeight(const QFont& font)
     return kCardPad * 2 - 6 + footerHeight(font) + kGapTight;
 }
 
+// --- the type scale ----------------------------------------------------------
+// Ratios, not point offsets.
+//
+// Every size used to be "base ± n points", which is a fixed *proportion* only
+// at one base size. A -1.5pt caption is 15% smaller at 10pt and 6% smaller at
+// 24pt, so at the 150% and 200% text settings the whole card collapsed into one
+// undifferentiated size — and the people who need large type are exactly the
+// people who need hierarchy most. Point offsets also do not survive a change of
+// typeface, where point sizes are not comparable between faces.
+inline constexpr qreal kTypeMicro   = 0.70;  // the GIF badge; a glyph, not prose
+inline constexpr qreal kTypeCaption = 0.85;  // timestamps, captions, section labels
+inline constexpr qreal kTypeBody    = 1.00;
+inline constexpr qreal kTypeLead    = 1.15;  // the line that leads a small block
+inline constexpr qreal kTypeTitle   = 1.45;  // an empty state's headline
+inline constexpr qreal kTypeDisplay = 2.40;  // the wordmark, once, on first run
+
+inline QFont scaledBy(const QFont& base, qreal ratio, int weight = -1)
+{
+    QFont f = base;
+    f.setPointSizeF(std::max(7.0, base.pointSizeF() * ratio));
+    if (weight >= 0) f.setWeight(QFont::Weight(weight));
+    return f;
+}
+
+// Kept for the handful of places that genuinely want an absolute nudge rather
+// than a step on the scale. New call sites should use scaledBy().
 inline QFont scaled(const QFont& base, qreal deltaPt, int weight = -1)
 {
     QFont f = base;
