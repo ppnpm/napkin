@@ -206,6 +206,8 @@ jobs:
           }
 
       - name: Test
+        env:
+          NAPKIN_RENDER_DIR: ${{ github.workspace }}/renders/windows-light-desktop
         shell: pwsh
         run: |
           $out = ctest --test-dir build --output-on-failure --parallel 2 2>&1
@@ -226,3 +228,33 @@ jobs:
             }
             exit 1
           }
+
+      # The report that prompted test_native_style was Windows in dark mode
+      # with Napkin left on System, which the runner (light by default) cannot
+      # show. Qt reads the same per-user setting Windows' own Settings app
+      # writes, so flip it and run that suite again.
+      - name: Native style with Windows in dark mode
+        if: always()
+        shell: pwsh
+        env:
+          NAPKIN_RENDER_DIR: ${{ github.workspace }}/renders/windows-dark-desktop
+        run: |
+          Set-ItemProperty -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize -Name AppsUseLightTheme -Value 0 -Type DWord -Force
+          & build\test_native_style.exe -o native-dark.txt,txt | Out-Null
+          $code = $LASTEXITCODE
+          $raw = Get-Content native-dark.txt -Raw
+          $raw | Write-Host
+          if ($code -ne 0) {
+            Write-Host "::error title=Dark desktop: test_native_style::$(($raw -split "`r?`n" | Where-Object { $_ -notmatch '^PASS ' }) -join ' | ')"
+            exit 1
+          }
+
+      # Renders of every control in every theme, so what the Windows style
+      # actually drew can be looked at from anywhere.
+      - name: Upload control renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-control-renders
+          path: renders/
+          if-no-files-found: warn

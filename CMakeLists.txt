@@ -215,6 +215,16 @@ foreach(t test_editing test_sweep test_lifecycle test_images test_multiitem test
   set_tests_properties(${t} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endforeach()
 
+# Windows' native style ignores the palette, so whether dark mode reaches the
+# controls can only be seen on the real platform with the real style. The
+# offscreen platform always uses Fusion, which would pass regardless.
+qt_add_executable(test_native_style tests/test_native_style.cpp)
+target_link_libraries(test_native_style PRIVATE napkin_ui Qt6::Test)
+add_test(NAME test_native_style COMMAND test_native_style)
+if(NOT WIN32)
+  set_tests_properties(test_native_style PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # qt_add_executable can make a GUI-subsystem program on Windows, which has no
 # stdout: the first Windows run reported two failing suites and not one line of
 # why. Tests and tools are console programs; only napkin itself is a GUI one.
