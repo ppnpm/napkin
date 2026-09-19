@@ -161,6 +161,29 @@ int BufferRepository::purgeAllTrash()
     return db_.changes();
 }
 
+void BufferRepository::setRestoresTo(BufferId holder, BufferId origin)
+{
+    Statement s(db_, "UPDATE buffers SET restores_to = ? WHERE id = ?");
+    s.bind(1, origin).bind(2, holder);
+    s.exec();
+}
+
+std::optional<BufferId> BufferRepository::restoresTo(BufferId holder)
+{
+    Statement s(db_, "SELECT restores_to FROM buffers WHERE id = ?");
+    s.bind(1, holder);
+    if (!s.step()) return std::nullopt;
+    const auto v = s.columnOptInt64(0);
+    return v ? std::optional<BufferId>(*v) : std::nullopt;
+}
+
+void BufferRepository::clearRestoresTo(BufferId holder)
+{
+    Statement s(db_, "UPDATE buffers SET restores_to = NULL WHERE id = ?");
+    s.bind(1, holder);
+    s.exec();
+}
+
 bool BufferRepository::removeIfEmpty(BufferId id)
 {
     Statement s(db_, "DELETE FROM buffers WHERE id = ? AND kept = 0"

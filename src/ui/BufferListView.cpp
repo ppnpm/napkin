@@ -130,8 +130,10 @@ void BufferListView::keyPressEvent(QKeyEvent* e)
     if (currentIndex().isValid() && e->modifiers() == Qt::NoModifier) {
         const int row = currentIndex().row();
         switch (e->key()) {
-        case Qt::Key_P:      emit pinToggleRequested(row);  return;
-        case Qt::Key_K:      emit keepToggleRequested(row); return;
+        // P and K are gone. Once typing started notes everywhere else, a
+        // bare letter that silently pinned or kept a napkin was a trap: typing
+        // "pack" into the list pinned AND kept it (second usability test).
+        // Pin and Keep are Ctrl+P and Ctrl+D, window-wide, with a toast.
         case Qt::Key_Delete: emit trashRequested(row);      return;
         case Qt::Key_R:      emit restoreRequested(row);    return;
         default: break;

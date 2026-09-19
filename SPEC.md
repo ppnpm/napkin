@@ -465,8 +465,10 @@ accidental deletion is the single fastest way to lose a user forever.
 
 - Delete is a soft delete (`deleted_at`), always, for every path — items too:
   deleting items inside a napkin moves them into a napkin of their own, which
-  goes straight to the trash (`BufferService::trashItems`). Deleting *every*
-  item trashes the napkin itself, content and all.
+  goes straight to the trash (`BufferService::trashItems`), remembering where
+  they came from (`restores_to`, schema v6): restoring it puts them back into
+  that napkin if it is still live. Deleting *every* item trashes the napkin
+  itself, content and all.
 
 > **Corrected.** "For every path" was false until 2026-09-19. Napkins were
 > soft-deleted; items were hard-deleted, recoverable only from the 8-second
@@ -1712,6 +1714,11 @@ not fail.**
 | *Usability test:* a link's host was cut mid-letter ("www.example.c"); dark pictures vanished into dark cards | cosmetic | fixed — host elided by whole labels, "www." dropped; images carry a hairline edge |
 | *Usability test:* a napkin's list title followed every edit and addition, so it could not be recognised; every unnamed image was titled "Screenshot" (an interpretation §1 rules out) and that word was unsearchable | medium | fixed — titled by what was put on it first; unnamed images are "Image" |
 | *Usability test:* one action had three names ("Write a note", "New text block", "New text block on this napkin"); items were "item", "card" and "block"; "Settings ▸ Preferences…" opened "Settings"; Help lived under Settings; Keep was explained only as "never removed by a sweep" | medium | fixed — "note" for text, "New note" everywhere; menus are File (with Settings…), Napkins, Trash, Help; Pin and Keep explained in tooltips; About shows the version |
+| *Second usability test:* bare P and K in the list silently pinned and kept — typing "pack" did both — once typing made notes everywhere else | high | fixed — typing in the list writes on the selected napkin; Pin and Keep are Ctrl+P and Ctrl+D, with a toast and Undo |
+| *Second test:* undo lived only in an 8-second toast | medium | fixed — Ctrl+Z undoes the last delete, pin or keep; the toast pauses under the pointer |
+| *Second test:* a restored item came back as a napkin of its own; Restore was silent and left the napkin on the trash board | medium | fixed — items go back into the napkin they came from if it is still live (schema v6, `restores_to`); Restore says where things went |
+| *Second test:* a cut left its original in the trash after the paste had completed the move | low | fixed — discarded once pasted, only when the clipboard still holds what was cut and that is all of it (a mixed selection copies as text only, so its images stay recoverable) |
+| *Second test:* a napkin that began with a picture or link was titled "Image" or by its raw URL; pasting in the trash did nothing | low | fixed — titled by its first note, then its first link (short form), then its first image; paste leaves the trash as Ctrl+N does |
 
 **Known and not yet fixed**, carried forward honestly:
 

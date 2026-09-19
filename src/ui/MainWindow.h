@@ -3,6 +3,7 @@
 #include "../media/Exporter.h"   // Result is a nested type, so it cannot be forward-declared
 #include <QList>
 #include <QSet>
+#include <QString>
 #include <functional>
 #include <QMainWindow>
 
@@ -71,7 +72,8 @@ public slots:
     // A text card the user emptied: there is nothing left to recover, so the
     // item goes for good rather than into the trash as a blank napkin.
     void discardItems(const QList<ItemId>& ids);
-    void appendTextBlock(const QString& text = {});
+    // Returns whether text was actually stored.
+    bool appendTextBlock(const QString& text = {});
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -139,6 +141,19 @@ private:
     TrashedState lastTrashed_;
     // Blobs whose rows are gone but which the live undo offer would restore.
     QSet<QString> undoProtectedBlobs_;
+
+    // A cut waits in the trash until it is pasted; then the trashed original
+    // is discarded, so a completed move leaves nothing behind (second usability
+    // test: "an Image in the trash I never deleted"). Only when the clipboard
+    // still holds exactly what the cut put there, and only when that copy is
+    // the whole of what was cut — a mixed selection copies as text alone, and
+    // discarding its originals would lose the images.
+    struct PendingCut {
+        const void* clip = nullptr;   // identity of the clipboard's data at the cut
+        QString     text;             // and its text, against address reuse
+        BufferId    holder = kNoBuffer;
+    } pendingCut_;
+    void completePendingCut();
     int saveFailures_ = 0;
     QTimer*          timeRefresh_ = nullptr;
     QAction*         trashAction_ = nullptr;

@@ -58,6 +58,11 @@ public:
     // moved its items home. Returns whether it deleted.
     bool removeIfEmpty(BufferId id);
 
+    // Where a napkin's items belong when it is restored (see Migrations v6).
+    void setRestoresTo(BufferId holder, BufferId origin);
+    std::optional<BufferId> restoresTo(BufferId holder);
+    void clearRestoresTo(BufferId holder);
+
 private:
     Database& db_;
 };

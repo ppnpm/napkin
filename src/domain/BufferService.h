@@ -68,7 +68,10 @@ public:
     // false => the buffer is kept and the caller must confirm first.
     bool trash(BufferId id);
     void trashConfirmed(BufferId id);
-    void restore(BufferId id);
+    // Returns where the content now is: `id` itself, or — for a napkin that
+    // holds items deleted from another one — that original napkin, if it is
+    // still live, with the items put back into it.
+    BufferId restore(BufferId id);
 
     // The only automatic hard delete in Napkin. Touches nothing the user has
     // not already deleted.

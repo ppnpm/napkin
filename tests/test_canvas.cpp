@@ -1539,6 +1539,25 @@ private slots:
         QCOMPARE(title(), QStringLiteral("Call the dentist"));
     }
 
+
+    void restoringANapkinTakesItOffTheTrashBoardAndSaysSo()
+    {
+        // Second usability test: after Restore the board kept showing the
+        // napkin under TRASH, beside a list that no longer held it.
+        GuiFixture f;
+        const auto id = f.seed("Packing list for the trip");
+        f.service.trash(id);
+        f.window.showTrash(true);
+        f.select(id);
+        QVERIFY(!f.canvas()->itemOrder().isEmpty());
+        f.window.restoreRow(f.model()->rowForId(id));
+        QVERIFY(f.canvas()->itemOrder().isEmpty());
+        QVERIFY(!f.buffers.find(id)->inTrash());
+        QString said;
+        for (auto* l : f.toast()->findChildren<QLabel*>()) if (!l->text().isEmpty()) said = l->text();
+        QCOMPARE(said, QStringLiteral("Napkin restored"));
+    }
+
 };
 
 QTEST_MAIN(TestCanvas)

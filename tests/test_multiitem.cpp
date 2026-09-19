@@ -5,6 +5,7 @@
 #include <QBuffer>
 #include <QLabel>
 #include <QPushButton>
+#include <QClipboard>
 #include <QtTest>
 
 using namespace napkin;
@@ -261,10 +262,32 @@ private slots:
         QCOMPARE(int(held.size()), 1);
         QCOMPARE(held.front().id, gone);
 
-        // And restoring that napkin gives it back.
-        f.service.restore(trash.front().id);
+        // And restoring it puts the item back where it came from — not into a
+        // napkin of its own, which the second usability test found confusing.
+        const Item before1 = before[1];
+        QCOMPARE(f.service.restore(trash.front().id), id);
         QCOMPARE(f.buffers.countTrash(), 0);
-        QCOMPARE(f.items.find(gone)->bufferId, trash.front().id);
+        QCOMPARE(f.buffers.countLive(), 1);                       // no stray holder
+        QCOMPARE(f.items.find(gone)->bufferId, id);
+        QCOMPARE(f.items.find(gone)->position, before1.position);
+        QCOMPARE(int(f.items.listForBuffer(id).size()), 3);
+    }
+
+    void aDeletedItemWhoseNapkinIsGoneRestoresOnItsOwn()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 2);
+        f.select(id);
+        const ItemId gone = f.items.listForBuffer(id)[1].id;
+        f.window.removeItems({gone});
+        f.service.trash(id);                                      // the original goes too
+        BufferId holder = kNoBuffer;
+        for (const auto& b : f.buffers.listTrash()) if (b.id != id) holder = b.id;
+        QVERIFY(holder != kNoBuffer);
+
+        QCOMPARE(f.service.restore(holder), holder);              // nowhere to go back to
+        QCOMPARE(f.items.find(gone)->bufferId, holder);
+        QVERIFY(!f.buffers.restoresTo(holder));                   // and it is its own napkin now
     }
 
     void undoPutsTheItemBackWhereItWasAndLeavesNothingInTheTrash()
@@ -336,13 +359,55 @@ private slots:
         QCOMPARE(f.items.listForBuffer(napkin.id).front().text, QStringLiteral("Pack keys"));
     }
 
-    void pAndKStillPinAndKeepAFullNapkin()
+    void typingOnAFullNapkinInTheListWritesOnItAndPinsNothing()
+    {
+        // Second usability test: typing "pack" into the list pinned AND kept
+        // the napkin, silently. Letters are text now, everywhere.
+        GuiFixture f;
+        const auto id = seedMixed(f, 0);
+        f.select(id);
+        QTest::keyClick(f.view(), 'p');
+        auto* note = f.editor();
+        QVERIFY2(note, "typing did not start a note");
+        QTest::keyClicks(note, "ack the charger");
+        QTRY_COMPARE_WITH_TIMEOUT(int(f.items.listForBuffer(id).size()), 2, 3000);
+        QVERIFY(!f.buffers.find(id)->pinned);
+        QVERIFY(!f.buffers.find(id)->kept);
+        bool found = false;
+        for (const auto& i : f.items.listForBuffer(id)) found |= i.text == QStringLiteral("pack the charger");
+        QVERIFY(found);
+    }
+
+    void pinAndKeepHaveShortcutsAToastAndUndo()
     {
         GuiFixture f;
         const auto id = seedMixed(f, 0);
         f.select(id);
-        QTest::keyClick(f.view(), Qt::Key_P);
+        f.trigger("pinAction");
         QVERIFY(f.buffers.find(id)->pinned);
+        QCOMPARE(toastText(f), QStringLiteral("Pinned — it stays at the top"));
+        f.trigger("undoAction");                     // Ctrl+Z
+        QVERIFY(!f.buffers.find(id)->pinned);
+
+        f.trigger("keepAction");
+        QVERIFY(f.buffers.find(id)->kept);
+        QVERIFY(toastText(f).startsWith(QStringLiteral("Kept")));
+        auto* pinAction = f.window.findChild<QAction*>(QStringLiteral("pinAction"));
+        auto* keepAction = f.window.findChild<QAction*>(QStringLiteral("keepAction"));
+        QCOMPARE(pinAction->shortcut(), QKeySequence(QStringLiteral("Ctrl+P")));
+        QCOMPARE(keepAction->shortcut(), QKeySequence(QStringLiteral("Ctrl+D")));
+    }
+
+    void ctrlZUndoesADeleteAfterTheToastWasMissed()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        f.select(id);
+        const ItemId gone = f.items.listForBuffer(id)[1].id;
+        f.window.removeItems({gone});
+        f.trigger("undoAction");
+        QCOMPARE(f.items.find(gone)->bufferId, id);
+        QCOMPARE(f.buffers.countTrash(), 0);
     }
 
     void doubleClickingAnEmptyBoardStartsANote()
@@ -377,6 +442,72 @@ private slots:
         const auto items = f.items.listForBuffer(f.buffers.listLive(5).front().id);
         QCOMPARE(int(items.size()), 1);
         QCOMPARE(items.front().text, QStringLiteral("Call the dentist"));
+    }
+
+
+    // --- a completed cut leaves nothing in the trash (second usability test) --
+    void aPastedCutLeavesNothingInTheTrash()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        f.select(id);
+        const Item note = f.items.listForBuffer(id).back();      // the text, oldest
+        QCOMPARE(note.type, ItemType::Text);
+        QApplication::clipboard()->setText(note.text);           // what the cut copied
+        f.window.removeItems({note.id}, /*cut=*/true);
+        QCOMPARE(f.buffers.countTrash(), 1);
+
+        f.trigger("newBufferAction");
+        f.trigger("pasteAction");
+        QCOMPARE(f.buffers.countTrash(), 0);                     // the original is gone
+        QCOMPARE(f.buffers.countLive(), 2);                      // and the copy is here
+    }
+
+    void aMixedCutKeepsItsOriginalsBecauseThePasteIsOnlyText()
+    {
+        // A selection of text AND an image copies as text alone. Discarding the
+        // originals after that paste would lose the image.
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        f.service.appendTo(id, Item::makeText(QStringLiteral("second note")));
+        f.model()->reload();
+        f.select(id);
+        QList<ItemId> cut;
+        for (const auto& i : f.items.listForBuffer(id))
+            if (i.type == ItemType::Image || i.text == QStringLiteral("second note")) cut << i.id;
+        QApplication::clipboard()->setText(QStringLiteral("second note"));
+        f.window.removeItems(cut, /*cut=*/true);
+
+        f.trigger("newBufferAction");
+        f.trigger("pasteAction");
+        QCOMPARE(f.buffers.countTrash(), 1);                     // the image is still recoverable
+    }
+
+    void aCutIsKeptIfTheClipboardHasMovedOn()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        f.select(id);
+        const Item note = f.items.listForBuffer(id).back();
+        QApplication::clipboard()->setText(note.text);
+        f.window.removeItems({note.id}, /*cut=*/true);
+        QApplication::clipboard()->setText(QStringLiteral("copied elsewhere since"));
+        f.trigger("newBufferAction");
+        f.trigger("pasteAction");
+        QCOMPARE(f.buffers.countTrash(), 1);                     // not what was cut: keep it
+    }
+
+    void pastingWhileLookingAtTheTrashMakesANewNapkin()
+    {
+        GuiFixture f;
+        const auto id = f.seed("old");
+        f.service.trash(id);
+        f.model()->reload();
+        f.window.showTrash(true);
+        QApplication::clipboard()->setText(QStringLiteral("fresh thought"));
+        f.trigger("pasteAction");
+        QCOMPARE(f.model()->mode(), BufferListModel::Mode::Live);
+        QCOMPARE(f.buffers.countLive(), 1);
     }
 
 };

@@ -90,7 +90,9 @@ The test suites need no display: the GUI tests run on Qt's offscreen platform.
 | `Ctrl+T` | New note on this napkin |
 | `Ctrl+Shift+I` | Add an image from a file |
 | `Ctrl+F` / `Ctrl+K` | Search |
-| `P` / `K` / `Delete` | Pin, keep, or trash the selected napkin (list focused) |
+| `Ctrl+P` / `Ctrl+D` | Pin or keep the selected napkin |
+| `Ctrl+Z` | Undo the last delete, pin or keep |
+| `Delete` | Move the selected napkin to the trash (list focused) |
 
 The full list is under *Help → Keyboard shortcuts…*. Typing on an empty napkin,
 or double-clicking empty space on one, also starts a note, and right-clicking

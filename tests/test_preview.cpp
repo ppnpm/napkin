@@ -125,6 +125,30 @@ private slots:
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         QCOMPARE(relativeTime(now + 5 * 60'000, now), QStringLiteral("just now"));
     }
+
+    // Second usability test: a napkin that began with a picture or a link was
+    // titled "Image" or by its raw URL although a note on it said what it was.
+    void aNoteTitlesTheNapkinEvenWhenAPictureCameFirst()
+    {
+        const auto p = derivePreview({Item::makeImage("abc", 640, 420, 9000),
+                                      Item::makeText("Architecture sketch from Monday standup")}, 2, 1);
+        QCOMPARE(p.primary, QStringLiteral("Architecture sketch from Monday standup"));
+    }
+
+    void aNoteTitlesTheNapkinOverALink()
+    {
+        const auto p = derivePreview({Item::makeText("https://www.example.com/flight-booking/confirmation?id=AB123"),
+                                      Item::makeText("Packing list for the trip")}, 2, 0);
+        QCOMPARE(p.primary, QStringLiteral("Packing list for the trip"));
+    }
+
+    void aLinkOnItsOwnIsShownShortNotRaw()
+    {
+        const auto p = derivePreview({Item::makeText("https://www.example.com/flight-booking")}, 1, 0);
+        QVERIFY2(!p.primary.startsWith(QStringLiteral("https://")), qPrintable(p.primary));
+        QVERIFY(p.primary.contains(QStringLiteral("example.com")));
+    }
+
 };
 
 QTEST_APPLESS_MAIN(TestPreview)

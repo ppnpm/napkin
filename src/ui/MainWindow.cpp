@@ -327,8 +327,6 @@ void MainWindow::buildUi()
     connect(addImageAction, &QAction::triggered, this, &MainWindow::addImageFromFile);
     addAction(addImageAction);
 
-    connect(view_, &BufferListView::pinToggleRequested,  this, &MainWindow::togglePin);
-    connect(view_, &BufferListView::keepToggleRequested, this, &MainWindow::toggleKeep);
     connect(view_, &BufferListView::trashRequested,      this, &MainWindow::trashRow);
     connect(view_, &BufferListView::restoreRequested,    this, &MainWindow::restoreRow);
     connect(view_, &BufferListView::contextMenuRequested, this, &MainWindow::showContextMenu);
@@ -347,7 +345,7 @@ void MainWindow::buildUi()
 
     view_->setAccessibleName(tr("Napkins"));
     view_->setAccessibleDescription(
-        tr("Your napkins, newest first. Enter opens one; P pins, K keeps, Delete trashes."));
+        tr("Your napkins, newest first. Enter opens one; typing writes on it; Ctrl+P pins, Ctrl+D keeps, Delete trashes."));
 
     setWindowTitle(tr("Napkin"));
     resize(560, 760);
@@ -469,6 +467,30 @@ void MainWindow::buildMenuBar()
     // "Napkins", not "Home": the menu holds the napkin list's own actions, and
     // "All napkins" is what the trash's "Back to your napkins" returns to.
     auto* home = bar->addMenu(tr("&Napkins"));
+    // Ctrl+Z takes back the last delete, clean-up or cut — whatever the toast
+    // is offering. A caret in a note or the search box keeps Ctrl+Z for its own
+    // text: Qt gives the focused editor first refusal on the shortcut.
+    auto* undo = home->addAction(tr("Undo"));
+    undo->setObjectName(QStringLiteral("undoAction"));
+    undo->setShortcut(QKeySequence::Undo);
+    connect(undo, &QAction::triggered, this, [this] { toast_->undoNow(); });
+    // Greyed out only while the menu is open: a disabled action's shortcut does
+    // not fire, so leaving it disabled would kill Ctrl+Z until the next visit.
+    connect(home, &QMenu::aboutToShow, this, [this, undo] { undo->setEnabled(toast_->hasOffer()); });
+    connect(home, &QMenu::aboutToHide, undo, [undo] { undo->setEnabled(true); });
+    home->addSeparator();
+    auto* pin = home->addAction(tr("Pin or unpin"));
+    pin->setObjectName(QStringLiteral("pinAction"));
+    pin->setShortcut(QKeySequence(QStringLiteral("Ctrl+P")));   // Napkin prints nothing
+    pin->setToolTip(tr("Pinned napkins stay at the top of the list."));
+    connect(pin, &QAction::triggered, this, [this] { togglePin(view_->currentIndex().row()); });
+    auto* keep = home->addAction(tr("Keep or release"));
+    keep->setObjectName(QStringLiteral("keepAction"));
+    keep->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));  // the "bookmark" key, like Keep's glyph
+    keep->setToolTip(tr("Clean up never moves a kept napkin to the trash."));
+    connect(keep, &QAction::triggered, this, [this] { toggleKeep(view_->currentIndex().row()); });
+    home->setToolTipsVisible(true);
+    home->addSeparator();
     auto* showAll = home->addAction(tr("All napkins"));
     showAll->setShortcut(QKeySequence(QStringLiteral("Ctrl+Home")));
     connect(showAll, &QAction::triggered, this, &MainWindow::goHome);
@@ -642,6 +664,9 @@ void MainWindow::showShortcuts()
            "<tr><td><b>Ctrl+T</b></td><td>New note on this napkin</td></tr>"
            "<tr><td><b>Ctrl+V</b></td><td>Paste onto this napkin</td></tr>"
            "<tr><td><b>Ctrl+Shift+I</b></td><td>Add an image from a file</td></tr>"
+           "<tr><td><b>Ctrl+P</b></td><td>Pin this napkin — it stays at the top</td></tr>"
+           "<tr><td><b>Ctrl+D</b></td><td>Keep this napkin — Clean up never moves it to the trash</td></tr>"
+           "<tr><td><b>Ctrl+Z</b></td><td>Undo the last delete, pin or keep</td></tr>"
            "<tr><td colspan='2'>&nbsp;</td></tr>"
            "<tr><td colspan='2'><i>On the napkin:</i></td></tr>"
            "<tr><td><b>Click</b></td><td>Select an item</td></tr>"
@@ -656,8 +681,7 @@ void MainWindow::showShortcuts()
            "<tr><td><b>Esc</b></td><td>Finish editing, then clear the selection</td></tr>"
            "<tr><td colspan='2'>&nbsp;</td></tr>"
            "<tr><td colspan='2'><i>With the list focused:</i></td></tr>"
-           "<tr><td><b>P</b></td><td>Pin — keeps it at the top</td></tr>"
-           "<tr><td><b>K</b></td><td>Keep — Clean up never moves it to the trash</td></tr>"
+           "<tr><td><b>Typing</b></td><td>Write on the selected napkin</td></tr>"
            "<tr><td><b>Delete</b></td><td>Move to trash</td></tr>"
            "<tr><td><b>R</b></td><td>Restore (in the trash)</td></tr>"
            "</table>"));
@@ -685,9 +709,31 @@ void MainWindow::restoreRow(int row)
     if (model_->mode() != BufferListModel::Mode::Trash) return;
     const BufferId id = model_->idAt(row);
     if (id == kNoBuffer) return;
-    if (!guarded(tr("Could not restore that napkin"), [&] { service_.restore(id); })) return;
+    BufferId target = id;
+    if (!guarded(tr("Could not restore that napkin"), [&] { target = service_.restore(id); })) return;
+
+    // The restored napkin has left the trash, so it must leave the board too.
+    // It stayed there, beside a list that no longer held it (second
+    // usability test) — the list/board disagreement again, by another road.
+    if (editingBuffer_ == id) {
+        editingBuffer_ = kNoBuffer;
+        canvas_->showNothingSelected();
+    }
     reloadPreservingSelection();
     updateEmptyTrashButton();
+
+    // Restore used to happen in silence; now it says where things went.
+    if (target != id) {
+        const auto counts = items_.countsForBuffer(target);
+        const QString title = derivePreview(items_.previewHead(target), counts.total, counts.images).primary;
+        toast_->inform(tr("Restored to “%1”").arg(title.left(40)));
+    } else {
+        toast_->offer(tr("Napkin restored"), [this, id] {
+            guarded(tr("Could not undo that"), [&] { if (!service_.trash(id)) service_.trashConfirmed(id); });
+            reloadPreservingSelection();
+            updateEmptyTrashButton();
+        });
+    }
 }
 
 // A quiet line, shown only when there is genuinely something to clean up and
@@ -818,10 +864,16 @@ void MainWindow::togglePin(int row)
 
     const auto buffer = buffers_.find(id);
     if (!buffer) return;
+    const bool was = buffer->pinned;
     if (!guarded(tr("Could not pin that napkin"),
-                 [&] { service_.setPinned(id, !buffer->pinned); }))
+                 [&] { service_.setPinned(id, !was); }))
         return;
     reloadPreservingSelection();   // pinning moves the card; that is the point
+    // Never silent: a pin changed by a stray key must be seen, and undoable.
+    toast_->offer(was ? tr("Unpinned") : tr("Pinned — it stays at the top"), [this, id, was] {
+        guarded(tr("Could not undo that"), [&] { service_.setPinned(id, was); });
+        reloadPreservingSelection();
+    });
 }
 
 void MainWindow::toggleKeep(int row)
@@ -831,10 +883,16 @@ void MainWindow::toggleKeep(int row)
 
     const auto buffer = buffers_.find(id);
     if (!buffer) return;
+    const bool was = buffer->kept;
     if (!guarded(tr("Could not change that napkin"),
-                 [&] { service_.setKept(id, !buffer->kept); }))
+                 [&] { service_.setKept(id, !was); }))
         return;
     model_->refreshRow(id);        // keeping changes nothing about placement
+    toast_->offer(was ? tr("No longer kept") : tr("Kept — Clean up will leave it alone"),
+                  [this, id, was] {
+        guarded(tr("Could not undo that"), [&] { service_.setKept(id, was); });
+        model_->refreshRow(id);
+    });
 }
 
 void MainWindow::trashRow(int row)
@@ -927,10 +985,10 @@ void MainWindow::showContextMenu(int row, const QPoint& globalPos)
         // Pin and Keep both sound like "important", so each says what it does
         // (usability test: a new user could not tell them apart).
         menu.setToolTipsVisible(true);
-        auto* pin = menu.addAction(buffer->pinned ? tr("Unpin\tP") : tr("Pin\tP"),
+        auto* pin = menu.addAction(buffer->pinned ? tr("Unpin\tCtrl+P") : tr("Pin\tCtrl+P"),
                                    this, [this, row] { togglePin(row); });
         pin->setToolTip(tr("Pinned napkins stay at the top of the list."));
-        auto* keep = menu.addAction(buffer->kept ? tr("Release keep\tK") : tr("Keep\tK"),
+        auto* keep = menu.addAction(buffer->kept ? tr("Release keep\tCtrl+D") : tr("Keep\tCtrl+D"),
                                     this, [this, row] { toggleKeep(row); });
         keep->setToolTip(tr("Clean up never moves a kept napkin to the trash. "
                             "It stays until you delete it yourself."));
@@ -958,7 +1016,7 @@ void MainWindow::updateEmptyState()
     if (model_->mode() == BufferListModel::Mode::Trash) {
         emptyState_->setContent(QStringLiteral(":/resources/icons/trash-empty-256.png"),
                           tr("The trash is empty"),
-                          tr("Deleted napkins stay here for %1 days.")
+                          tr("Deleted napkins and items stay here for %1 days.")
                               .arg(BufferService::trashRetentionDays()),
                           tr("Back to your napkins"));
         stack_->setCurrentIndex(2);
@@ -1057,9 +1115,30 @@ bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
     return true;
 }
 
+void MainWindow::completePendingCut()
+{
+    const PendingCut cut = pendingCut_;
+    pendingCut_ = {};
+    if (cut.holder == kNoBuffer) return;
+    const QMimeData* now = QApplication::clipboard()->mimeData();
+    if (now != cut.clip || !now || now->text() != cut.text) return;   // clipboard moved on
+    const auto held = buffers_.find(cut.holder);
+    if (!held || !held->inTrash()) return;                            // undone, or restored
+    guarded(tr("Could not tidy up after the cut"),
+            [&] { buffers_.hardDeleteEvenIfKept(cut.holder); });
+    toast_->dismiss();   // its Undo would put back what has just been pasted
+    updateEmptyTrashButton();
+}
+
 void MainWindow::pasteFromClipboard()
 {
-    if (model_->mode() != BufferListModel::Mode::Live) return;
+    // Pasting while looking at the trash did nothing at all. It now does what
+    // Ctrl+N there does: leave the trash, then paste into a new napkin.
+    if (model_->mode() != BufferListModel::Mode::Live) {
+        showTrash(false);
+        if (trashToggle_) trashToggle_->setChecked(false);
+        if (showTrashAction_) showTrashAction_->setChecked(false);
+    }
 
     const auto content = readClipboard(QApplication::clipboard()->mimeData());
     if (content.kind == ClipboardContent::Kind::None) return;
@@ -1072,38 +1151,41 @@ void MainWindow::pasteFromClipboard()
     if (!currentBufferIsLive() && !model_->hasDraft()) newDraft();
 
     if (content.kind == ClipboardContent::Kind::Image) {
-        addImageToCurrent(content.imageBytes, content.imageMime, QString());
+        if (addImageToCurrent(content.imageBytes, content.imageMime, QString())) completePendingCut();
         return;
     }
-    appendTextBlock(content.text);
+    if (appendTextBlock(content.text)) completePendingCut();
 }
 
 // Ctrl+T, and the path every pasted text block takes.
-void MainWindow::appendTextBlock(const QString& text)
+bool MainWindow::appendTextBlock(const QString& text)
 {
-    if (model_->mode() != BufferListModel::Mode::Live) return;
+    if (model_->mode() != BufferListModel::Mode::Live) return false;
     if (!currentBufferIsLive() && !model_->hasDraft()) newDraft();
-    if (!flushAndReportFailure()) return;
+    if (!flushAndReportFailure()) return false;
 
     if (text.isEmpty()) {          // Ctrl+T: an empty card to type into
         canvas_->addPendingTextCard();
-        return;
+        return false;
     }
 
-    const bool ok = guarded(tr("Could not add that text"), [this, &text] {
+    bool stored = false;
+    const bool ok = guarded(tr("Could not add that text"), [this, &text, &stored] {
         if (editingBuffer_ == kNoBuffer) {
             if (text.trimmed().isEmpty()) return;
             Draft draft;
             draft.setText(text);
             editingBuffer_ = service_.commitDraft(draft);
             if (editingBuffer_ == kNoBuffer) return;
+            stored = true;
             if (model_->hasDraft()) model_->promoteDraft(editingBuffer_);
             else                    reloadPreservingSelection();
         } else if (!text.trimmed().isEmpty()) {
             service_.appendTo(editingBuffer_, Item::makeText(text));
+            stored = true;
         }
     });
-    if (!ok) return;
+    if (!ok) return false;
 
     if (editingBuffer_ != kNoBuffer)
         canvas_->setItems(items_.listForBuffer(editingBuffer_));
@@ -1112,6 +1194,7 @@ void MainWindow::appendTextBlock(const QString& text)
     // not also a request to write another one. Ctrl+T is that request, and it
     // returns above.
     updateEmptyState();
+    return stored;
 }
 
 void MainWindow::addImageFromFile()
@@ -1222,8 +1305,12 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     // empty napkin means, so the text goes to a note instead.
     if (watched == view_ && event->type() == QEvent::KeyPress) {
         auto* key = static_cast<QKeyEvent*>(event);
-        const bool onDraft = model_->hasDraft() && view_->currentIndex().row() == model_->draftRow();
-        if (onDraft && canvas_->startsNoteOnTyping() && ItemCanvas::isTyping(key)) {
+        const int row = view_->currentIndex().row();
+        if (ItemCanvas::isTyping(key) && row >= 0
+            && model_->mode() == BufferListModel::Mode::Live) {
+            // Typing on a napkin in the list writes on that napkin, as typing
+            // does everywhere else in Napkin.
+            if (model_->idAt(row) != editingBuffer_ || !canvas_->showingANapkin()) selectBuffer(row);
             canvas_->startNote(key->text());
             return true;
         }
@@ -1306,6 +1393,19 @@ void MainWindow::removeItems(const QList<ItemId>& ids, bool cut)
         // removed slot, or the last item if you deleted off the end.
         canvas_->setItems(items_.listForBuffer(buffer), firstRemovedIndex);
         model_->invalidatePreview(buffer);
+    }
+
+    pendingCut_ = {};
+    if (cut) {
+        bool faithful = removed.size() == 1;
+        if (!faithful) {
+            faithful = true;
+            for (const Item& item : removed) faithful &= item.type == ItemType::Text;
+        }
+        if (faithful) {
+            const QMimeData* clip = QApplication::clipboard()->mimeData();
+            pendingCut_ = {clip, clip ? clip->text() : QString(), trashed.holder};
+        }
     }
 
     const int n = int(removed.size());

@@ -1,4 +1,5 @@
 #include "Preview.h"
+#include "Links.h"
 #include <QObject>
 #include <QStringList>
 
@@ -61,8 +62,22 @@ BufferPreview derivePreview(const std::vector<Item>& head, int totalCount, int i
 
     if (head.empty()) return p;
 
-    const Item& first = head.front();
-    if (first.type == ItemType::Text) {
+    // The title comes from the first NOTE, then the first link, then the first
+    // image. A napkin that began with a picture or a URL was titled "Image" or
+    // by the raw address, even when a note on it said what it was about — and
+    // Export, which names folders from text, called the same napkin something
+    // sensible (second usability test, 2026-09-19).
+    const Item* note = nullptr;
+    const Item* link = nullptr;
+    for (const auto& i : head) {
+        if (i.type != ItemType::Text || nonBlankLines(i.text, 1).isEmpty()) continue;
+        if (links::soleUrl(i.text)) { if (!link) link = &i; }
+        else { note = &i; break; }
+    }
+    const Item& first = note ? *note : link ? *link : head.front();
+    if (&first == link) {
+        p.primary = links::displayForm(*links::soleUrl(first.text));
+    } else if (first.type == ItemType::Text) {
         const auto lines = nonBlankLines(first.text, 2);
         if (!lines.isEmpty()) p.primary = lines.first();
         if (lines.size() > 1)  p.secondary = lines.at(1);

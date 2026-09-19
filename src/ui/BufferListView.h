@@ -21,8 +21,6 @@ public:
 
 signals:
     void rowActivated(int row);          // Enter or double-click
-    void pinToggleRequested(int row);
-    void keepToggleRequested(int row);
     void trashRequested(int row);
     void restoreRequested(int row);
     void contextMenuRequested(int row, const QPoint& globalPos);

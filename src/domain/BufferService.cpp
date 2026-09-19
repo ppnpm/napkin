@@ -78,6 +78,7 @@ BufferService::TrashedItems BufferService::trashItems(BufferId from,
         const BufferId holder = buffers_.create();
         for (ItemId id : ids)
             if (const auto item = items_.find(id)) items_.moveTo(id, holder, item->position);
+        buffers_.setRestoresTo(holder, from);
         buffers_.moveToTrash(holder);
         buffers_.touch(from);
         out = {holder, false};
@@ -106,7 +107,26 @@ void BufferService::setKept(BufferId id, bool kept)     { buffers_.setKept(id, k
 
 bool BufferService::trash(BufferId id)          { return buffers_.moveToTrash(id); }
 void BufferService::trashConfirmed(BufferId id) { buffers_.moveToTrashConfirmed(id); }
-void BufferService::restore(BufferId id)        { buffers_.restore(id); }
+BufferId BufferService::restore(BufferId id)
+{
+    Transaction tx(db_);
+    BufferId target = id;
+    const auto origin = buffers_.restoresTo(id);
+    const auto home = origin ? buffers_.find(*origin) : std::nullopt;
+    if (home && !home->inTrash()) {
+        for (const Item& item : items_.listForBuffer(id)) items_.moveTo(item.id, *origin, item.position);
+        buffers_.removeIfEmpty(id);
+        buffers_.touch(*origin);
+        target = *origin;
+    } else {
+        // Its napkin is gone or in the trash itself: it comes back as a napkin
+        // of its own, and from then on it is one.
+        buffers_.clearRestoresTo(id);
+        buffers_.restore(id);
+    }
+    tx.commit();
+    return target;
+}
 
 int BufferService::purgeExpiredTrash()
 {

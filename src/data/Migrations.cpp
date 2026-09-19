@@ -129,6 +129,17 @@ CREATE TRIGGER items_fts_update AFTER UPDATE ON items BEGIN
 END;
 )SQL";
 
+// --- v6: trashed items remember their napkin ----------------------------------
+// Deleting items moves them into a napkin of their own in the trash. Restoring
+// that napkin used to leave the items there, as a separate napkin, while the
+// one they came from still said "2 items" (second usability test). The holder
+// now records where its items belong, and restoring puts them back if that
+// napkin is still around. No foreign key: the original may be purged first,
+// and then the holder simply restores as a napkin of its own.
+constexpr const char* kV6 = R"SQL(
+ALTER TABLE buffers ADD COLUMN restores_to INTEGER;
+)SQL";
+
 struct Migration {
     int version;
     const char* sql;
@@ -140,6 +151,7 @@ constexpr std::array kMigrations{
     Migration{3, kV3},
     Migration{4, kV4},
     Migration{5, kV5},
+    Migration{6, kV6},
 };
 
 }  // namespace

@@ -17,9 +17,11 @@ UndoToast::UndoToast(QWidget* parent) : QWidget(parent)
 
     message_ = new QLabel;
     auto* undo = new QPushButton(tr("Undo"));
+    undoButton_ = undo;
     undo->setFlat(true);
     undo->setCursor(Qt::PointingHandCursor);
     undo->setAccessibleName(tr("Undo the last deletion"));
+    undo->setToolTip(tr("Undo (Ctrl+Z)"));
 
     layout->addWidget(message_);
     layout->addWidget(undo);
@@ -29,18 +31,42 @@ UndoToast::UndoToast(QWidget* parent) : QWidget(parent)
     timer_->setInterval(kVisibleMs);
     connect(timer_, &QTimer::timeout, this, &UndoToast::dismiss);
 
-    connect(undo, &QPushButton::clicked, this, [this] {
-        auto action = undo_;
-        dismiss();
-        if (action) { action(); emit undone(); }
-    });
+    connect(undo, &QPushButton::clicked, this, [this] { undoNow(); });
 
     hide();
+}
+
+bool UndoToast::undoNow()
+{
+    auto action = undo_;
+    if (!action) return false;
+    dismiss();
+    action();
+    emit undone();
+    return true;
+}
+
+void UndoToast::inform(const QString& message)
+{
+    offer(message, nullptr);
+}
+
+void UndoToast::enterEvent(QEnterEvent* e)
+{
+    timer_->stop();
+    QWidget::enterEvent(e);
+}
+
+void UndoToast::leaveEvent(QEvent* e)
+{
+    if (isVisible()) timer_->start();
+    QWidget::leaveEvent(e);
 }
 
 void UndoToast::offer(const QString& message, std::function<void()> undo)
 {
     undo_ = std::move(undo);
+    undoButton_->setVisible(bool(undo_));
     message_->setText(message);
     adjustSize();
     reposition();

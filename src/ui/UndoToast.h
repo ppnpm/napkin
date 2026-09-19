@@ -24,7 +24,13 @@ public:
     // user is most likely to have meant. The action is a closure so buffer-level
     // and item-level undo share one widget rather than one growing an enum.
     void offer(const QString& message, std::function<void()> undo);
+    // A message with nothing to undo — "Restored to …". No Undo button.
+    void inform(const QString& message);
     void dismiss();
+    // Ctrl+Z. The toast was the only way to undo a delete, and eight seconds
+    // was not always enough to read it and reach the button (second usability
+    // test). Returns whether there was anything to undo.
+    bool undoNow();
 
     // Re-centres without touching the message or restarting the countdown.
     void reposition();
@@ -37,9 +43,14 @@ signals:
 
 protected:
     void paintEvent(QPaintEvent* e) override;
+    // The countdown pauses while the pointer is on the toast: someone reaching
+    // for Undo must not have it vanish under the cursor.
+    void enterEvent(QEnterEvent* e) override;
+    void leaveEvent(QEvent* e) override;
 
 private:
     QLabel*      message_ = nullptr;
+    QPushButton* undoButton_ = nullptr;
     QTimer*      timer_   = nullptr;
     std::function<void()> undo_;
 };
