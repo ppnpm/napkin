@@ -107,7 +107,7 @@ void ItemCard::setSelected(bool selected)
 
 void ItemCard::acknowledge(const QString& message)
 {
-    if (footer_) footer_->flash(message);
+    if (footer_) footer_->acknowledgeAction(message);
 }
 
 void ItemCard::noteSaved(Timestamp when)

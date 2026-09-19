@@ -1,4 +1,5 @@
 #include "CardFooter.h"
+#include <algorithm>
 #include <QEvent>
 #include "Icons.h"
 #include "Tokens.h"
@@ -51,6 +52,18 @@ void CardFooter::flash(const QString& message)
     update();
 }
 
+void CardFooter::acknowledgeAction(const QString& message)
+{
+    actionFlash_ = message;
+    if (!actionFlashTimer_) {
+        actionFlashTimer_ = new QTimer(this);
+        actionFlashTimer_->setSingleShot(true);
+        connect(actionFlashTimer_, &QTimer::timeout, this, [this] { actionFlash_.clear(); update(); });
+    }
+    actionFlashTimer_->start(1600);
+    update();
+}
+
 void CardFooter::setClipped(bool clipped)
 {
     if (clipped_ == clipped) return;
@@ -71,7 +84,10 @@ void CardFooter::refreshTimestamp()
 QRect CardFooter::actionRect() const
 {
     const QFontMetrics fm(font());
-    const int w = kIcon + kIconGap + fm.horizontalAdvance(label_);
+    // As wide as the wider of the two labels, so the click target does not
+    // shrink under the pointer while "Copied" is showing.
+    const int w = kIcon + kIconGap + std::max(fm.horizontalAdvance(label_),
+                                              fm.horizontalAdvance(actionFlash_));
     return QRect(0, 0, w + 8, height());
 }
 
@@ -91,7 +107,11 @@ void CardFooter::paintEvent(QPaintEvent*)
     p.setRenderHint(QPainter::Antialiasing, true);
     const QPalette& pal = palette();
 
-    const QColor actionColour = hoveringAction_ ? text(pal, 230) : text(pal, kTextTertiary);
+    // While acknowledging, the action is drawn at full accent strength, as the
+    // age's flash is: it is the answer to the click.
+    const QColor actionColour = !actionFlash_.isEmpty() ? readableAccent(pal, 1.0)
+                              : hoveringAction_         ? text(pal, 230)
+                                                        : text(pal, kTextTertiary);
     const QRect action = actionRect();
     icons::drawCopy(&p, QRect(action.left(), (height() - kIcon) / 2, kIcon, kIcon),
                     actionColour);
@@ -99,7 +119,7 @@ void CardFooter::paintEvent(QPaintEvent*)
     p.setPen(actionColour);
     p.drawText(QRect(action.left() + kIcon + kIconGap, 0,
                      action.width() - kIcon - kIconGap, height()),
-               Qt::AlignLeft | Qt::AlignVCenter, label_);
+               Qt::AlignLeft | Qt::AlignVCenter, shownActionLabel());
 
     // A clipped card has to say so. The previous attempt painted a fade in the
     // card's own paintEvent — but the text edit is a CHILD and paints after its

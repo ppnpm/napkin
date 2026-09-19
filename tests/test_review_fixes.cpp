@@ -425,8 +425,11 @@ private slots:
         QVERIFY(footer);
         emit card->copyRequested(card->itemId());
         // Copying changes nothing on screen otherwise, so there is no way to
-        // know it worked.
-        QVERIFY(footer->isFlashing());
+        // know it worked. It says so on the button that was pressed, not in
+        // place of the age at the far end of the footer.
+        QCOMPARE(footer->shownActionLabel(), QStringLiteral("Copied"));
+        QVERIFY(!footer->isFlashing());
+        QTRY_COMPARE_WITH_TIMEOUT(footer->shownActionLabel(), QStringLiteral("Copy text"), 3000);
     }
 
     void savingAnEditAcknowledgesItselfAndResetsTheAge()

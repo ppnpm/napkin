@@ -30,6 +30,12 @@ public:
     // way a user can tell that a copy happened, or that an edit was written.
     void flash(const QString& message);
     bool isFlashing() const { return !flash_.isEmpty(); }
+    // Acknowledges the ACTION on the action itself: "Copy text" reads "Copied"
+    // for a moment. It used to replace the age at the other end of the footer,
+    // away from where the user had just clicked. "Saved" stays over there —
+    // it is about the note, not the button.
+    void acknowledgeAction(const QString& message);
+    QString shownActionLabel() const { return actionFlash_.isEmpty() ? label_ : actionFlash_; }
     void refreshTimestamp();
 
 signals:
@@ -54,6 +60,8 @@ private:
     bool    clipped_ = false;
     QString flash_;
     QTimer* flashTimer_ = nullptr;
+    QString actionFlash_;
+    QTimer* actionFlashTimer_ = nullptr;
 };
 
 }  // namespace napkin
