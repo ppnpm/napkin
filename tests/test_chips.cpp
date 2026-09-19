@@ -143,7 +143,13 @@ private slots:
         QVERIFY2(shown.startsWith(QChar(0x2026)) || shown == QStringLiteral("build-artifacts.ci.eu-west-2.internal.example.com"),
                  qPrintable(shown));
         QVERIFY2(QFontMetrics(host->font()).horizontalAdvance(shown) <= host->width(), qPrintable(shown));
-        QVERIFY2(shown.endsWith(QStringLiteral(".example.com")) || shown == QStringLiteral("\u2026example.com"), qPrintable(shown));   // whose site it is survives, whole
+        // Whose site it is survives whole — whenever that can fit at all. The
+        // test cannot assume a width: CI's font is wider than the dev
+        // machine's, and there "…example.com" does not fit in 250px, where the
+        // honest fallback is to cut inside the name.
+        const QString domain = QString(QChar(0x2026)) + QStringLiteral("example.com");
+        if (QFontMetrics(host->font()).horizontalAdvance(domain) <= host->width())
+            QVERIFY2(shown.endsWith(QStringLiteral(".example.com")) || shown == domain, qPrintable(shown));
     }
 
 };
