@@ -16,6 +16,8 @@
 #include <QSpinBox>
 #include <QFontComboBox>
 #include <QStyleFactory>
+#include <QStyleHints>
+#include <QStyle>
 #include <algorithm>
 #include <QVBoxLayout>
 
@@ -44,6 +46,33 @@ QFont& systemFont()
 {
     static QFont saved = QApplication::font();
     return saved;
+}
+
+// The platform's own widget style, for the same reason: once Napkin has
+// replaced it there is nothing left to ask.
+QString& systemStyle()
+{
+    static QString saved = QApplication::style()->name();
+    return saved;
+}
+
+// Windows' native style (windowsvista) draws controls through the system theme
+// engine, which ignores the application palette. In dark mode the window went
+// dark and every button, dropdown, field and scroll bar stayed light — and
+// under Napkin's own Dark theme they were light with white text, close to
+// invisible. test_native_style has the renders. Fusion draws everything from
+// the palette, so a dark Napkin uses it; a light one keeps the native look.
+// Elsewhere the platform style already honours the palette and is left alone.
+void applyStyle(bool dark)
+{
+#ifdef Q_OS_WIN
+    const QString wanted = dark ? QStringLiteral("fusion") : systemStyle();
+    if (QApplication::style()->name().compare(wanted, Qt::CaseInsensitive) != 0) {
+        if (QStyle* style = QStyleFactory::create(wanted)) QApplication::setStyle(style);
+    }
+#else
+    Q_UNUSED(dark);
+#endif
 }
 
 // A short, named set rather than a colour wheel. Napkin is not a theming
@@ -191,9 +220,17 @@ int SettingsDialog::trashRetentionDays()
 
 void SettingsDialog::applyAppearance()
 {
-    // Capture the platform's own choices before overriding either of them.
+    // Capture the platform's own choices before overriding any of them.
     systemPalette();
     systemFont();
+    systemStyle();
+
+    // Before the palette: a style change can hand widgets its own standard
+    // palette, and the one Napkin sets must be the last word.
+    const bool dark = theme() == Theme::Dark
+        || (theme() == Theme::System
+            && QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark);
+    applyStyle(dark);
 
     switch (theme()) {
     case Theme::System:
