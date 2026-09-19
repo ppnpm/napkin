@@ -149,15 +149,12 @@ jobs:
             build/Testing/Temporary/
             ctest.log
 
-  # Informational until Phase 9. SPEC §16 puts Windows after Linux is genuinely
-  # good, and this job exists to replace guesses about the port with a build log:
-  # POSIX fsync and directory sync in BlobStore, QFile::rename over an existing
-  # file, and QFile::setPermissions as an ACL substitute are all known to need
-  # work. A red mark here is expected and does not gate anything.
+  # Gating since Windows started shipping (Phase 9). It began as an
+  # informational job that replaced guesses about the port with build logs;
+  # SPEC §16 records what it found.
   windows:
-    name: Windows (informational)
+    name: Windows
     runs-on: windows-2022
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 

@@ -191,8 +191,13 @@ jobs:
           # The runtime is copied by hand rather than by --compiler-runtime,
           # which ships vc_redist.x64.exe for the user to run instead of the
           # DLLs themselves.
+          # Not shipped: the DirectX shader compiler (for Qt Quick, which Napkin
+          # does not use), and the TLS and network-information plugins —
+          # Qt6Network is linked only for the local single-instance pipe, and
+          # invariant 4 says there is no network code path to load them into.
           & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations `
-            --no-compiler-runtime --no-system-d3d-compiler --no-opengl-sw "$dist\napkin.exe"
+            --no-compiler-runtime --no-system-d3d-compiler --no-system-dxc-compiler `
+            --no-opengl-sw --skip-plugin-types tls,networkinformation "$dist\napkin.exe"
           if ($LASTEXITCODE -ne 0) { Write-Host "::error title=windeployqt failed::exit $LASTEXITCODE"; exit 1 }
           $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1
           if (-not $crt) { Write-Host "::error title=No MSVC runtime::VCToolsRedistDir=$env:VCToolsRedistDir"; exit 1 }
@@ -208,6 +213,8 @@ jobs:
             'imageformats\qwebp.dll', 'imageformats\qsvg.dll', 'iconengines\qsvgicon.dll',
             'Qt6Svg.dll', 'sqlite3.dll', 'vcruntime140.dll', 'msvcp140.dll'
           ) | Where-Object { -not (Test-Path "$dist\$_") }
+          $unwanted = @('tls', 'networkinformation', 'dxcompiler.dll') | Where-Object { Test-Path "$dist\$_" }
+          if ($unwanted) { Write-Host "::error title=Bundle has what it should not::$($unwanted -join ', ')"; exit 1 }
           if ($missing) {
             Write-Host "::error title=Bundle incomplete::missing $($missing -join ', ')"
             Get-ChildItem -Recurse $dist | ForEach-Object { $_.FullName } | Write-Host

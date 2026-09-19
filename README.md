@@ -6,8 +6,8 @@ Napkin is somewhere to put things before you know whether they matter. Paste
 text and images into it; nothing needs a name, a folder or a tag. Everything
 stays on this machine.
 
-> **Status: early development (0.1.x), Linux only.** Expect rough edges.
-> Windows and macOS are planned, not started.
+> **Status: early development (0.1.x), Linux and Windows.** Expect rough edges.
+> Windows is newer and less used than Linux; macOS is planned, not started.
 
 ## What it does
 
@@ -40,13 +40,21 @@ stays on this machine.
 
 ## Install
 
-Releases publish an AppImage on the
-[releases page](https://github.com/sudomonas/napkin/releases):
+Releases publish an AppImage and a Windows zip on the
+[releases page](https://github.com/sudomonas/napkin/releases).
+
+**Linux:**
 
 ```sh
 chmod +x napkin-v*-x86_64.AppImage
 ./napkin-v*-x86_64.AppImage
 ```
+
+**Windows 10 and 11 (64-bit):** unzip `napkin-v*-windows-x64.zip` anywhere and
+run `napkin.exe`; nothing needs installing. The build is not code-signed, so
+SmartScreen will warn the first time — *More info → Run anyway*. Your napkins
+are kept in `%LOCALAPPDATA%\napkin\napkin`, readable only by you, so deleting
+the unzipped folder does not delete them.
 
 On **Arch Linux**, build a pacman package from the latest `master`:
 
