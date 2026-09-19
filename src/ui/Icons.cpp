@@ -1,4 +1,11 @@
 #include "Icons.h"
+#include <cmath>
+#include <QImageReader>
+#include <QFile>
+#include <QBuffer>
+#include <algorithm>
+#include <QPalette>
+#include <QPixmap>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRect>
@@ -95,6 +102,133 @@ void drawLink(QPainter* p, const QRect& box, const QColor& colour)
     p->drawLine(QPointF(r.left() + w * 0.36, r.top() + h * 0.56),
                 QPointF(r.left() + w * 0.64, r.top() + h * 0.44));
     p->restore();
+}
+
+void drawTrash(QPainter* p, const QRect& box, const QColor& colour)
+{
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    const QRectF r(box);
+    const qreal w = r.width(), h = r.height();
+    QPen pen(colour, std::max(1.0, w * 0.085));
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    p->setPen(pen);
+    p->setBrush(Qt::NoBrush);
+    // Lid and handle.
+    p->drawLine(QPointF(r.left() + w * 0.08, r.top() + h * 0.22),
+                QPointF(r.right() - w * 0.08, r.top() + h * 0.22));
+    p->drawLine(QPointF(r.left() + w * 0.38, r.top() + h * 0.08),
+                QPointF(r.right() - w * 0.38, r.top() + h * 0.08));
+    // The can, narrowing slightly towards the bottom.
+    QPainterPath can;
+    can.moveTo(r.left() + w * 0.18, r.top() + h * 0.22);
+    can.lineTo(r.left() + w * 0.25, r.bottom() - h * 0.06);
+    can.lineTo(r.right() - w * 0.25, r.bottom() - h * 0.06);
+    can.lineTo(r.right() - w * 0.18, r.top() + h * 0.22);
+    p->drawPath(can);
+    // Two ribs, so it reads as a bin and not as a cup.
+    p->drawLine(QPointF(r.left() + w * 0.42, r.top() + h * 0.38),
+                QPointF(r.left() + w * 0.43, r.bottom() - h * 0.20));
+    p->drawLine(QPointF(r.right() - w * 0.42, r.top() + h * 0.38),
+                QPointF(r.right() - w * 0.43, r.bottom() - h * 0.20));
+    p->restore();
+}
+
+void drawPlus(QPainter* p, const QRect& box, const QColor& colour)
+{
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    const QRectF r(box);
+    QPen pen(colour, std::max(1.0, r.width() * 0.10));
+    pen.setCapStyle(Qt::RoundCap);
+    p->setPen(pen);
+    p->drawLine(QPointF(r.center().x(), r.top() + r.height() * 0.2), QPointF(r.center().x(), r.bottom() - r.height() * 0.2));
+    p->drawLine(QPointF(r.left() + r.width() * 0.2, r.center().y()), QPointF(r.right() - r.width() * 0.2, r.center().y()));
+    p->restore();
+}
+
+void drawGear(QPainter* p, const QRect& box, const QColor& colour)
+{
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    const QRectF r(box);
+    QPen pen(colour, std::max(1.0, r.width() * 0.09));
+    pen.setCapStyle(Qt::RoundCap);
+    p->setPen(pen);
+    p->setBrush(Qt::NoBrush);
+    const QPointF c = r.center();
+    const qreal outer = r.width() * 0.42, ring = r.width() * 0.28, hub = r.width() * 0.11;
+    for (int k = 0; k < 8; ++k) {
+        const qreal a = k * 3.14159265 / 4;
+        p->drawLine(c + QPointF(std::cos(a), std::sin(a)) * ring, c + QPointF(std::cos(a), std::sin(a)) * outer);
+    }
+    p->drawEllipse(c, ring, ring);
+    p->drawEllipse(c, hub, hub);
+    p->restore();
+}
+
+void drawMore(QPainter* p, const QRect& box, const QColor& colour)
+{
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    const QRectF r(box);
+    const qreal d = std::max(2.0, r.width() * 0.17);
+    p->setPen(Qt::NoPen);
+    p->setBrush(colour);
+    for (int k = -1; k <= 1; ++k)
+        p->drawEllipse(QPointF(r.center().x() + k * r.width() * 0.34, r.center().y()), d / 2, d / 2);
+    p->restore();
+}
+
+QIcon glyphIcon(GlyphPainter draw, const QPalette& palette, int size, qreal dpr)
+{
+    auto render = [&](const QColor& colour) {
+        QPixmap pm(QSize(size, size) * dpr);
+        pm.setDevicePixelRatio(dpr);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        draw(&p, QRect(0, 0, size, size), colour);
+        return pm;
+    };
+    QIcon icon;
+    icon.addPixmap(render(palette.color(QPalette::ButtonText)), QIcon::Normal);
+    icon.addPixmap(render(palette.color(QPalette::ButtonText)), QIcon::Active);
+    icon.addPixmap(render(palette.color(QPalette::Disabled, QPalette::ButtonText)), QIcon::Disabled);
+    return icon;
+}
+
+namespace {
+QPixmap renderSvg(const QByteArray& svg, const QColor& colour, int size, qreal dpr)
+{
+    QByteArray coloured = svg;
+    coloured.replace("currentColor", colour.name().toLatin1());
+    QBuffer buffer(&coloured);
+    buffer.open(QIODevice::ReadOnly);
+    QImageReader reader(&buffer, "svg");
+    reader.setScaledSize(QSize(size, size) * dpr);
+    QImage image = reader.read();
+    if (image.isNull()) return {};
+    QPixmap pm = QPixmap::fromImage(image);
+    pm.setDevicePixelRatio(dpr);
+    return pm;
+}
+}  // namespace
+
+QIcon libraryIcon(const char* name, const QPalette& palette, int size, qreal dpr,
+                  GlyphPainter fallback)
+{
+    QFile file(QStringLiteral(":/resources/icons/lucide/%1.svg").arg(QLatin1String(name)));
+    const QByteArray svg = file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+    const QPixmap normal = renderSvg(svg, palette.color(QPalette::ButtonText), size, dpr);
+    if (normal.isNull()) return glyphIcon(fallback, palette, size, dpr);
+
+    QIcon icon;
+    icon.addPixmap(normal, QIcon::Normal);
+    icon.addPixmap(normal, QIcon::Active);
+    icon.addPixmap(renderSvg(svg, palette.color(QPalette::Disabled, QPalette::ButtonText), size, dpr),
+                   QIcon::Disabled);
+    return icon;
 }
 
 }  // namespace napkin::icons

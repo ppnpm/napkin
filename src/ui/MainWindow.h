@@ -87,6 +87,9 @@ protected:
 private:
     void updateEmptyTrashButton();
     void styleMenuBar();
+    // The toolbar's drawn icons carry the theme's colour, so they are redrawn
+    // whenever the palette changes.
+    void styleToolbarIcons();
     void buildUi();
     QWidget* buildHeaderWidget();
     QMenu* buildOverflowMenu();
@@ -160,6 +163,8 @@ private:
     QPushButton*     emptyTrashButton_ = nullptr;
     QToolButton*     overflowButton_ = nullptr;
     QPushButton*     trashToggle_ = nullptr;
+    QPushButton*     newButton_ = nullptr;
+    QToolButton*     settingsButton_ = nullptr;
     QAction*         showTrashAction_ = nullptr;
     QAction*         exportBufferAction_ = nullptr;
     QLineEdit*       search_ = nullptr;

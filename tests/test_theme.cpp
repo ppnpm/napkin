@@ -4,6 +4,11 @@
 #include "GuiFixture.h"
 
 #include <QLabel>
+#include <QAbstractButton>
+#include <QTimer>
+#include <QImageReader>
+#include <QPushButton>
+#include <QToolButton>
 #include <QComboBox>
 #include <QGroupBox>
 #include <QMenuBar>
@@ -303,6 +308,68 @@ private slots:
         theme->setCurrentIndex(int(SettingsDialog::Theme::Dark));
         const QColor dark = preview->palette().color(preview->backgroundRole());
         QVERIFY2(dark.lightnessF() < light.lightnessF(), "the preview does not show the theme");
+    }
+
+
+    void theToolbarIconsFollowTheTheme()
+    {
+        GuiFixture f;
+        auto* trash = f.window.findChild<QPushButton*>(QStringLiteral("trashToggle"));
+        auto* more = f.window.findChild<QToolButton*>(QStringLiteral("overflowButton"));
+        QVERIFY(trash && more);
+        QVERIFY(!trash->icon().isNull());
+        QVERIFY(!more->icon().isNull());
+        QVERIFY(more->text().isEmpty() || more->toolButtonStyle() == Qt::ToolButtonIconOnly);
+
+        auto centre = [](const QIcon& icon) {   // the colour the glyph is drawn in
+            const QImage img = icon.pixmap(16, 16).toImage();
+            QColor best; int alpha = -1;
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x)
+                    if (img.pixelColor(x, y).alpha() > alpha) { alpha = img.pixelColor(x, y).alpha(); best = img.pixelColor(x, y); }
+            return best;
+        };
+        QSettings().setValue(QStringLiteral("appearance/theme"), int(SettingsDialog::Theme::Light));
+        SettingsDialog::applyAppearance();
+        QCoreApplication::processEvents();
+        const QColor light = centre(trash->icon());
+        QSettings().setValue(QStringLiteral("appearance/theme"), int(SettingsDialog::Theme::Dark));
+        SettingsDialog::applyAppearance();
+        QCoreApplication::processEvents();
+        const QColor dark = centre(trash->icon());
+        QVERIFY2(dark.lightnessF() > light.lightnessF(), "the trash glyph did not follow the theme");
+        QSettings().setValue(QStringLiteral("appearance/theme"), int(SettingsDialog::Theme::Light));
+        SettingsDialog::applyAppearance();
+    }
+
+
+    void theToolbarUsesTheBundledLucideIcons()
+    {
+        if (!QImageReader::supportedImageFormats().contains("svg"))
+            QSKIP("no SVG image plugin here; the drawn fallbacks are used instead");
+        for (const char* name : {"plus", "ellipsis", "trash-2", "settings"}) {
+            QImageReader reader(QStringLiteral(":/resources/icons/lucide/%1.svg").arg(QLatin1String(name)));
+            QVERIFY2(!reader.read().isNull(), name);
+        }
+        GuiFixture f;
+        for (const char* button : {"newButton", "overflowButton", "trashToggle", "settingsButton"}) {
+            auto* b = f.window.findChild<QAbstractButton*>(QString::fromLatin1(button));
+            QVERIFY2(b && !b->icon().isNull(), button);
+        }
+    }
+
+    void theSettingsButtonOpensSettings()
+    {
+        GuiFixture f;
+        auto* gear = f.window.findChild<QToolButton*>(QStringLiteral("settingsButton"));
+        QVERIFY(gear);
+        bool opened = false;
+        QTimer::singleShot(50, [&] {
+            for (QWidget* w : QApplication::topLevelWidgets())
+                if (auto* d = qobject_cast<SettingsDialog*>(w)) { opened = d->isVisible(); d->reject(); }
+        });
+        gear->click();
+        QVERIFY(opened);
     }
 
 };

@@ -128,6 +128,11 @@ qt_add_resources(napkin_ui "icons" PREFIX "/" FILES
   resources/icons/256x256/io.github.sudomonas.Napkin.png
   resources/icons/trash-empty-128.png
   resources/icons/trash-empty-256.png
+  # Toolbar icons, from Lucide (see resources/icons/lucide/LICENSE).
+  resources/icons/lucide/trash-2.svg
+  resources/icons/lucide/ellipsis.svg
+  resources/icons/lucide/settings.svg
+  resources/icons/lucide/plus.svg
 )
 target_link_libraries(napkin_ui PUBLIC napkin_core napkin_media Qt6::Widgets Qt6::Network)
 

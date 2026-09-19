@@ -1,0 +1,4 @@
+Icons from Lucide (https://lucide.dev), lucide-static 1.47.0, unmodified.
+Licensed as described in LICENSE: ISC for Lucide, MIT for the Feather-derived
+icons it lists (trash-2 and plus among them). Napkin recolours them at runtime
+by substituting the theme colour for currentColor; the files are untouched.

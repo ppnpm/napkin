@@ -115,4 +115,6 @@ feature; §21 is the test every feature has to pass.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). The toolbar icons are from [Lucide](https://lucide.dev), under
+the ISC and MIT licences in
+[`resources/icons/lucide/LICENSE`](resources/icons/lucide/LICENSE).

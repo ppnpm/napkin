@@ -19,6 +19,7 @@
 #include "../domain/BufferService.h"
 #include "../domain/Clock.h"
 #include "../domain/Preview.h"
+#include "Icons.h"
 #include "../domain/Search.h"
 #include "../domain/TimeFormat.h"
 #include "../app/Paths.h"
@@ -371,7 +372,7 @@ QWidget* MainWindow::buildHeaderWidget()
     // toggle — the placement adopted from the §7 mockup review.
     auto* trashButton = new QPushButton(tr("Trash"));
     trashButton->setAccessibleName(tr("Show trash"));
-    trashButton->setToolTip(tr("Show deleted napkins"));
+    trashButton->setToolTip(tr("Show deleted napkins and items"));
     trashButton->setFlat(true);
     trashButton->setCheckable(true);
     trashButton->setCursor(Qt::PointingHandCursor);
@@ -390,7 +391,7 @@ QWidget* MainWindow::buildHeaderWidget()
     // "carries its own label and key hint" — but they were attached to no menu
     // and no button, so they were invisible shortcuts wearing a label. This
     // collects that payoff: every binding is now readable somewhere.
-    auto* newButton = new QPushButton(tr("＋ New"));
+    auto* newButton = new QPushButton(tr("New"));   // the plus is an icon now
     newButton->setFlat(true);
     newButton->setCursor(Qt::PointingHandCursor);
     newButton->setObjectName(QStringLiteral("newButton"));
@@ -398,9 +399,14 @@ QWidget* MainWindow::buildHeaderWidget()
     newButton->setAccessibleName(tr("New napkin"));
     connect(newButton, &QPushButton::clicked, this, &MainWindow::newDraft);
     layout->addWidget(newButton);
+    newButton_ = newButton;
 
     auto* menuButton = new QToolButton;
-    menuButton->setText(QStringLiteral("⋯"));
+    // A drawn three-dot glyph rather than the "⋯" character: the character
+    // came with Breeze's own drop-down arrow beside it, two symbols for one
+    // idea. The icon is set, and re-set on theme changes, in styleToolbarIcons().
+    menuButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    menuButton->setStyleSheet(QStringLiteral("QToolButton::menu-indicator { image: none; width: 0px; }"));
     menuButton->setAutoRaise(true);
     menuButton->setPopupMode(QToolButton::InstantPopup);
     menuButton->setObjectName(QStringLiteral("overflowButton"));
@@ -427,6 +433,19 @@ QWidget* MainWindow::buildHeaderWidget()
     });
     layout->addWidget(trashButton);
 
+    // Settings in one click. It lived only in the menu bar, which Global Menu
+    // (Plasma) moves out of the window altogether.
+    auto* settingsButton = new QToolButton;
+    settingsButton->setObjectName(QStringLiteral("settingsButton"));
+    settingsButton->setAutoRaise(true);
+    settingsButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    settingsButton->setCursor(Qt::PointingHandCursor);
+    settingsButton->setToolTip(tr("Settings"));
+    settingsButton->setAccessibleName(tr("Settings"));
+    connect(settingsButton, &QToolButton::clicked, this, &MainWindow::openSettings);
+    layout->addWidget(settingsButton);
+    settingsButton_ = settingsButton;
+
     return header;
 }
 
@@ -437,6 +456,7 @@ void MainWindow::buildMenuBar()
 {
     auto* bar = menuBar();
     styleMenuBar();
+    styleToolbarIcons();
     auto named = [this](const char* name) -> QAction* {
         return findChild<QAction*>(QString::fromLatin1(name));
     };
@@ -1291,9 +1311,28 @@ void MainWindow::styleMenuBar()
              p.color(QPalette::Highlight).name(), p.color(QPalette::HighlightedText).name()));
 }
 
+void MainWindow::styleToolbarIcons()
+{
+    // The window's palette, not the buttons': this runs from the window's own
+    // PaletteChange, before the change has reached its children, so reading
+    // the button's palette drew the icon in the theme being left.
+    const qreal dpr = devicePixelRatioF();
+    const QPalette pal = palette();
+    const QSize size(16, 16);
+    auto apply = [&](QAbstractButton* button, const char* name, icons::GlyphPainter fallback) {
+        if (!button) return;
+        button->setIcon(icons::libraryIcon(name, pal, size.width(), dpr, fallback));
+        button->setIconSize(size);
+    };
+    apply(newButton_, "plus", &icons::drawPlus);
+    apply(overflowButton_, "ellipsis", &icons::drawMore);
+    apply(trashToggle_, "trash-2", &icons::drawTrash);
+    apply(settingsButton_, "settings", &icons::drawGear);
+}
+
 void MainWindow::changeEvent(QEvent* e)
 {
-    if (e->type() == QEvent::PaletteChange) styleMenuBar();
+    if (e->type() == QEvent::PaletteChange) { styleMenuBar(); styleToolbarIcons(); }
     QMainWindow::changeEvent(e);
 }
 
