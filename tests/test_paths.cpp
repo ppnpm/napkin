@@ -83,6 +83,64 @@ void verifyOwnerOnly(const QString& path)
                                 .arg(path, actual.join(u' '), allowed.join(u' '))));
 }
 
+// The parent's ACL before loosenParent, as SDDL, so cleanup can put it back.
+QString gParentSddl;
+
+// The case the protected DACL exists for. A default profile folder is already
+// owner-only, so on a stock machine an unprotected data directory passes too —
+// which is exactly what a break-test of the first version of this check showed.
+// So the parent is given an inheritable Everyone-read entry first: without the
+// protection it flows straight into Napkin's directory.
+bool loosenParent(const QString& parent)
+{
+    const std::wstring native = QDir::toNativeSeparators(parent).toStdWString();
+    PACL old = nullptr;
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    if (GetNamedSecurityInfoW(native.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+                              nullptr, nullptr, &old, nullptr, &sd) != ERROR_SUCCESS)
+        return false;
+    LPWSTR sddl = nullptr;
+    if (ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            sd, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &sddl, nullptr)) {
+        gParentSddl = QString::fromWCharArray(sddl);
+        LocalFree(sddl);
+    }
+
+    EXPLICIT_ACCESS_W everyone{};
+    everyone.grfAccessPermissions = GENERIC_READ;
+    everyone.grfAccessMode = GRANT_ACCESS;
+    everyone.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    everyone.Trustee.TrusteeForm = TRUSTEE_IS_NAME;
+    everyone.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    wchar_t world[] = L"EVERYONE";
+    everyone.Trustee.ptstrName = world;
+    PACL loosened = nullptr;
+    const bool ok = SetEntriesInAclW(1, &everyone, old, &loosened) == ERROR_SUCCESS
+        && SetNamedSecurityInfoW(const_cast<wchar_t*>(native.c_str()), SE_FILE_OBJECT,
+                                 DACL_SECURITY_INFORMATION, nullptr, nullptr, loosened,
+                                 nullptr) == ERROR_SUCCESS;
+    LocalFree(loosened);
+    LocalFree(sd);
+    return ok;
+}
+
+void restoreParent(const QString& parent)
+{
+    if (gParentSddl.isEmpty()) return;
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            reinterpret_cast<const wchar_t*>(gParentSddl.utf16()), SDDL_REVISION_1, &sd, nullptr))
+        return;
+    BOOL present = FALSE, defaulted = FALSE;
+    PACL dacl = nullptr;
+    if (GetSecurityDescriptorDacl(sd, &present, &dacl, &defaulted) && present) {
+        std::wstring native = QDir::toNativeSeparators(parent).toStdWString();
+        SetNamedSecurityInfoW(native.data(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+                              nullptr, nullptr, dacl, nullptr);
+    }
+    LocalFree(sd);
+}
+
 }  // namespace
 #endif
 
@@ -94,11 +152,20 @@ private slots:
         QCoreApplication::setApplicationName(QStringLiteral("napkin"));
         QStandardPaths::setTestModeEnabled(true);
         QDir(napkin::paths::dataDir()).removeRecursively();
+#ifdef Q_OS_WIN
+        const QString parent = QFileInfo(napkin::paths::dataDir()).absolutePath();
+        QVERIFY(QDir().mkpath(parent));
+        QVERIFY2(loosenParent(parent), "could not loosen the parent's ACL, so nothing would be tested");
+        QVERIFY(allowedSids(parent).contains(QStringLiteral("S-1-1-0")));
+#endif
     }
 
     void cleanupTestCase()
     {
         QDir(napkin::paths::dataDir()).removeRecursively();
+#ifdef Q_OS_WIN
+        restoreParent(QFileInfo(napkin::paths::dataDir()).absolutePath());
+#endif
         QStandardPaths::setTestModeEnabled(false);
     }
 

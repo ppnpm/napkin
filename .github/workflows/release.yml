@@ -28,7 +28,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libsqlite3-dev desktop-file-utils appstream
+          sudo apt-get install -y ninja-build libsqlite3-dev
 
       - name: Build
         run: |
@@ -54,11 +54,12 @@ jobs:
             exit 1
           }
 
+      # Not validated here. This host is 22.04 for its glibc, and its
+      # desktop-file-validate predates Desktop Entry 1.5 and rejects
+      # SingleMainWindow; CI validates the same files with current tools on
+      # every push, the tagged commit included.
       - name: Stage the install tree
-        run: |
-          cmake --install build --prefix AppDir/usr
-          desktop-file-validate AppDir/usr/share/applications/io.github.sudomonas.Napkin.desktop
-          appstreamcli validate --no-net AppDir/usr/share/metainfo/io.github.sudomonas.Napkin.metainfo.xml
+        run: cmake --install build --prefix AppDir/usr
 
       - name: Build the AppImage
         run: |

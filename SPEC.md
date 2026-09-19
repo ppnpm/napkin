@@ -1023,7 +1023,9 @@ Never beside the executable. Never requires root.
 
 Unchanged in spirit from v1 §32/§33, plus three gaps that section missed:
 
-- Data dir `0700`, DB `0600`.
+- Data dir `0700`, DB `0600`. On Windows, a protected DACL on the data
+  directory — the user, SYSTEM and Administrators — inherited by everything in
+  it (`paths::restrictToOwner`).
 - Thumbnails live in Napkin's own data dir, never a shared XDG cache that other
   applications and indexers read.
 - **Exclude the data directory from desktop search indexing** (Baloo on KDE,
@@ -1491,6 +1493,32 @@ invariant 6's durability argument has to be re-derived rather than translated;
 content-addressed blob store does whenever the same image is pasted twice; and
 `QFile::setPermissions` maps to the read-only flag rather than an ACL, so §11's
 0700/0600 promise would be quietly untrue there.
+
+**Phase 9 outcome — Windows builds and passes all 21 suites (2026-09-19).**
+What each of those turned out to need:
+
+- *Durability:* `_commit` in place of `fsync`, and `MoveFileExW` with
+  `MOVEFILE_WRITE_THROUGH` in place of rename-then-sync-the-directory; the
+  write-through move is Windows' own answer to "the rename is on disk".
+- *Rename onto an existing blob:* `QFile::rename` refuses that on Linux too, not
+  only Windows. Because blobs are named by their hash, losing that race means
+  the identical file is already there, and it is now treated as the dedupe it
+  is.
+- *Privacy:* see §11. **Corrected:** the commit that added the Windows DACL
+  (6976555) said the first Windows run "showed the data directory's ACL
+  granting group and world access". It did not. It showed Qt's *permission bits*
+  as `0x7777`, and a break-test — the same suite with the DACL disabled — still
+  passed, because a stock profile folder is already owner-only. The `0x7777`
+  is how Qt maps an ACL onto Unix bits, not exposure. The protected DACL is
+  kept because it holds when the parent folder has been loosened, and
+  `test_paths` now loosens the parent (an inheritable Everyone-read entry)
+  before checking, so it tests that case rather than the stock one.
+- *Single instance:* a named pipe keyed on a hash of the data directory.
+- *Found only by running there:* test binaries were GUI-subsystem executables
+  with no stdout, so the first failures arrived with no output; MSVC read
+  sources in the system code page until `/utf-8`; and export wrote notes with
+  `QIODevice::Text`, which turns `\n` into `\r\n` on Windows, so the exported
+  file was not the text that had been typed.
 
 **One identity ✅.** The application id is `io.github.sudomonas.Napkin`, and the
 `.desktop` file, every icon and the metainfo are named after it. AppStream and
