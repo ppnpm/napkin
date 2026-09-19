@@ -74,6 +74,9 @@ add_library(napkin_core STATIC
   src/app/Paths.cpp
 )
 target_link_libraries(napkin_core PUBLIC Qt6::Core SQLite3::SQLite3)
+if(WIN32)
+  target_link_libraries(napkin_core PUBLIC advapi32)   # ACLs, in app/Paths.cpp
+endif()
 target_include_directories(napkin_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # --- media --------------------------------------------------------------------
