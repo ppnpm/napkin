@@ -747,7 +747,7 @@ private slots:
         // the screen that exists to teach you the keys.
         QPushButton* newBuffer = nullptr;
         for (auto* row : welcome->findChildren<QPushButton*>())
-            if (row->accessibleName().contains(QStringLiteral("New buffer"))) newBuffer = row;
+            if (row->accessibleName().contains(QStringLiteral("New napkin"))) newBuffer = row;
         QVERIFY(newBuffer);
 
         newBuffer->click();
@@ -862,7 +862,7 @@ private slots:
         for (auto* menuAction : f.window.menuBar()->actions())
             if (auto* menu = menuAction->menu())
                 for (auto* a : menu->actions())
-                    if (a->text().contains(QStringLiteral("All buffers"))) home = a;
+                    if (a->text().contains(QStringLiteral("All napkins"))) home = a;
         QVERIFY(home);
         home->trigger();
 

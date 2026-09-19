@@ -38,7 +38,7 @@ ItemCanvas::ItemCanvas(Thumbnailer& thumbs, BlobStore& blobs, QWidget* parent)
     // it is when focus lands on it. Without this, tabbing from the buffer list
     // announced nothing and there was no way to tell you had arrived.
     setAccessibleName(tr("Board"));
-    setAccessibleDescription(tr("The items in the selected buffer. "
+    setAccessibleDescription(tr("The items on the selected napkin. "
                                 "Arrow keys move between them, Enter opens one."));
     // Horizontal scrolling only appears if the window is narrower than one
     // full-width card, which is the honest outcome of a real minimum width.
@@ -143,7 +143,7 @@ void ItemCanvas::showEmptyBuffer()
 void ItemCanvas::showNothingSelected()
 {
     clearItems();
-    placeholder_->setText(tr("Select a buffer to see what is in it."));
+    placeholder_->setText(tr("Select a napkin to see what is on it."));
     QPalette pal = placeholder_->palette();
     pal.setColor(QPalette::WindowText, text(pal, kTextTertiary));
     placeholder_->setPalette(pal);

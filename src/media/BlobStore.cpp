@@ -112,7 +112,7 @@ BlobStore::Stored BlobStore::store(const QByteArray& bytes, const QString& mimeH
     {
         QFile f(tmpPath);
         if (!f.open(QIODevice::WriteOnly)) {
-            out.error = QObject::tr("Napkin could not save the image. The buffer was not changed.");
+            out.error = QObject::tr("The image could not be saved. The napkin was not changed.");
             return out;
         }
         if (f.write(payload) != payload.size() || !f.flush() || ::fsync(f.handle()) != 0) {

@@ -86,7 +86,7 @@ bool Exporter::writeBuffer(BufferId id, const QString& parentDir, Result& result
 {
     const auto buffer = buffers_.find(id);
     if (!buffer) {
-        result.problems << QObject::tr("Buffer %1 no longer exists.").arg(qint64(id));
+        result.problems << QObject::tr("Napkin %1 no longer exists.").arg(qint64(id));
         return false;
     }
     // Chronological, not the board's order. listForBuffer() sorts newest-first

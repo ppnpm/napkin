@@ -187,7 +187,7 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
     case SnippetRole:    return snippets_.value(b.id);
     case Qt::AccessibleTextRole: {
         // Never encode state in styling alone (SPEC.md §14).
-        QString label = p.primary.isEmpty() ? tr("Empty buffer") : p.primary;
+        QString label = p.primary.isEmpty() ? tr("Empty napkin") : p.primary;
         if (!p.secondary.isEmpty()) label += QStringLiteral(". ") + p.secondary;
         if (b.pinned) label += tr(". Pinned");
         if (b.kept)   label += tr(". Kept");

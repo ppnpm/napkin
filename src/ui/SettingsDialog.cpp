@@ -327,8 +327,8 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
     lifeForm->addRow(trayNote);
 
     auto* note = new QLabel(
-        tr("Napkin never deletes a buffer on its own. “Older” only changes where "
-           "a buffer sits in the list; the trash is the only thing that empties, "
+        tr("Nothing is deleted on your behalf. “Older” only changes where "
+           "a napkin sits in the list; the trash is the only thing that empties, "
            "and only what you have already deleted."));
     note->setWordWrap(true);
     lifeForm->addRow(note);

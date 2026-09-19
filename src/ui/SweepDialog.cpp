@@ -78,7 +78,7 @@ void SweepDialog::populate()
 
         auto* row = new QListWidgetItem(
             QStringLiteral("%1\n%2")
-                .arg(preview.primary.isEmpty() ? tr("Empty buffer") : preview.primary,
+                .arg(preview.primary.isEmpty() ? tr("Empty napkin") : preview.primary,
                      relativeTime(buffer.modifiedAt, nowMs())));
         row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
         // Ticked by default: the user asked to clean up, and unticking what you
@@ -89,7 +89,7 @@ void SweepDialog::populate()
     }
 
     QStringList parts;
-    parts << tr("%n buffer(s) older than %1 days", nullptr, list_->count())
+    parts << tr("%n napkin(s) older than %1 days", nullptr, list_->count())
                  .arg(kOlderThresholdDays);
     if (kept > 0) parts << tr("%n kept, and left alone", nullptr, kept);
     if (pinned > 0) parts << tr("%n pinned — pinning does not protect", nullptr, pinned);

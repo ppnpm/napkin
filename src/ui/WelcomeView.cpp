@@ -76,7 +76,7 @@ WelcomeView::WelcomeView(QWidget* parent) : QWidget(parent)
 
     // Only the keys that get you started. A wall of every binding would be a
     // reference card, and nobody reads a reference card on first run.
-    column->addWidget(buildShortcutRow(tr("Ctrl+N"), tr("New buffer"),
+    column->addWidget(buildShortcutRow(tr("Ctrl+N"), tr("New napkin"),
                                        SIGNAL(newBufferRequested())), 0, Qt::AlignHCenter);
     column->addWidget(buildShortcutRow(tr("Ctrl+V"), tr("Paste text or an image"),
                                        SIGNAL(pasteRequested())), 0, Qt::AlignHCenter);

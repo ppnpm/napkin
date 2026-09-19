@@ -256,7 +256,7 @@ void MainWindow::buildUi()
     // An action rather than a bare shortcut: it carries its own label and key
     // hint, so the binding is discoverable and can be surfaced in a menu later
     // without rewiring anything.
-    auto* newBufferAction = new QAction(tr("New buffer"), this);
+    auto* newBufferAction = new QAction(tr("New napkin"), this);
     newBufferAction->setObjectName(QStringLiteral("newBufferAction"));
     newBufferAction->setShortcut(QKeySequence::New);
     newBufferAction->setShortcutContext(Qt::WindowShortcut);
@@ -309,9 +309,9 @@ void MainWindow::buildUi()
     connect(timeRefresh_, &QTimer::timeout, this, [this] { model_->refreshTimestamps(); });
     timeRefresh_->start();
 
-    view_->setAccessibleName(tr("Buffers"));
+    view_->setAccessibleName(tr("Napkins"));
     view_->setAccessibleDescription(
-        tr("Your buffers, newest first. Enter opens one; P pins, K keeps, Delete trashes."));
+        tr("Your napkins, newest first. Enter opens one; P pins, K keeps, Delete trashes."));
 
     setWindowTitle(tr("Napkin"));
     resize(560, 760);
@@ -337,7 +337,7 @@ QWidget* MainWindow::buildHeaderWidget()
     // toggle — the placement adopted from the §7 mockup review.
     auto* trashButton = new QPushButton(tr("Trash"));
     trashButton->setAccessibleName(tr("Show trash"));
-    trashButton->setToolTip(tr("Show deleted buffers"));
+    trashButton->setToolTip(tr("Show deleted napkins"));
     trashButton->setFlat(true);
     trashButton->setCheckable(true);
     trashButton->setCursor(Qt::PointingHandCursor);
@@ -346,7 +346,7 @@ QWidget* MainWindow::buildHeaderWidget()
     search_->setPlaceholderText(tr("Search"));
     search_->setClearButtonEnabled(true);
     search_->setObjectName(QStringLiteral("searchField"));
-    search_->setAccessibleName(tr("Search your buffers"));
+    search_->setAccessibleName(tr("Search your napkins"));
     search_->setMaximumWidth(280);
     // Over the pane it filters, which is the only place it means anything.
     layout->addWidget(search_);
@@ -360,8 +360,8 @@ QWidget* MainWindow::buildHeaderWidget()
     newButton->setFlat(true);
     newButton->setCursor(Qt::PointingHandCursor);
     newButton->setObjectName(QStringLiteral("newButton"));
-    newButton->setToolTip(tr("New buffer (Ctrl+N)"));
-    newButton->setAccessibleName(tr("New buffer"));
+    newButton->setToolTip(tr("New napkin (Ctrl+N)"));
+    newButton->setAccessibleName(tr("New napkin"));
     connect(newButton, &QPushButton::clicked, this, &MainWindow::newDraft);
     layout->addWidget(newButton);
 
@@ -413,7 +413,7 @@ void MainWindow::buildMenuBar()
     file->addSeparator();
     file->addAction(named("pasteAction"));
     file->addSeparator();
-    exportBufferAction_ = file->addAction(tr("Export this buffer…"));
+    exportBufferAction_ = file->addAction(tr("Export this napkin…"));
     connect(exportBufferAction_, &QAction::triggered, this, &MainWindow::exportCurrentBuffer);
     auto* exportAll = file->addAction(tr("Export everything…"));
     connect(exportAll, &QAction::triggered, this, &MainWindow::exportEverything);
@@ -423,7 +423,7 @@ void MainWindow::buildMenuBar()
     connect(quit, &QAction::triggered, this, &QWidget::close);
 
     auto* home = bar->addMenu(tr("&Home"));
-    auto* showAll = home->addAction(tr("All buffers"));
+    auto* showAll = home->addAction(tr("All napkins"));
     showAll->setShortcut(QKeySequence(QStringLiteral("Ctrl+Home")));
     connect(showAll, &QAction::triggered, this, &MainWindow::goHome);
     home->addAction(named("findAction"));
@@ -494,12 +494,12 @@ void MainWindow::exportCurrentBuffer()
     const BufferId id = row >= 0 ? model_->idAt(row) : kNoBuffer;
     if (id == kNoBuffer) {
         QMessageBox::information(this, tr("Export"),
-                                 tr("Select a buffer first, then export it."));
+                                 tr("Select a napkin first, then export it."));
         return;
     }
 
     const QString dir = QFileDialog::getExistingDirectory(
-        this, tr("Export this buffer to…"),
+        this, tr("Export this napkin to…"),
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
     if (dir.isEmpty()) return;
 
@@ -508,7 +508,7 @@ void MainWindow::exportCurrentBuffer()
     const auto result = exporter.exportBuffer(id, dir);
     QGuiApplication::restoreOverrideCursor();
 
-    reportExport(result, tr("This buffer"));
+    reportExport(result, tr("This napkin"));
 }
 
 void MainWindow::exportEverything()
@@ -587,10 +587,10 @@ void MainWindow::showShortcuts()
     QMessageBox::information(
         this, tr("Keyboard shortcuts"),
         tr("<table cellpadding='4'>"
-           "<tr><td><b>Ctrl+N</b></td><td>New buffer</td></tr>"
+           "<tr><td><b>Ctrl+N</b></td><td>New napkin</td></tr>"
            "<tr><td><b>Ctrl+F</b></td><td>Search</td></tr>"
-           "<tr><td><b>Ctrl+T</b></td><td>New text block in this buffer</td></tr>"
-           "<tr><td><b>Ctrl+V</b></td><td>Paste into this buffer</td></tr>"
+           "<tr><td><b>Ctrl+T</b></td><td>New text block on this napkin</td></tr>"
+           "<tr><td><b>Ctrl+V</b></td><td>Paste onto this napkin</td></tr>"
            "<tr><td><b>Ctrl+Shift+I</b></td><td>Add an image from a file</td></tr>"
            "<tr><td colspan='2'>&nbsp;</td></tr>"
            "<tr><td colspan='2'><i>In the canvas:</i></td></tr>"
@@ -633,7 +633,7 @@ void MainWindow::restoreRow(int row)
     if (model_->mode() != BufferListModel::Mode::Trash) return;
     const BufferId id = model_->idAt(row);
     if (id == kNoBuffer) return;
-    if (!guarded(tr("Could not restore that buffer"), [&] { service_.restore(id); })) return;
+    if (!guarded(tr("Could not restore that napkin"), [&] { service_.restore(id); })) return;
     reloadPreservingSelection();
     emptyTrashButton_->setVisible(model_->rowCount() > 0);
 }
@@ -656,7 +656,7 @@ void MainWindow::updateSweepNudge()
         // reads as a fault rather than an offer.
         sweepLabel_->setText(tr("%1 over %2 days old")
                                  .arg(sweepable).arg(kOlderThresholdDays));
-        sweepLabel_->setToolTip(tr("%1 buffers have not been touched in %2 days")
+        sweepLabel_->setToolTip(tr("%1 napkins have not been touched in %2 days")
                                     .arg(sweepable).arg(kOlderThresholdDays));
     }
 }
@@ -691,7 +691,7 @@ void MainWindow::sweepForTest(const QList<BufferId>& chosen)
     reloadPreservingSelection();
     updateSweepNudge();
 
-    toast_->offer(tr("%n buffer(s) moved to trash", nullptr, swept), [this, chosen] {
+    toast_->offer(tr("%n napkin(s) moved to trash", nullptr, swept), [this, chosen] {
         guarded(tr("Could not undo that"), [&] {
             for (BufferId id : chosen) service_.restore(id);
         });
@@ -739,7 +739,7 @@ void MainWindow::togglePin(int row)
 
     const auto buffer = buffers_.find(id);
     if (!buffer) return;
-    if (!guarded(tr("Could not pin that buffer"),
+    if (!guarded(tr("Could not pin that napkin"),
                  [&] { service_.setPinned(id, !buffer->pinned); }))
         return;
     reloadPreservingSelection();   // pinning moves the card; that is the point
@@ -752,7 +752,7 @@ void MainWindow::toggleKeep(int row)
 
     const auto buffer = buffers_.find(id);
     if (!buffer) return;
-    if (!guarded(tr("Could not change that buffer"),
+    if (!guarded(tr("Could not change that napkin"),
                  [&] { service_.setKept(id, !buffer->kept); }))
         return;
     model_->refreshRow(id);        // keeping changes nothing about placement
@@ -769,7 +769,7 @@ void MainWindow::trashRow(int row)
         // action; Delete destroys, with a confirmation because it is final.
         QMessageBox box(this);
         box.setWindowTitle(tr("Delete permanently?"));
-        box.setText(tr("Delete this buffer permanently?"));
+        box.setText(tr("Delete this napkin permanently?"));
         box.setInformativeText(tr("This cannot be undone."));
         box.setIcon(QMessageBox::Warning);
         box.addButton(QMessageBox::Cancel);
@@ -778,7 +778,7 @@ void MainWindow::trashRow(int row)
         box.exec();
         if (box.clickedButton() != confirm) return;
 
-        if (!guarded(tr("Could not delete that buffer"), [&] {
+        if (!guarded(tr("Could not delete that napkin"), [&] {
                 buffers_.hardDeleteEvenIfKept(id);
                 reconcileBlobs(items_, blobs_, paths::thumbsDir(), undoProtectedBlobs_);
             }))
@@ -795,10 +795,10 @@ void MainWindow::trashRow(int row)
 
     if (!service_.trash(id)) {
         QMessageBox box(this);
-        box.setWindowTitle(tr("Delete kept buffer?"));
-        box.setText(tr("This buffer is kept."));
+        box.setWindowTitle(tr("Delete kept napkin?"));
+        box.setText(tr("This napkin is kept."));
         box.setInformativeText(
-            tr("Kept buffers are never removed by a sweep. Deleting it now "
+            tr("Kept napkins are never removed by a sweep. Deleting it now "
                "releases that protection and moves it to the trash, where it "
                "stays for %1 days.").arg(kTrashRetentionDays));
         box.setIcon(QMessageBox::Warning);
@@ -820,7 +820,7 @@ void MainWindow::trashRow(int row)
     // put it back — otherwise the user recovers a buffer that quietly lost the
     // protection they asked for, and the next sweep offers it up.
     const auto state = lastTrashed_;
-    toast_->offer(tr("Buffer moved to trash"), [this, state] {
+    toast_->offer(tr("Napkin moved to trash"), [this, state] {
         if (!guarded(tr("Could not undo that"), [&] {
                 service_.restore(state.id);
                 if (state.kept) service_.setKept(state.id, true);
@@ -873,9 +873,9 @@ void MainWindow::updateEmptyState()
     if (model_->mode() == BufferListModel::Mode::Trash) {
         emptyState_->setContent(QStringLiteral(":/resources/icons/trash-empty-256.png"),
                           tr("The trash is empty"),
-                          tr("Deleted buffers stay here for %1 days.")
+                          tr("Deleted napkins stay here for %1 days.")
                               .arg(BufferService::trashRetentionDays()),
-                          tr("Back to your buffers"));
+                          tr("Back to your napkins"));
         stack_->setCurrentIndex(2);
         return;
     }
@@ -928,7 +928,7 @@ bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
     const auto stored = blobs_.store(bytes, mime);
     if (!stored.ok) {
         reportProblem(tr("Could not add the image"),
-                      stored.error + tr("\n\nNothing else in the buffer was changed."));
+                      stored.error + tr("\n\nNothing else on the napkin was changed."));
         return false;
     }
 
@@ -964,7 +964,7 @@ bool MainWindow::addImageToCurrent(const QByteArray& bytes, const QString& mime,
     } catch (const std::exception&) {
         reportProblem(tr("Could not add the image"),
                       tr("Napkin saved the image but could not record it. "
-                         "Nothing else in the buffer was changed."));
+                         "Nothing else on the napkin was changed."));
         return false;
     }
 
@@ -1062,7 +1062,7 @@ void MainWindow::emptyTrash()
 
     QMessageBox box(this);
     box.setWindowTitle(tr("Empty the trash?"));
-    box.setText(tr("Delete %n buffer(s) permanently?", nullptr, count));
+    box.setText(tr("Delete %n napkin(s) permanently?", nullptr, count));
     box.setInformativeText(tr("This cannot be undone."));
     box.setIcon(QMessageBox::Warning);
     box.addButton(QMessageBox::Cancel);
@@ -1172,7 +1172,7 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
     if (emptied) {
         before = buffers_.find(buffer);
         // An item-level delete that leaves an empty husk behind is just litter.
-        guarded(tr("Could not remove the empty buffer"), [&] {
+        guarded(tr("Could not remove the empty napkin"), [&] {
             if (!service_.trash(buffer)) service_.trashConfirmed(buffer);
         });
         editingBuffer_ = kNoBuffer;
@@ -1195,7 +1195,7 @@ void MainWindow::removeItems(const QList<ItemId>& ids)
         ? tr("Item deleted")
         : tr("%n items deleted", nullptr, int(removed.size()));
 
-    toast_->offer(emptied ? tr("Buffer moved to trash") : message,
+    toast_->offer(emptied ? tr("Napkin moved to trash") : message,
                   [this, buffer, removed, before, emptied] {
                       if (!guarded(tr("Could not undo that"), [&] {
                               for (const auto& item : removed) items_.restoreAt(item);
@@ -1290,7 +1290,7 @@ bool MainWindow::flushAndReportFailure()
     if (flushEditor()) return true;
 
     if (saveFailures_ == 1 || saveFailures_ % 20 == 0) {
-        reportProblem(tr("Napkin could not save this buffer"),
+        reportProblem(tr("Could not save this napkin"),
                       tr("Your text is still here and has not been changed. Napkin will keep "
                          "trying.\n\nThis usually means the disk is full, or the storage "
                          "folder is not writable."));
@@ -1308,7 +1308,7 @@ void MainWindow::openImageItem(ItemId id)
     if (!QFile::exists(path)) {
         reportProblem(tr("The image is missing"),
                       tr("Napkin can no longer find the file for this image. "
-                         "The rest of the buffer is unchanged."));
+                         "The rest of the napkin is unchanged."));
         return;
     }
     Lightbox box(path, item->animated, item->sourceName, this);

@@ -11,18 +11,18 @@ stays on this machine.
 
 ## What it does
 
-- **Buffers, not documents.** `Ctrl+N` gives you a new buffer. Paste into it,
-  type into it, and move on. Nothing asks for a title.
+- **Napkins, not documents.** `Ctrl+N` gives you a fresh napkin. Paste onto
+  it, type on it, and move on. Nothing asks for a title.
 - **Text and images, and nothing else.** Text, where a link on its own shows as
   a chip you can open and a link inside prose opens with `Ctrl`+click; and
   images: PNG, JPEG, WebP, SVG and animated GIF.
 - **Search everything** with `Ctrl+F`: text, links and image filenames.
-- **Nothing is deleted on your behalf.** Buffers you have not touched in a while
+- **Nothing is deleted on your behalf.** Napkins you have not touched in a while
   move to an *Older* section. A sweep moves them to the trash only when you ask,
-  and it can be undone. *Pin* keeps a buffer at the top; *Keep* protects it
+  and it can be undone. *Pin* keeps a napkin at the top; *Keep* protects it
   from sweeps.
-- **Export** one buffer or everything to a folder of ordinary files at any
-  time (*File → Export this buffer…* / *Export everything…*).
+- **Export** one napkin or everything to a folder of ordinary files at any
+  time (*File → Export this napkin…* / *Export everything…*).
 
 ## Privacy
 
@@ -83,12 +83,12 @@ The test suites need no display: the GUI tests run on Qt's offscreen platform.
 
 | Key | Action |
 |---|---|
-| `Ctrl+N` | New buffer |
-| `Ctrl+V` | Paste into this buffer |
-| `Ctrl+T` | New text block in this buffer |
+| `Ctrl+N` | New napkin |
+| `Ctrl+V` | Paste onto this napkin |
+| `Ctrl+T` | New text block on this napkin |
 | `Ctrl+Shift+I` | Add an image from a file |
 | `Ctrl+F` / `Ctrl+K` | Search |
-| `P` / `K` / `Delete` | Pin, keep, or trash the selected buffer (list focused) |
+| `P` / `K` / `Delete` | Pin, keep, or trash the selected napkin (list focused) |
 
 The full list is under *Settings → Keyboard shortcuts…*.
 
@@ -96,8 +96,8 @@ The full list is under *Settings → Keyboard shortcuts…*.
 
 - There is no global "capture" hotkey yet. It needs the XDG GlobalShortcuts
   portal and is planned.
-- A single buffer holding around a thousand items is slow to open. Typical use
-  (hundreds of buffers, each with up to about a hundred items) meets every
+- A single napkin holding around a thousand items is slow to open. Typical use
+  (hundreds of napkins, each with up to about a hundred items) meets every
   performance target in [SPEC.md](SPEC.md) §12.
 - Linux only for now.
 

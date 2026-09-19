@@ -126,6 +126,19 @@ over *dangling references* (user-visible corruption).
 
 Pin and Keep remain fully orthogonal. All four combinations are valid.
 
+> ### Rename: Buffer → Napkin, for users only
+> "Buffer" is a programmer's word, and the people this is for would reach for a
+> napkin, not a buffer. Everything the user reads says **napkin**: "New
+> napkin", "Search your napkins", "Napkin moved to trash". Contents sit *on* a
+> napkin, so "Paste onto this napkin", not "into".
+>
+> The code, the schema and this document keep **buffer**. Renaming `Buffer`,
+> `BufferService` and the `buffers` table would touch everything for nothing a
+> user could see, and the export manifest's `"buffer"` key is a file format, not
+> wording. Where the app's name and the noun would meet ("Napkin could not save
+> this napkin"), the sentence is rewritten rather than left to stutter. The
+> trash keeps its name: deleting should read as deleting.
+
 ### Links are not a type
 
 A URL is stored as a `text` item. A text item whose trimmed content is exactly

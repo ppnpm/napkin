@@ -33,7 +33,7 @@ void Application::report(const QString& detail)
         QMessageBox::warning(
             nullptr, tr("Napkin hit a problem"),
             tr("Something went wrong and Napkin has stopped what it was doing.\n\n"
-               "Your buffers have not been changed. If this keeps happening, the "
+               "Your napkins have not been changed. If this keeps happening, the "
                "storage folder may be full or unwritable.\n\n%1").arg(detail));
         reporting_ = false;
     });

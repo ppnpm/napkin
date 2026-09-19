@@ -25,9 +25,9 @@ TrayIcon::TrayIcon(QObject* parent) : QObject(parent)
     auto* show = menu_->addAction(tr("Show Napkin"));
     connect(show, &QAction::triggered, this, &TrayIcon::showRequested);
     menu_->addSeparator();
-    auto* newBuffer = menu_->addAction(tr("New buffer"));
+    auto* newBuffer = menu_->addAction(tr("New napkin"));
     connect(newBuffer, &QAction::triggered, this, &TrayIcon::newBufferRequested);
-    auto* paste = menu_->addAction(tr("Paste into a new buffer"));
+    auto* paste = menu_->addAction(tr("Paste onto a new napkin"));
     connect(paste, &QAction::triggered, this, &TrayIcon::pasteRequested);
     menu_->addSeparator();
     auto* quit = menu_->addAction(tr("Quit Napkin"));
