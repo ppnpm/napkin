@@ -515,6 +515,28 @@ private slots:
             f.model()->index(row, 0).data(BufferListModel::PrimaryRole);
         QVERIFY(f.model()->previewCacheSize() <= 400);
     }
+
+    void aFailedSearchLeavesTheListAsItWas()
+    {
+        // On SQLite 3.35–3.38 every search with a hit threw from inside
+        // beginResetModel()/endResetModel(). The reset was never finished, the
+        // rows were already cleared, and the model claimed to be searching for
+        // a query it had no results for. A missing index stands in for any
+        // failure the query can meet.
+        GuiFixture f;
+        f.seed("systemctl restart nginx");
+        f.seed("sudo pacman -Syu");
+        QCOMPARE(f.model()->rowCount(), 2);
+
+        QSignalSpy aboutToReset(f.model(), &QAbstractItemModel::modelAboutToBeReset);
+        QSignalSpy reset(f.model(), &QAbstractItemModel::modelReset);
+        f.db.exec("DROP TABLE items_fts");
+
+        QVERIFY_THROWS_EXCEPTION(std::exception, f.model()->setQuery(QStringLiteral("nginx")));
+        QCOMPARE(aboutToReset.count(), reset.count());
+        QCOMPARE(f.model()->rowCount(), 2);
+        QVERIFY(f.model()->query().isEmpty());
+    }
 };
 
 QTEST_MAIN(TestReviewFixes)

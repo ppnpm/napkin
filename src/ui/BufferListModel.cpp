@@ -31,38 +31,58 @@ void BufferListModel::setQuery(const QString& query)
 {
     const QString trimmed = query.trimmed();
     if (query_ == trimmed) return;
+    const QString previous = query_;
     query_ = trimmed;
     frozen_ = false;      // a search is a deliberate reorder; nothing is being typed into
-    reload();
+    try {
+        reload();
+    } catch (...) {
+        // The rows still belong to the previous query, so the query must too:
+        // highlighting and the empty state both read it.
+        query_ = previous;
+        throw;
+    }
 }
 
 void BufferListModel::setMode(Mode mode)
 {
     if (mode_ == mode) return;
+    const Mode previous = mode_;
     mode_ = mode;
     frozen_ = false;   // nothing is being edited across a mode switch
-    reload();
+    try {
+        reload();
+    } catch (...) {
+        mode_ = previous;   // as setQuery: the rows and the mode stay a pair
+        throw;
+    }
 }
 
 void BufferListModel::reload()
 {
     if (frozen_) { pendingReload_ = true; return; }  // see freezeOrder
 
-    beginResetModel();
-    snippets_.clear();
+    // Query first, reset second. A query can throw, and throwing between
+    // beginResetModel() and endResetModel() leaves every attached view waiting
+    // for a reset that never ends, over rows that were already cleared.
+    std::vector<Buffer> rows;
+    QHash<BufferId, QString> snippets;
     if (isSearching()) {
         // Ranked by relevance, so the order deliberately differs from the
         // ordinary recency order.
-        rows_.clear();
         for (const auto& hit : searchBuffers(db_, query_, kMaxRows)) {
             if (const auto buffer = buffers_.find(hit.bufferId)) {
-                rows_.push_back(*buffer);
-                snippets_.insert(hit.bufferId, hit.snippet);
+                rows.push_back(*buffer);
+                snippets.insert(hit.bufferId, hit.snippet);
             }
         }
     } else {
-        rows_ = mode_ == Mode::Live ? buffers_.listLive(kMaxRows) : buffers_.listTrash();
+        rows = mode_ == Mode::Live ? buffers_.listLive(kMaxRows) : buffers_.listTrash();
     }
+
+    beginResetModel();
+    rows_ = std::move(rows);
+    snippets_ = std::move(snippets);
     previewCache_.clear();
     endResetModel();
     emit countChanged(int(rows_.size()));

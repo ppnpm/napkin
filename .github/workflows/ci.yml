@@ -84,6 +84,40 @@ jobs:
             exit 1
           }
 
+      # The same binaries again, against older SQLite. This runner has 3.45, and
+      # the v0.1.0 release — built on ubuntu-22.04 with 3.37.2 — failed every
+      # search that found anything: the query leaned on behaviour that only
+      # arrived in 3.39, and nothing here could see it. 3.37.2 is the release
+      # build host's; 3.31.1 is Ubuntu 20.04's and the oldest the suite has
+      # been shown to pass on. Pinned by hash, so this cannot quietly test
+      # against something else.
+      - name: Test against older SQLite
+        run: |
+          set -euo pipefail
+          check() {
+            local name=$1 year=$2 sum=$3
+            curl -fsSLO "https://www.sqlite.org/$year/sqlite-amalgamation-$name.zip"
+            echo "$sum  sqlite-amalgamation-$name.zip" | sha256sum -c -
+            unzip -q "sqlite-amalgamation-$name.zip"
+            mkdir -p "old-sqlite/$name"
+            gcc -O2 -w -shared -fPIC -DSQLITE_ENABLE_FTS5 \
+              "sqlite-amalgamation-$name/sqlite3.c" \
+              -o "old-sqlite/$name/libsqlite3.so.0" -lpthread -ldl -lm
+            export LD_LIBRARY_PATH="$PWD/old-sqlite/$name"
+            # Proof the substitution took, rather than a green run against the
+            # system library that tested nothing.
+            ldd build/test_search | grep -q "old-sqlite/$name/libsqlite3.so.0" || {
+              echo "::error title=SQLite $name not loaded::$(ldd build/test_search | grep sqlite)"
+              exit 1
+            }
+            ctest --test-dir build --output-on-failure --parallel 2 2>&1 | tee "ctest-$name.log" || {
+              echo "::error title=Tests failed on SQLite $name::$(grep -E 'FAIL!|what\(\)|tests passed' "ctest-$name.log" | head -20 | tr '\n' ' ')"
+              exit 1
+            }
+          }
+          check 3370200 2022 cb25df0fb90b77be6660f6ace641bbea88f3d0441110d394ce418f35f7561bb0
+          check 3310100 2020 f3c79bc9f4162d0b06fa9fe09ee6ccd23bb99ce310b792c5145f87fbcc30efca
+
       - name: Install, then validate what a desktop would actually read
         run: |
           set -eux

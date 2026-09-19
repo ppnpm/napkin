@@ -35,23 +35,30 @@ std::vector<SearchHit> searchBuffers(Database& db, const QString& typed, int lim
     // Rolled up to the buffer, ranked by the best-scoring item in it, with the
     // snippet taken from that same item. Trashed buffers are excluded: search
     // is for finding what you have, not what you threw away.
-    // MATERIALIZED is load-bearing, not decoration. FTS5's auxiliary functions
+    // The LIMIT -1 is load-bearing, not decoration. FTS5's auxiliary functions
     // (bm25, snippet) only work when the FTS table is the direct subject of the
     // query — and SQLite flattens an ordinary CTE into the outer join, which
     // puts them back in a context they refuse with "unable to use function bm25
-    // in the requested context". Materialising keeps the ranking and the snippet
-    // in a query where the index is all there is.
+    // in the requested context". A subquery with a LIMIT is never flattened
+    // into a join, so the ranking and the snippet stay in a query where the
+    // index is all there is.
+    //
+    // This used to say AS MATERIALIZED, which works only from SQLite 3.39: on
+    // 3.35–3.38 the hint did not stop the flattening, and before 3.35 it is a
+    // syntax error. Ubuntu 22.04 ships 3.37.2 and the AppImage is built there,
+    // so every search with a hit failed in the v0.1.0 release build. CI's
+    // old-SQLite job exists because of this.
     //
     // MIN(h.rank) with a bare h.snip beside it is the documented SQLite
     // behaviour of returning the snippet from the row that produced the
     // minimum: the snippet shown is the best-matching item's, not an arbitrary
     // one.
     Statement s(db,
-        "WITH hits AS MATERIALIZED ("
+        "WITH hits AS ("
         "  SELECT rowid AS item_id,"
         "         bm25(items_fts) AS rank,"
         "         snippet(items_fts, 0, char(2), char(3), '…', 12) AS snip"
-        "    FROM items_fts WHERE items_fts MATCH ?)"
+        "    FROM items_fts WHERE items_fts MATCH ? LIMIT -1)"
         "SELECT b.id, COUNT(*), h.snip, MIN(h.rank)"
         "  FROM hits h"
         "  JOIN items     ON items.id = h.item_id"

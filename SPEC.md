@@ -1335,11 +1335,19 @@ are looking at rather than throwing you to the top of the restored list.
 **5 ms across 2000 buffers**, so it runs on every keystroke behind a 120 ms
 debounce that only exists to stop a fast typist re-querying mid-word.
 
-> `MATERIALIZED` in the ranking query is load-bearing. FTS5's `bm25()` and
-> `snippet()` only work when the index is the direct subject of the query, and
-> SQLite flattens an ordinary CTE into the outer join — which puts them back
-> somewhere they refuse with *"unable to use function bm25 in the requested
-> context"*.
+> `LIMIT -1` inside the ranking query's CTE is load-bearing. FTS5's `bm25()`
+> and `snippet()` only work when the index is the direct subject of the query,
+> and SQLite flattens an ordinary CTE into the outer join — which puts them
+> back somewhere they refuse with *"unable to use function bm25 in the
+> requested context"*. A subquery with a LIMIT is never flattened into a join.
+>
+> **Corrected.** This note used to credit `AS MATERIALIZED` with that job. It
+> does it only from SQLite 3.39: on 3.35–3.38 the hint does not stop the
+> flattening, and before 3.35 it is a syntax error. It passed here on 3.53 and
+> in CI on 3.45, and failed every search with a hit on Ubuntu 22.04's 3.37.2,
+> which is where the release is built. Bisected against the 3.38.5 and 3.39.4
+> amalgamations. The suite now passes against 3.31.1 and 3.37.2 as well, and
+> CI runs it against both.
 
 **Phase 6 — Sweep. ✅ COMPLETE.** The `OLDER` section, the nudge, the review
 dialog and sweep-to-trash. 14 new test functions.
@@ -1467,6 +1475,11 @@ smoke-tested by running `--version` out of it and checking the version matches
 the tag — so a release cannot ship a binary built from somewhere else. `--help`
 and `--version` are answered before the single-instance check and before the
 database is opened, verified to create no files.
+
+Its first run, for v0.1.0, **failed at the test step and published nothing** —
+which is the ordering doing its job. The ubuntu-22.04 runner's SQLite 3.37.2
+broke every search with a hit (§20), something CI on 24.04 could not see. The
+tag has to be re-cut once the fix is in.
 
 **The global capture hotkey is NOT done.** §17 calls it the highest-leverage
 single addition and it remains so, but it is not built, and the reasons are
@@ -1638,6 +1651,8 @@ not fail.**
 | Cards stretched to full window width | medium | fixed — 760px measure, centred |
 | No accessible names; no initial selection for keyboard users | high, a11y | fixed |
 | Test counts in this document were inflated | — | corrected (`PASS` lines counted init/cleanup) |
+| Every search with a hit threw on SQLite < 3.39 (Ubuntu 22.04, the release host); v0.1.0's release run failed on it | **critical** | fixed — `LIMIT -1` replaces `AS MATERIALIZED`; CI tests SQLite 3.31.1 and 3.37.2 |
+| A query that threw inside `beginResetModel()` left the list model mid-reset, rows cleared, query already changed | high | fixed — query first, reset second; query and mode roll back on failure |
 
 **Known and not yet fixed**, carried forward honestly:
 
