@@ -165,6 +165,15 @@ QVariant BufferListModel::data(const QModelIndex& index, int role) const
         return isOlder(b) ? QStringLiteral("OLDER") : QStringLiteral("RECENT");
     }
     case IsOlderRole: return isOlder(b);
+    case Qt::ToolTipRole: {
+        // The pin and keep glyphs are small and similar in weight; hovering a
+        // row says in words which it carries and what that means.
+        QStringList says;
+        if (b.pinned) says << tr("Pinned — stays at the top of the list");
+        if (b.kept)   says << tr("Kept — Clean up never moves it to the trash");
+        if (says.isEmpty()) return {};
+        return says.join(QLatin1Char('\n'));
+    }
     default:
         break;
     }

@@ -245,8 +245,8 @@ private slots:
         QStringList labels;
         for (auto* a : button->menu()->actions())
             if (!a->isSeparator()) labels << a->text();
-        // Ctrl+T is the only way to make a text card; it must be findable.
-        QVERIFY2(labels.filter(QStringLiteral("text")).size() > 0,
+        // Ctrl+T is the keyboard way to start a note; it must be findable.
+        QVERIFY2(labels.filter(QStringLiteral("New note")).size() > 0,
                  qPrintable("menu had: " + labels.join(", ")));
         QVERIFY(labels.size() >= 4);
     }

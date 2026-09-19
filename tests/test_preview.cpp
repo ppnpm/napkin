@@ -38,10 +38,12 @@ private slots:
         QCOMPARE(p.secondary, QStringLiteral("Need to check whether this breaks KDE."));
     }
 
-    void pastedImageHasNoFilenameSoItIsCalledScreenshot()
+    void pastedImageHasNoFilenameSoItIsCalledImage()
     {
+        // Not "Screenshot": a pasted photo is not one, and naming it so is
+        // interpreting content (SPEC.md §1).
         const auto p = derivePreview({Item::makeImage("abc", 1920, 1080, 4096)}, 1, 1);
-        QCOMPARE(p.primary, QStringLiteral("Screenshot"));
+        QCOMPARE(p.primary, QStringLiteral("Image"));
         QCOMPARE(p.secondary, QStringLiteral("1920 × 1080"));
         QVERIFY(p.hasImage());
     }

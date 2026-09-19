@@ -380,7 +380,7 @@ The first-run screen is only for the first case. Greeting someone who has just
 emptied the trash as though they had never used the application would be wrong,
 and a bare line of centred text in the other two leaves you on a screen with
 nothing to do and no obvious way back — so each carries one action, and both of
-them call `MainWindow::goHome()`, the same slot the Home ▸ All buffers menu item
+them call `MainWindow::goHome()`, the same slot the Napkins ▸ All napkins menu item
 uses. One implementation, so the menu and the buttons cannot drift apart.
 
 The illustration is the user's own PNG, trimmed of its transparent margin and
@@ -856,7 +856,7 @@ The first-run screen is only for the first case. Greeting someone who has just
 emptied the trash as though they had never used the application would be wrong,
 and a bare line of centred text in the other two leaves you on a screen with
 nothing to do and no obvious way back — so each carries one action, and both of
-them call `MainWindow::goHome()`, the same slot the Home ▸ All buffers menu item
+them call `MainWindow::goHome()`, the same slot the Napkins ▸ All napkins menu item
 uses. One implementation, so the menu and the buttons cannot drift apart.
 
 The illustration is the user's own PNG, trimmed of its transparent margin and
@@ -1710,6 +1710,8 @@ not fail.**
 | *Usability test:* Escape on an empty new note left a blank card; an empty napkin's board kept the previous napkin's items | low | fixed — the unwritten note is discarded; the board clears everything |
 | *Usability test:* "Clean up" with nothing to clean opened an empty list with "Move to trash" as default; "(s)" printed literally in counts (no translation is loaded) | low | fixed — a message instead; the button needs a ticked row; plurals spelled out |
 | *Usability test:* a link's host was cut mid-letter ("www.example.c"); dark pictures vanished into dark cards | cosmetic | fixed — host elided by whole labels, "www." dropped; images carry a hairline edge |
+| *Usability test:* a napkin's list title followed every edit and addition, so it could not be recognised; every unnamed image was titled "Screenshot" (an interpretation §1 rules out) and that word was unsearchable | medium | fixed — titled by what was put on it first; unnamed images are "Image" |
+| *Usability test:* one action had three names ("Write a note", "New text block", "New text block on this napkin"); items were "item", "card" and "block"; "Settings ▸ Preferences…" opened "Settings"; Help lived under Settings; Keep was explained only as "never removed by a sweep" | medium | fixed — "note" for text, "New note" everywhere; menus are File (with Settings…), Napkins, Trash, Help; Pin and Keep explained in tooltips; About shows the version |
 
 **Known and not yet fixed**, carried forward honestly:
 

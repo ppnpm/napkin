@@ -55,7 +55,7 @@ void CardFooter::setClipped(bool clipped)
 {
     if (clipped_ == clipped) return;
     clipped_ = clipped;
-    setToolTip(clipped_ ? tr("There is more in this card than fits — open it to read it all")
+    setToolTip(clipped_ ? tr("There is more here than fits — open it to read it all")
                         : QString());
     update();
 }

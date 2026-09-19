@@ -18,9 +18,11 @@ stays on this machine.
   images: PNG, JPEG, WebP, SVG and animated GIF.
 - **Search everything** with `Ctrl+F`: text, links and image filenames.
 - **Nothing is deleted on your behalf.** Napkins you have not touched in a while
-  move to an *Older* section. A sweep moves them to the trash only when you ask,
-  and it can be undone. *Pin* keeps a napkin at the top; *Keep* protects it
-  from sweeps.
+  move to an *Older* section. *Clean up* moves them to the trash only when you
+  ask, and it can be undone. *Pin* keeps a napkin at the top; *Keep* means Clean
+  up never touches it.
+- **Deleting is always recoverable.** A deleted napkin, or items deleted from
+  one, wait in the trash for 30 days (adjustable in *File → Settings…*).
 - **Export** one napkin or everything to a folder of ordinary files at any
   time (*File → Export this napkin…* / *Export everything…*).
 
@@ -85,12 +87,14 @@ The test suites need no display: the GUI tests run on Qt's offscreen platform.
 |---|---|
 | `Ctrl+N` | New napkin |
 | `Ctrl+V` | Paste onto this napkin |
-| `Ctrl+T` | New text block on this napkin |
+| `Ctrl+T` | New note on this napkin |
 | `Ctrl+Shift+I` | Add an image from a file |
 | `Ctrl+F` / `Ctrl+K` | Search |
 | `P` / `K` / `Delete` | Pin, keep, or trash the selected napkin (list focused) |
 
-The full list is under *Settings → Keyboard shortcuts…*.
+The full list is under *Help → Keyboard shortcuts…*. Typing on an empty napkin,
+or double-clicking empty space on one, also starts a note, and right-clicking
+an item offers Edit, Copy, Cut and Delete.
 
 ## Known limitations
 

@@ -313,7 +313,7 @@ void MainWindow::buildUi()
     });
     addAction(findAction);
 
-    auto* addTextAction = new QAction(tr("New text block"), this);
+    auto* addTextAction = new QAction(tr("New note"), this);
     addTextAction->setObjectName(QStringLiteral("addTextAction"));
     addTextAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+T")));
     addTextAction->setShortcutContext(Qt::WindowShortcut);
@@ -414,7 +414,7 @@ QWidget* MainWindow::buildHeaderWidget()
     overflowButton_ = menuButton;
     layout->addWidget(menuButton);
 
-    emptyTrashButton_ = new QPushButton(tr("Empty trash"));
+    emptyTrashButton_ = new QPushButton(tr("Empty trash…"));   // it asks first, as the menu item does
     emptyTrashButton_->setFlat(true);
     emptyTrashButton_->setCursor(Qt::PointingHandCursor);
     emptyTrashButton_->setObjectName(QStringLiteral("emptyTrashButton"));
@@ -455,11 +455,20 @@ void MainWindow::buildMenuBar()
     auto* exportAll = file->addAction(tr("Export everything…"));
     connect(exportAll, &QAction::triggered, this, &MainWindow::exportEverything);
     file->addSeparator();
+    // Settings lives here and is called what its dialog is called. It used to
+    // be "Settings ▸ Preferences…", opening a dialog titled "Settings", with
+    // Keyboard shortcuts and About beside it instead of under Help.
+    auto* prefs = file->addAction(tr("Settings…"));
+    prefs->setShortcut(QKeySequence::Preferences);
+    connect(prefs, &QAction::triggered, this, &MainWindow::openSettings);
+    file->addSeparator();
     auto* quit = file->addAction(tr("&Quit"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
 
-    auto* home = bar->addMenu(tr("&Home"));
+    // "Napkins", not "Home": the menu holds the napkin list's own actions, and
+    // "All napkins" is what the trash's "Back to your napkins" returns to.
+    auto* home = bar->addMenu(tr("&Napkins"));
     auto* showAll = home->addAction(tr("All napkins"));
     showAll->setShortcut(QKeySequence(QStringLiteral("Ctrl+Home")));
     connect(showAll, &QAction::triggered, this, &MainWindow::goHome);
@@ -487,25 +496,22 @@ void MainWindow::buildMenuBar()
         empty->setEnabled(buffers_.countTrash() > 0);
     });
 
-    auto* settings = bar->addMenu(tr("&Settings"));
-    auto* prefs = settings->addAction(tr("Preferences…"));
-    prefs->setShortcut(QKeySequence::Preferences);
-    connect(prefs, &QAction::triggered, this, &MainWindow::openSettings);
-    settings->addSeparator();
-    auto* shortcuts = settings->addAction(tr("Keyboard shortcuts…"));
+    auto* help = bar->addMenu(tr("&Help"));
+    auto* shortcuts = help->addAction(tr("Keyboard shortcuts…"));
     connect(shortcuts, &QAction::triggered, this, &MainWindow::showShortcuts);
-    auto* about = settings->addAction(tr("About Napkin"));
+    help->addSeparator();
+    auto* about = help->addAction(tr("About Napkin"));
     connect(about, &QAction::triggered, this, [this] {
         QMessageBox::about(this, tr("About Napkin"),
-            tr("<b>Napkin</b><br>A persistent scratch surface for your computer."
+            tr("<b>Napkin</b> %1<br>A persistent scratch surface for your computer."
                "<br><br>Put it here. Use it. Decide later whether it matters."
                "<br><br>Everything stays on this machine. Napkin makes no network "
-               "requests."));
+               "requests.").arg(QCoreApplication::applicationVersion().toHtmlEscaped()));
     });
 }
 
 // One gesture back to the ordinary view from wherever you are: out of the
-// trash, out of a search, back to the top of the list. Shared by the Home menu
+// trash, out of a search, back to the top of the list. Shared by the Napkins menu
 // and by every empty state, so they cannot drift apart.
 void MainWindow::goHome()
 {
@@ -633,23 +639,25 @@ void MainWindow::showShortcuts()
         tr("<table cellpadding='4'>"
            "<tr><td><b>Ctrl+N</b></td><td>New napkin</td></tr>"
            "<tr><td><b>Ctrl+F</b></td><td>Search</td></tr>"
-           "<tr><td><b>Ctrl+T</b></td><td>New text block on this napkin</td></tr>"
+           "<tr><td><b>Ctrl+T</b></td><td>New note on this napkin</td></tr>"
            "<tr><td><b>Ctrl+V</b></td><td>Paste onto this napkin</td></tr>"
            "<tr><td><b>Ctrl+Shift+I</b></td><td>Add an image from a file</td></tr>"
            "<tr><td colspan='2'>&nbsp;</td></tr>"
-           "<tr><td colspan='2'><i>In the canvas:</i></td></tr>"
+           "<tr><td colspan='2'><i>On the napkin:</i></td></tr>"
            "<tr><td><b>Click</b></td><td>Select an item</td></tr>"
-           "<tr><td><b>Double-click</b></td><td>Edit text, or open an image</td></tr>"
+           "<tr><td><b>Double-click</b></td><td>Edit a note, or open an image</td></tr>"
            "<tr><td><b>Ctrl</b> / <b>Shift</b> + click</td><td>Extend the selection</td></tr>"
            "<tr><td><b>Ctrl+A</b></td><td>Select every item</td></tr>"
            "<tr><td><b>Ctrl+C</b> / <b>Ctrl+X</b> / <b>Delete</b></td>"
            "<td>Copy, cut or delete the selection</td></tr>"
-           "<tr><td><b>Ctrl+Enter</b></td><td>Finish editing a card</td></tr>"
+           "<tr><td><b>Double-click</b> empty space</td><td>New note</td></tr>"
+           "<tr><td><b>Right-click</b></td><td>Edit, copy, cut or delete</td></tr>"
+           "<tr><td><b>Ctrl+Enter</b></td><td>Finish editing</td></tr>"
            "<tr><td><b>Esc</b></td><td>Finish editing, then clear the selection</td></tr>"
            "<tr><td colspan='2'>&nbsp;</td></tr>"
            "<tr><td colspan='2'><i>With the list focused:</i></td></tr>"
            "<tr><td><b>P</b></td><td>Pin — keeps it at the top</td></tr>"
-           "<tr><td><b>K</b></td><td>Keep — never removed by a sweep</td></tr>"
+           "<tr><td><b>K</b></td><td>Keep — Clean up never moves it to the trash</td></tr>"
            "<tr><td><b>Delete</b></td><td>Move to trash</td></tr>"
            "<tr><td><b>R</b></td><td>Restore (in the trash)</td></tr>"
            "</table>"));
@@ -869,7 +877,7 @@ void MainWindow::trashRow(int row)
         box.setWindowTitle(tr("Delete kept napkin?"));
         box.setText(tr("This napkin is kept."));
         box.setInformativeText(
-            tr("Kept napkins are never removed by a sweep. Deleting it now "
+            tr("Clean up never moves a kept napkin to the trash. Deleting it now "
                "releases that protection and moves it to the trash, where it "
                "stays for %1 days.").arg(kTrashRetentionDays));
         box.setIcon(QMessageBox::Warning);
@@ -916,10 +924,16 @@ void MainWindow::showContextMenu(int row, const QPoint& globalPos)
         menu.addAction(tr("Delete permanently\tDel"), this, [this, row] { trashRow(row); });
     } else {
         // Only actions that apply: no greyed-out rows, no giant toolbar.
-        menu.addAction(buffer->pinned ? tr("Unpin") : tr("Pin\tP"),
-                       this, [this, row] { togglePin(row); });
-        menu.addAction(buffer->kept ? tr("Release keep\tK") : tr("Keep\tK"),
-                       this, [this, row] { toggleKeep(row); });
+        // Pin and Keep both sound like "important", so each says what it does
+        // (usability test: a new user could not tell them apart).
+        menu.setToolTipsVisible(true);
+        auto* pin = menu.addAction(buffer->pinned ? tr("Unpin\tP") : tr("Pin\tP"),
+                                   this, [this, row] { togglePin(row); });
+        pin->setToolTip(tr("Pinned napkins stay at the top of the list."));
+        auto* keep = menu.addAction(buffer->kept ? tr("Release keep\tK") : tr("Keep\tK"),
+                                    this, [this, row] { toggleKeep(row); });
+        keep->setToolTip(tr("Clean up never moves a kept napkin to the trash. "
+                            "It stays until you delete it yourself."));
         menu.addSeparator();
         menu.addAction(tr("Delete\tDel"), this, [this, row] { trashRow(row); });
     }

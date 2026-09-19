@@ -24,8 +24,10 @@ QStringList nonBlankLines(const QString& text, int limit)
 
 QString imageLabel(const Item& item)
 {
-    // A pasted screenshot has no filename; one added through the picker does.
-    return item.sourceName.isEmpty() ? QStringLiteral("Screenshot") : item.sourceName;
+    // A pasted image has no filename; one added through the picker does. Not
+    // "Screenshot": calling a photo a screenshot is interpreting it, which §1
+    // rules out — and the word was then unsearchable, since it was never stored.
+    return item.sourceName.isEmpty() ? QObject::tr("Image") : item.sourceName;
 }
 
 }  // namespace
@@ -82,7 +84,7 @@ BufferPreview derivePreview(const std::vector<Item>& head, int totalCount, int i
 
     // A buffer holding only untitled images still needs a primary line.
     if (p.primary.isEmpty() && p.hasImage()) {
-        p.primary = imageCount == 1 ? QObject::tr("Screenshot")
+        p.primary = imageCount == 1 ? QObject::tr("Image")
                                     : QObject::tr("%1 images").arg(imageCount);
     }
 

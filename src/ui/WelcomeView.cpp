@@ -83,7 +83,7 @@ WelcomeView::WelcomeView(QWidget* parent) : QWidget(parent)
                                        SIGNAL(newBufferRequested())), 0, Qt::AlignHCenter);
     column->addWidget(buildShortcutRow(tr("Ctrl+V"), tr("Paste text or an image"),
                                        SIGNAL(pasteRequested())), 0, Qt::AlignHCenter);
-    column->addWidget(buildShortcutRow(tr("Ctrl+T"), tr("Write a note"),
+    column->addWidget(buildShortcutRow(tr("Ctrl+T"), tr("New note"),
                                        SIGNAL(newTextRequested())), 0, Qt::AlignHCenter);
     column->addWidget(buildShortcutRow(tr("Ctrl+Shift+I"), tr("Add an image from a file"),
                                        SIGNAL(addImageRequested())), 0, Qt::AlignHCenter);

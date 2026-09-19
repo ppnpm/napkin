@@ -819,9 +819,9 @@ private slots:
         for (auto* action : f.window.menuBar()->actions()) menus << action->text();
         QCOMPARE(menus.size(), 4);
         QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("File")));
-        QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("Home")));
+        QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("Napkins")));
         QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("Trash")));
-        QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("Settings")));
+        QVERIFY(menus.join(QLatin1Char('|')).contains(QStringLiteral("Help")));
 
         // The menu is where a user finds out what the app can do, so every
         // shortcut must be listed rather than only bound.
@@ -1518,6 +1518,25 @@ private slots:
         QTest::keyClick(f.editor(), Qt::Key_Escape);
         QTRY_VERIFY_WITH_TIMEOUT(f.canvas()->findChildren<TextItemCard*>().isEmpty(), 2000);
         QVERIFY(f.canvas()->startsNoteOnTyping());
+    }
+
+
+    void aNapkinKeepsTheTitleOfWhatWasPutOnItFirst()
+    {
+        // Usability test: the list title followed every addition and edit, so a
+        // napkin could not be recognised from one look to the next.
+        GuiFixture f;
+        const auto id = f.seed("Call the dentist");
+        f.service.appendTo(id, Item::makeText(QStringLiteral("Dr. Rao 555-0142")));
+        f.model()->invalidatePreview(id);
+        const auto title = [&] {
+            return f.model()->index(f.model()->rowForId(id), 0).data(BufferListModel::PrimaryRole).toString();
+        };
+        QCOMPARE(title(), QStringLiteral("Call the dentist"));
+        const ItemId later = f.items.listForBuffer(id).front().id;   // newest first on the board
+        f.service.updateTextItem(id, later, QStringLiteral("Dr. Rao 555-0199"));
+        f.model()->invalidatePreview(id);
+        QCOMPARE(title(), QStringLiteral("Call the dentist"));
     }
 
 };
