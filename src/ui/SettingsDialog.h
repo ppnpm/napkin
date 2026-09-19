@@ -51,6 +51,11 @@ public:
     // leave the two settings visibly out of step.
     static void applyAppearance();
 
+    // From now on, when the desktop's theme changes — light to dark, or a new
+    // colour scheme — re-read what the platform offers and apply the user's
+    // choice on top, without a restart. Safe to call more than once.
+    static void followSystemChanges();
+
 signals:
     void settingsChanged();
 

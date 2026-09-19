@@ -16,6 +16,13 @@
 #include <memory>
 #include <vector>
 
+#ifdef Q_OS_WIN
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
+
 using namespace napkin;
 
 // Dark means the controls too, not only the window behind them.
@@ -115,6 +122,23 @@ void verifyControls(const QString& label, bool dark)
                                  wrong.join(u' '))));
 }
 
+#ifdef Q_OS_WIN
+// What Windows' own Settings app does when the user picks light or dark: write
+// the per-user value, then tell every top-level window the colour set changed.
+void setWindowsDarkMode(bool dark)
+{
+    QSettings personalize(
+        QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+        QSettings::NativeFormat);
+    personalize.setValue(QStringLiteral("AppsUseLightTheme"), dark ? 0 : 1);
+    personalize.sync();
+    DWORD_PTR ignored = 0;
+    SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
+                        reinterpret_cast<LPARAM>(L"ImmersiveColorSet"),
+                        SMTO_ABORTIFHUNG, 2000, &ignored);
+}
+#endif
+
 }  // namespace
 
 class TestNativeStyle : public QObject {
@@ -154,6 +178,53 @@ private slots:
             QSKIP("the platform is not in dark mode here");
         setTheme(SettingsDialog::Theme::System);
         verifyControls(QStringLiteral("system-dark"), true);
+    }
+
+    // Reported after 0.1.3: flipping Windows between light and dark while
+    // Napkin was open changed nothing until a restart. Flip it both ways under
+    // a running Napkin and look at the controls each time.
+    void aDesktopThemeChangeIsFollowedWithoutARestart()
+    {
+#ifndef Q_OS_WIN
+        QSKIP("drives the Windows setting itself; the desktop here cannot be flipped from a test");
+#else
+        SettingsDialog::followSystemChanges();
+        setTheme(SettingsDialog::Theme::System);
+        // WM_SETTINGCHANGE is broadcast to top-level windows, so the process
+        // needs one, exactly as the real app has.
+        QWidget window;
+        window.resize(200, 100);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+        const bool startedDark =
+            QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+        for (const bool dark : {!startedDark, startedDark}) {
+            setWindowsDarkMode(dark);
+            const auto want = dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light;
+            QTRY_VERIFY2_WITH_TIMEOUT(QGuiApplication::styleHints()->colorScheme() == want,
+                                      "Qt never saw the desktop change", 10000);
+            // The refresh is queued behind the change; let it land.
+            QTest::qWait(300);
+            verifyControls(dark ? QStringLiteral("flipped-dark") : QStringLiteral("flipped-light"),
+                           dark);
+            if (QTest::currentTestFailed()) break;
+        }
+        setWindowsDarkMode(startedDark);   // leave the machine as it was found
+#endif
+    }
+
+    // Napkin's own choice outranks the desktop's: a theme change arriving while
+    // Dark is chosen must refresh from the platform and still end up Dark.
+    void aDesktopThemeChangeDoesNotOverrideAnExplicitChoice()
+    {
+        SettingsDialog::followSystemChanges();
+        setTheme(SettingsDialog::Theme::Dark);
+        QWidget w;
+        QEvent change(QEvent::ThemeChange);
+        QCoreApplication::sendEvent(&w, &change);
+        QTest::qWait(100);
+        verifyControls(QStringLiteral("dark-after-themechange"), true);
     }
 
     // Switching back must restore what the platform chose, not leave behind

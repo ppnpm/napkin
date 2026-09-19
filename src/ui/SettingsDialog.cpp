@@ -16,6 +16,8 @@
 #include <QSpinBox>
 #include <QFontComboBox>
 #include <QStyleFactory>
+#include <QTimer>
+#include <QEvent>
 #include <QStyleHints>
 #include <QStyle>
 #include <algorithm>
@@ -260,6 +262,56 @@ void SettingsDialog::applyAppearance()
     if (!family.isEmpty()) font.setFamilies({family});
     font.setPointSizeF(std::max(5.0, systemFont().pointSizeF() * textScalePercent() / 100.0));
     QApplication::setFont(font);
+}
+
+namespace {
+
+// systemPalette() is captured once and Napkin's own palette then hides the
+// platform's, so a desktop that switched to dark while Napkin ran was never
+// seen: the window kept the old scheme until a restart. Resetting the
+// application palette hands back the platform's current one to re-capture.
+void refreshFromPlatform()
+{
+    QApplication::setPalette(QPalette());
+    systemPalette() = QApplication::palette();
+    SettingsDialog::applyAppearance();
+}
+
+// Every widget receives ThemeChange, so one desktop change arrives as dozens of
+// events; they collapse into one refresh on the next turn of the event loop,
+// by which time the platform has finished updating everything it will.
+class ThemeWatcher : public QObject {
+public:
+    explicit ThemeWatcher(QObject* parent) : QObject(parent)
+    {
+        pending_.setSingleShot(true);
+        pending_.setInterval(0);
+        connect(&pending_, &QTimer::timeout, this, &refreshFromPlatform);
+        // A light/dark flip, even if no widget exists to be told of it.
+        connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
+                &pending_, qOverload<>(&QTimer::start));
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* e) override
+    {
+        // Any other change of theme or colour scheme on the desktop.
+        if (e->type() == QEvent::ThemeChange) pending_.start();
+        return QObject::eventFilter(watched, e);
+    }
+
+private:
+    QTimer pending_;
+};
+
+}  // namespace
+
+void SettingsDialog::followSystemChanges()
+{
+    static ThemeWatcher* watcher = nullptr;
+    if (watcher) return;
+    watcher = new ThemeWatcher(qApp);
+    qApp->installEventFilter(watcher);
 }
 
 SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)

@@ -77,6 +77,7 @@ int main(int argc, char** argv)
         return 0;  // an existing Napkin was asked to raise itself
 
     SettingsDialog::applyAppearance();   // before any window exists, so nothing flashes
+    SettingsDialog::followSystemChanges();
 
     BufferService service(db, buffers, items);
     service.purgeExpiredTrash();  // the only automatic hard delete (§6)
