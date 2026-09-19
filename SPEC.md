@@ -1700,6 +1700,7 @@ not fail.**
 | A query that threw inside `beginResetModel()` left the list model mid-reset, rows cleared, query already changed | high | fixed — query first, reset second; query and mode roll back on failure |
 | *Usability test, 2026-09-19:* a deleted item was gone for good once the undo toast expired | **critical**, data | fixed — items go to the trash as a napkin (§6) |
 | *Usability test:* typing on an empty napkin or the start page vanished; with the list focused, letters were list commands (P pinned, K kept) | high | fixed — typing starts a note from all three places; criterion 1 of §18 now holds |
+| *Usability test:* Napkin set to Dark on a light KDE desktop had invisible menu-bar labels (and Light on a dark desktop a black bar) — Breeze paints the bar in the desktop scheme's header colours, not the app palette | high, a11y | fixed — the bar is styled from Napkin's palette and restyled on every palette change |
 
 **Known and not yet fixed**, carried forward honestly:
 

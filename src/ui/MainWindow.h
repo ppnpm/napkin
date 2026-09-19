@@ -80,8 +80,10 @@ protected:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void changeEvent(QEvent* e) override;
 
 private:
+    void styleMenuBar();
     void buildUi();
     QWidget* buildHeaderWidget();
     QMenu* buildOverflowMenu();

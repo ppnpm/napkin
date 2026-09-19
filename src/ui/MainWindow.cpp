@@ -413,6 +413,7 @@ QWidget* MainWindow::buildHeaderWidget()
 void MainWindow::buildMenuBar()
 {
     auto* bar = menuBar();
+    styleMenuBar();
     auto named = [this](const char* name) -> QAction* {
         return findChild<QAction*>(QString::fromLatin1(name));
     };
@@ -1114,6 +1115,29 @@ void MainWindow::newDraft()
     // lands in a note instead of in the list, where letters are commands.
     canvas_->showEmptyBuffer();
     canvas_->setFocus(Qt::OtherFocusReason);
+}
+
+// Breeze paints the menu bar in the desktop colour scheme's *header* colours,
+// not the application palette. So when Napkin's theme differs from the
+// desktop's, the bar did too: light desktop + Napkin Dark gave dark labels on
+// a dark bar — invisible, found by a usability test — and dark desktop +
+// Napkin Light a black strip across a white window. Menus, cards and dialogs
+// all follow the palette already; only the bar needs telling.
+void MainWindow::styleMenuBar()
+{
+    const QPalette p = palette();
+    menuBar()->setStyleSheet(QStringLiteral(
+        "QMenuBar { background-color: %1; color: %2; }"
+        "QMenuBar::item { background: transparent; padding: 4px 10px; border-radius: 4px; }"
+        "QMenuBar::item:selected, QMenuBar::item:pressed { background-color: %3; color: %4; }")
+        .arg(p.color(QPalette::Window).name(), p.color(QPalette::WindowText).name(),
+             p.color(QPalette::Highlight).name(), p.color(QPalette::HighlightedText).name()));
+}
+
+void MainWindow::changeEvent(QEvent* e)
+{
+    if (e->type() == QEvent::PaletteChange) styleMenuBar();
+    QMainWindow::changeEvent(e);
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event)

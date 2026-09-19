@@ -4,6 +4,7 @@
 #include "GuiFixture.h"
 
 #include <QLabel>
+#include <QMenuBar>
 #include <QFont>
 #include <QSettings>
 #include <QtTest>
@@ -258,6 +259,27 @@ private slots:
         QCOMPARE(what->palette().color(what->foregroundRole()),
                  tokens::text(app, tokens::kTextSecondary));
     }
+
+    void theMenuBarFollowsNapkinsThemeNotTheDesktops()
+    {
+        // Breeze paints the bar in the desktop scheme's header colours, so with
+        // Napkin set to Dark on a light desktop the labels went dark-on-dark.
+        // The bar now takes Napkin's palette, and must re-take it on a switch.
+        GuiFixture f;
+        for (auto theme : {SettingsDialog::Theme::Dark, SettingsDialog::Theme::Light,
+                           SettingsDialog::Theme::Dark}) {
+            QSettings().setValue(QStringLiteral("appearance/theme"), int(theme));
+            SettingsDialog::applyAppearance();
+            QCoreApplication::processEvents();
+            const QPalette p = QApplication::palette();
+            const QString sheet = f.window.menuBar()->styleSheet();
+            QVERIFY2(sheet.contains(p.color(QPalette::Window).name()), qPrintable(sheet));
+            QVERIFY2(sheet.contains(p.color(QPalette::WindowText).name()), qPrintable(sheet));
+        }
+        QSettings().setValue(QStringLiteral("appearance/theme"), int(SettingsDialog::Theme::Light));
+        SettingsDialog::applyAppearance();
+    }
+
 };
 
 QTEST_MAIN(TestTheme)
