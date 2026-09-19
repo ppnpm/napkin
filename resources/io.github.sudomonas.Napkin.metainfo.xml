@@ -73,6 +73,11 @@
   </requires>
 
   <releases>
+    <release version="0.1.3" date="2026-09-19" type="development">
+      <description>
+        <p>On Windows, dark mode now reaches buttons, dropdowns, text fields and scroll bars; they used to stay light.</p>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-09-19" type="development">
       <description>
         <p>The Linux AppImage now starts on Wayland desktops; 0.1.1's crashed on KDE Plasma under Wayland.</p>
