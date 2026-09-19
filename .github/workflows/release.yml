@@ -81,6 +81,13 @@ jobs:
           # cannot see them by walking the link tree; they are named explicitly
           # or SVG and WebP silently stop working inside the bundle.
           export EXTRA_QT_PLUGINS="imageformats;svg"
+          # linuxdeploy bundles only the xcb platform by default. On a Wayland
+          # session Qt then tries wayland, fails, and falls back — and 0.1.1's
+          # AppImage segfaulted inside libQt6Gui on that path on KDE Plasma,
+          # even for --version. Bundling wayland takes the fallback out of the
+          # picture and makes Napkin native there. offscreen is bundled so the
+          # smoke test below can run the bundle's own Qt with no display.
+          export EXTRA_PLATFORM_PLUGINS="libqwayland-generic.so;libqoffscreen.so"
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
             --desktop-file AppDir/usr/share/applications/io.github.sudomonas.Napkin.desktop \
             --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/io.github.sudomonas.Napkin.png
@@ -100,7 +107,17 @@ jobs:
           set -eux
           APPIMAGE=$(ls napkin-*.AppImage)
           chmod +x "$APPIMAGE"
-          OUT=$(QT_QPA_PLATFORM=offscreen timeout 120 "./$APPIMAGE" --appimage-extract-and-run --version)
+          # The platforms a desktop will ask for must be inside the bundle.
+          ls AppDir/usr/plugins/platforms/
+          test -f AppDir/usr/plugins/platforms/libqxcb.so
+          test -f AppDir/usr/plugins/platforms/libqwayland-generic.so
+          test -d AppDir/usr/plugins/wayland-shell-integration
+          # With the build machine's Qt out of reach. install-qt-action exports
+          # QT_PLUGIN_PATH and LD_LIBRARY_PATH, and while they were set this
+          # test passed with a bundle that had no offscreen plugin in it — it
+          # was loading the runner's.
+          OUT=$(env -u QT_PLUGIN_PATH -u LD_LIBRARY_PATH -u QT_ROOT_DIR -u QML2_IMPORT_PATH \
+                QT_QPA_PLATFORM=offscreen timeout 120 "./$APPIMAGE" --appimage-extract-and-run --version)
           echo "$OUT"
           # The version it reports must be the tag it was built from, or the
           # release is shipping a binary from somewhere else.
