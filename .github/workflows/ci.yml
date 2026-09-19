@@ -56,8 +56,13 @@ jobs:
           # CMAKE_PREFIX_PATH explicitly: find_package(Qt6) only searches it,
           # and whether install-qt-action exports it has changed between
           # versions of that action.
+          # _GLIBCXX_ASSERTIONS makes an out-of-range operator[] abort instead of
+          # quietly reading past the end. Arch's makepkg builds with it; CI did
+          # not, so a test indexing thumbs[2] of a one-element vector passed
+          # here for a day and only failed inside the PKGBUILD's check().
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-D_GLIBCXX_ASSERTIONS" \
             -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}" 2>&1 | tee configure.log || {
               echo "::error title=CMake configure failed::$(tail -c 3000 configure.log | tr '\n' ' ' | tr -s ' ')"
               exit 1

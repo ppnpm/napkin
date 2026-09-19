@@ -50,7 +50,7 @@ private:
 
 private slots:
     // --- (a) several images are all visible ----------------------------------
-    void aCardShowsSeveralThumbnailsNotJustTheFirst()
+    void aCardShowsItsThumbnailLimitAndCountsEveryImage()
     {
         GuiFixture f;
         const auto id = seedMixed(f, 4);
@@ -61,10 +61,14 @@ private slots:
                  kMaxCardThumbs);
         QCOMPARE(int(f.model()->thumbsAt(row).size()), kMaxCardThumbs);
 
-        // Distinct images, not the same one three times.
+        // Whatever is shown is distinct images, not one image repeated. Written
+        // for any kMaxCardThumbs: this used to read thumbs[1] and thumbs[2]
+        // outright, and kept doing so after the limit became 1 (8646fdb) —
+        // reading past the end of the vector, silently, until an Arch build
+        // with _GLIBCXX_ASSERTIONS aborted on it.
         const auto thumbs = f.model()->thumbsAt(row);
-        QVERIFY(thumbs[0].hash != thumbs[1].hash);
-        QVERIFY(thumbs[1].hash != thumbs[2].hash);
+        for (size_t k = 1; k < thumbs.size(); ++k)
+            QVERIFY(thumbs[k - 1].hash != thumbs[k].hash);
     }
 
     void aSingleImageStillGetsOneThumbnail()
