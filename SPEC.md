@@ -1558,7 +1558,16 @@ Packaging was claimed as Phase 0 work and was in fact never started. It is now
 
 **Done:** the application has an identity. `resources/napkin-source.png` is the
 artwork; the hicolor set (16 → 512) is generated from it and committed, so there
-is no build-time image dependency. `resources/napkin.desktop` passes
+is no build-time image dependency.
+
+> **New artwork, 2026-09-19:** a crumpled napkin replaced the paper-clipped
+> square. The source is kept exactly as supplied. Generating the set: crop to
+> the opaque content (x 52–426, y 77–446), centre it on a square with 18% room,
+> lift it by 1/40 of the side, then draw a shadow under it — its own alpha,
+> box-blurred three times at radius side/45, dropped side/30, near-black at
+> 42%. Without the shadow a white napkin all but vanished at 16–22 px on a
+> light panel. The content is ~375px across, so the 512px icon is slightly
+> upscaled; a larger original would make it crisper. `resources/napkin.desktop` passes
 `desktop-file-validate`. `install()` puts the binary, the desktop entry and the
 icons where XDG expects them, verified by installing to a scratch prefix. The
 icons are also compiled into the binary, so a build run straight out of the
