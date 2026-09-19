@@ -48,6 +48,16 @@ chmod +x napkin-v*-x86_64.AppImage
 ./napkin-v*-x86_64.AppImage
 ```
 
+On **Arch Linux**, build a pacman package from the latest `master`:
+
+```sh
+git clone https://github.com/sudomonas/napkin.git
+cd napkin/packaging/arch
+makepkg -si                      # builds, runs the tests, installs under /usr
+```
+
+Remove it with `sudo pacman -R napkin-git`.
+
 A Flatpak manifest is in `packaging/`; it has not been submitted to Flathub yet.
 
 ## Build from source
