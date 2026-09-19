@@ -73,6 +73,11 @@
   </requires>
 
   <releases>
+    <release version="0.1.4" date="2026-09-19" type="development">
+      <description>
+        <p>Napkin follows the desktop switching between light and dark while it is running, without a restart.</p>
+      </description>
+    </release>
     <release version="0.1.3" date="2026-09-19" type="development">
       <description>
         <p>On Windows, dark mode now reaches buttons, dropdowns, text fields and scroll bars; they used to stay light.</p>
