@@ -25,6 +25,8 @@ public:
 
     // Buffers the user confirmed. Empty if they cancelled.
     QList<BufferId> accepted() const { return accepted_; }
+    // How many napkins are offered. Zero means there is nothing to review.
+    int candidates() const;
 
 private:
     void populate();

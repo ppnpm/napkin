@@ -1701,6 +1701,15 @@ not fail.**
 | *Usability test, 2026-09-19:* a deleted item was gone for good once the undo toast expired | **critical**, data | fixed — items go to the trash as a napkin (§6) |
 | *Usability test:* typing on an empty napkin or the start page vanished; with the list focused, letters were list commands (P pinned, K kept) | high | fixed — typing starts a note from all three places; criterion 1 of §18 now holds |
 | *Usability test:* Napkin set to Dark on a light KDE desktop had invisible menu-bar labels (and Light on a dark desktop a black bar) — Breeze paints the bar in the desktop scheme's header colours, not the app palette | high, a11y | fixed — the bar is styled from Napkin's palette and restyled on every palette change |
+| *Usability test:* after Clear search a napkin was highlighted with "Select a napkin" beside it, and clicking it did nothing — the board only followed *changes* of the current row | medium | fixed — the paths that blank the board re-open or clear the row, and a click always opens what it lands on |
+| *Usability test:* "Empty trash" stayed on the ordinary list after emptying from the menu (three of four visibility checks ignored the mode) | low | fixed — one check, used everywhere |
+| *Usability test:* the Settings dialog opened squeezed, clipping the preview and the Lifecycle notes; the preview ignored the chosen theme | medium | fixed — sized to its content; the preview shows the theme before Save |
+| *Usability test:* no right-click menu on items; double-clicking a word while editing placed a caret instead of selecting it | medium | fixed — Edit/Open, Copy, Cut, Delete on right-click; native word selection while editing, and the word is selected when a double-click starts editing |
+| *Usability test:* list times went stale after an edit, and card times never updated at all | low | fixed — a changed napkin re-reads its row in place; cards tick with the list |
+| *Usability test:* Tab reached the list and the board with no visible focus | medium, a11y | fixed — the dotted accent ring marks the focused row and card |
+| *Usability test:* Escape on an empty new note left a blank card; an empty napkin's board kept the previous napkin's items | low | fixed — the unwritten note is discarded; the board clears everything |
+| *Usability test:* "Clean up" with nothing to clean opened an empty list with "Move to trash" as default; "(s)" printed literally in counts (no translation is loaded) | low | fixed — a message instead; the button needs a ticked row; plurals spelled out |
+| *Usability test:* a link's host was cut mid-letter ("www.example.c"); dark pictures vanished into dark cards | cosmetic | fixed — host elided by whole labels, "www." dropped; images carry a hairline edge |
 
 **Known and not yet fixed**, carried forward honestly:
 

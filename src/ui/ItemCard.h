@@ -28,6 +28,8 @@ class Thumbnailer;
 class ItemCard : public QWidget {
     Q_OBJECT
 public:
+    // Relative times go stale; the window's slow tick calls this.
+    void refreshTimestamp();
     explicit ItemCard(const Item& item, QWidget* parent = nullptr);
 
     ItemId itemId() const { return item_.id; }
@@ -80,6 +82,8 @@ protected:
     void mousePressEvent(QMouseEvent* e) override;
     void paintEvent(QPaintEvent* e) override;
     void enterEvent(QEnterEvent* e) override;
+    void focusInEvent(QFocusEvent* e) override;
+    void focusOutEvent(QFocusEvent* e) override;
     void leaveEvent(QEvent* e) override;
 
     Item item_;

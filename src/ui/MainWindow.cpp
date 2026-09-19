@@ -36,6 +36,7 @@
 #include <QFileDialog>
 #include <QMenu>
 #include <QKeyEvent>
+#include <QSignalBlocker>
 #include <QMenuBar>
 #include <QToolButton>
 #include <QMimeData>
@@ -122,12 +123,18 @@ void MainWindow::buildUi()
         const bool searching = model_->isSearching() && canvas_->matchCount() > 0;
         filterBanner_->setVisible(searching);
         showAll->setVisible(filtered);
+        // Singular and plural spelled out: no translation is loaded, so Qt's
+        // %n plural forms print "(s)" literally — "1 of 1 items match" and
+        // "Delete 1 napkin(s)" both came from that.
+        const int n = canvas_->matchCount();
+        const int total = canvas_->totalCount();
+        const QString q = model_->query();
         filterLabel_->setText(
-            filtered ? tr("%1 of %2 items match “%3”")
-                           .arg(canvas_->matchCount()).arg(canvas_->totalCount())
-                           .arg(model_->query())
-                     : tr("Showing every item; %1 match “%2”")
-                           .arg(canvas_->matchCount()).arg(model_->query()));
+            filtered ? (total == 1 ? tr("This item matches “%1”").arg(q)
+                        : n == 1   ? tr("1 of %1 items matches “%2”").arg(total).arg(q)
+                                   : tr("%1 of %2 items match “%3”").arg(n).arg(total).arg(q))
+                     : (n == 1 ? tr("Showing every item; 1 matches “%1”").arg(q)
+                               : tr("Showing every item; %1 match “%2”").arg(n).arg(q)));
     });
 
     // The nudge. Cleaning up is never automatic and never silent, so the only
@@ -199,6 +206,14 @@ void MainWindow::buildUi()
     autosave_->setFlushHandler([this] { flushAndReportFailure(); });
 
     connect(view_, &BufferListView::rowActivated, this, &MainWindow::openRow);
+    // A click always opens what was clicked. Selection changes cover most of
+    // it, but clicking the row that is already current changes nothing, so a
+    // board that had been blanked could not be brought back by clicking.
+    connect(view_, &QAbstractItemView::clicked, this, [this](const QModelIndex& index) {
+        if (!index.isValid()) return;
+        if (model_->idAt(index.row()) != editingBuffer_ || !canvas_->showingANapkin())
+            selectBuffer(index.row());
+    });
     connect(view_->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
             [this](const QModelIndex& current, const QModelIndex&) {
                 selectBuffer(current.isValid() ? current.row() : -1);
@@ -208,7 +223,14 @@ void MainWindow::buildUi()
                 // Save what is there, then — and only then — decide whether an
                 // empty card should go.
                 flushAndReportFailure();
-                if (!leftEmpty || id == kNoItem) return;
+                if (!leftEmpty) return;
+                if (id == kNoItem) {
+                    // An unwritten note left empty goes away. Queued: the card
+                    // is still inside its own event handler.
+                    QMetaObject::invokeMethod(this, [this] { canvas_->discardComposer(); },
+                                              Qt::QueuedConnection);
+                    return;
+                }
                 QMetaObject::invokeMethod(this, [this, id] { discardItems({id}); },
                                           Qt::QueuedConnection);
             });
@@ -317,7 +339,10 @@ void MainWindow::buildUi()
     // Relative labels go stale silently, so repaint them on a slow tick.
     timeRefresh_ = new QTimer(this);
     timeRefresh_->setInterval(kTimeRefreshMs);
-    connect(timeRefresh_, &QTimer::timeout, this, [this] { model_->refreshTimestamps(); });
+    connect(timeRefresh_, &QTimer::timeout, this, [this] {
+        model_->refreshTimestamps();
+        canvas_->refreshTimestamps();
+    });
     timeRefresh_->start();
 
     view_->setAccessibleName(tr("Napkins"));
@@ -493,6 +518,10 @@ void MainWindow::goHome()
     if (trashToggle_) trashToggle_->setChecked(false);
     if (showTrashAction_) showTrashAction_->setChecked(false);
     if (model_->rowCount() > 0) view_->setCurrentIndex(model_->index(0, 0));
+    // currentRowChanged does not fire when the row is unchanged, and showTrash
+    // above blanked the board — which left a napkin highlighted in the list
+    // with "Select a napkin" beside it, and clicking it did nothing.
+    selectBuffer(view_->currentIndex().row());
     view_->setFocus(Qt::OtherFocusReason);
     updateEmptyState();
 }
@@ -552,7 +581,8 @@ void MainWindow::reportExport(const Exporter::Result& result, const QString& wha
     QMessageBox box(this);
     box.setWindowTitle(tr("Export"));
     box.setText(tr("%1 was exported.").arg(what));
-    box.setInformativeText(tr("%n item(s) written to:\n%1", "", result.items)
+    box.setInformativeText((result.items == 1 ? tr("1 item written to:\n%1")
+                                              : tr("%1 items written to:\n%2").arg(result.items))
                                .arg(QDir::toNativeSeparators(result.rootDir)));
 
     // An export that skipped something has to say so where the user is already
@@ -560,8 +590,10 @@ void MainWindow::reportExport(const Exporter::Result& result, const QString& wha
     if (!result.problems.isEmpty()) {
         box.setIcon(QMessageBox::Warning);
         box.setInformativeText(box.informativeText()
-                               + tr("\n\n%n item(s) could not be written.", "",
-                                    int(result.problems.size())));
+                               + (result.problems.size() == 1
+                                      ? tr("\n\n1 item could not be written.")
+                                      : tr("\n\n%1 items could not be written.")
+                                            .arg(result.problems.size())));
         box.setDetailedText(result.problems.join(QChar(u'\n')));
     } else {
         box.setIcon(QMessageBox::Information);
@@ -647,7 +679,7 @@ void MainWindow::restoreRow(int row)
     if (id == kNoBuffer) return;
     if (!guarded(tr("Could not restore that napkin"), [&] { service_.restore(id); })) return;
     reloadPreservingSelection();
-    emptyTrashButton_->setVisible(model_->rowCount() > 0);
+    updateEmptyTrashButton();
 }
 
 // A quiet line, shown only when there is genuinely something to clean up and
@@ -677,6 +709,15 @@ void MainWindow::reviewSweep()
 {
     canvas_->commitEditing();
     SweepDialog dialog(buffers_, items_, this);
+    // Nothing to review: say so, rather than opening an empty list with a
+    // highlighted "Move to trash" (usability test, 2026-09-19).
+    if (dialog.candidates() == 0) {
+        QMessageBox::information(
+            this, tr("Clean up"),
+            tr("Nothing to clean up. No napkin has gone untouched for %1 days.")
+                .arg(BufferService::olderThanDays()));
+        return;
+    }
     if (dialog.exec() != QDialog::Accepted) return;
     sweepForTest(dialog.accepted());
 }
@@ -703,7 +744,8 @@ void MainWindow::sweepForTest(const QList<BufferId>& chosen)
     reloadPreservingSelection();
     updateSweepNudge();
 
-    toast_->offer(tr("%n napkin(s) moved to trash", nullptr, swept), [this, chosen] {
+    toast_->offer(swept == 1 ? tr("1 napkin moved to trash")
+                             : tr("%1 napkins moved to trash").arg(swept), [this, chosen] {
         guarded(tr("Could not undo that"), [&] {
             for (BufferId id : chosen) service_.restore(id);
         });
@@ -712,18 +754,35 @@ void MainWindow::sweepForTest(const QList<BufferId>& chosen)
     });
 }
 
+// "Empty trash" belongs to the trash view. Three of the four places that set
+// its visibility checked only that the list was non-empty, so emptying from
+// the menu left the button on the ordinary napkin list.
+void MainWindow::updateEmptyTrashButton()
+{
+    emptyTrashButton_->setVisible(model_->mode() == BufferListModel::Mode::Trash
+                                  && model_->rowCount() > 0);
+}
+
 void MainWindow::showTrash(bool trash)
 {
     flushAndReportFailure();
     toast_->dismiss();
     model_->setMode(trash ? BufferListModel::Mode::Trash : BufferListModel::Mode::Live);
-    emptyTrashButton_->setVisible(trash && model_->rowCount() > 0);
+    updateEmptyTrashButton();
     // Switching modes leaves nothing selected, so the board must stop showing
     // the buffer that was selected in the other one. It did not: entering the
     // trash kept the previous live buffer's cards on screen, and a mode next to
     // deletion that looks identical to ordinary working is the worst kind of
     // ambiguity about which one you are in.
     canvas_->showNothingSelected();
+    // ...and nothing must look selected in the list either, or the list and the
+    // board disagree about what you are looking at.
+    if (view_->currentIndex().isValid()) {
+        const QSignalBlocker quiet(view_->selectionModel());
+        view_->selectionModel()->clearCurrentIndex();
+        view_->viewport()->update();
+    }
+    editingBuffer_ = kNoBuffer;
     updateEmptyState();
     updateSweepNudge();
 }
@@ -796,7 +855,7 @@ void MainWindow::trashRow(int row)
             }))
             return;
         reloadPreservingSelection();
-        emptyTrashButton_->setVisible(model_->rowCount() > 0);
+        updateEmptyTrashButton();
         return;
     }
 
@@ -1074,7 +1133,8 @@ void MainWindow::emptyTrash()
 
     QMessageBox box(this);
     box.setWindowTitle(tr("Empty the trash?"));
-    box.setText(tr("Delete %n napkin(s) permanently?", nullptr, count));
+    box.setText(count == 1 ? tr("Delete 1 napkin permanently?")
+                           : tr("Delete %1 napkins permanently?").arg(count));
     box.setInformativeText(tr("This cannot be undone."));
     box.setIcon(QMessageBox::Warning);
     box.addButton(QMessageBox::Cancel);
@@ -1089,7 +1149,7 @@ void MainWindow::emptyTrash()
     service_.emptyTrash();
     reconcileBlobs(items_, blobs_, paths::thumbsDir(), undoProtectedBlobs_);  // reclaim blobs AND thumbnails
     reloadPreservingSelection();
-    emptyTrashButton_->setVisible(model_->rowCount() > 0);
+    updateEmptyTrashButton();
 }
 
 void MainWindow::resizeEvent(QResizeEvent* e)

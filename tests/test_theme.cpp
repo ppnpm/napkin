@@ -4,6 +4,8 @@
 #include "GuiFixture.h"
 
 #include <QLabel>
+#include <QComboBox>
+#include <QGroupBox>
 #include <QMenuBar>
 #include <QFont>
 #include <QSettings>
@@ -278,6 +280,29 @@ private slots:
         }
         QSettings().setValue(QStringLiteral("appearance/theme"), int(SettingsDialog::Theme::Light));
         SettingsDialog::applyAppearance();
+    }
+
+
+    void theSettingsDialogFitsItsContentAndPreviewsTheTheme()
+    {
+        // Usability test: the dialog opened squeezed, clipping the preview and
+        // the Lifecycle notes, and the preview ignored the chosen theme.
+        SettingsDialog d;
+        d.show();
+        QCoreApplication::processEvents();
+        for (auto* box : d.findChildren<QGroupBox*>())
+            QVERIFY2(box->height() >= box->minimumSizeHint().height(), qPrintable(box->title()));
+
+        QLabel* preview = nullptr;
+        for (auto* l : d.findChildren<QLabel*>())
+            if (l->text().startsWith(QStringLiteral("The quick"))) preview = l;
+        QVERIFY(preview);
+        auto* theme = d.findChildren<QComboBox*>().first();   // Theme is the first row
+        theme->setCurrentIndex(int(SettingsDialog::Theme::Light));
+        const QColor light = preview->palette().color(preview->backgroundRole());
+        theme->setCurrentIndex(int(SettingsDialog::Theme::Dark));
+        const QColor dark = preview->palette().color(preview->backgroundRole());
+        QVERIFY2(dark.lightnessF() < light.lightnessF(), "the preview does not show the theme");
     }
 
 };

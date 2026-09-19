@@ -40,6 +40,7 @@ private:
 
     QString      url_;
     QString      path_;   // full, before elision to the width available
+    QString      hostText_;   // likewise for the host
     QLabel*      host_ = nullptr;
     QLabel*      rest_ = nullptr;
     QPushButton* open_ = nullptr;

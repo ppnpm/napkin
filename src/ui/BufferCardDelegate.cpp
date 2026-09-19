@@ -192,6 +192,16 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
         p->restore();
     }
 
+    // Where the keyboard is, when the list has it: the same dotted accent ring
+    // the board's cards use. Tabbing into the list showed nothing at all, so a
+    // keyboard user could not tell the list had focus (usability test).
+    if (option.state & QStyle::State_HasFocus) {
+        QPainterPath ring;
+        ring.addRoundedRect(QRectF(card).adjusted(3.5, 3.5, -3.5, -3.5), kRadius - 3, kRadius - 3);
+        p->setPen(QPen(tokens::readableAccent(pal, 1.0), 2.0, Qt::DotLine));
+        p->drawPath(ring);
+    }
+
     // --- pin / keep indicators -------------------------------------------------
     // Never colour alone: each glyph is a distinct shape, and the model exposes
     // an accessible label alongside it (SPEC.md §14).
@@ -250,6 +260,13 @@ void BufferCardDelegate::paint(QPainter* p, const QStyleOptionViewItem& option,
                                            (scaled.height() - box.height()) / 2),
                                     box.size()));
                 p->restore();
+                // A hairline edge, so a picture the colour of the card — a dark
+                // terminal screenshot in the dark theme — still reads as a
+                // picture rather than as a hole (usability test, 2026-09-19).
+                QColor edge = pal.color(QPalette::Text);
+                edge.setAlpha(60);
+                p->setPen(QPen(edge, 1));
+                p->drawRoundedRect(QRectF(box).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
             }
 
             // An animation showing only its first frame says so, rather than

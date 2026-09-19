@@ -7,6 +7,8 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QKeyEvent>
+#include <QContextMenuEvent>
+#include <QMenu>
 #include <QLabel>
 #include <QMimeData>
 #include <QDesktopServices>
@@ -68,6 +70,9 @@ void ItemCanvas::clearItems()
     anchor_ = kNoItem;
     cursor_ = -1;
     items_.clear();
+    // The whole napkin, not just what is showing: an empty napkin's board kept
+    // the previous napkin's items here, where a later filter could find them.
+    allItems_.clear();
     // Copy first: setParent(nullptr) removes the child from the very list being
     // iterated, so walking it live skips every other widget and leaves stale
     // cards parented and visible.
@@ -449,11 +454,29 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
     emit selectionChanged();
 }
 
+// Tabbing onto the board showed nothing: no card was current, so there was no
+// ring to draw. Arriving by keyboard now marks the first card current — only
+// current, not selected, so it changes nothing the user did not ask for.
+void ItemCanvas::focusInEvent(QFocusEvent* e)
+{
+    QScrollArea::focusInEvent(e);
+    const bool byKeyboard = e->reason() == Qt::TabFocusReason || e->reason() == Qt::BacktabFocusReason;
+    if (byKeyboard && cursor_ < 0 && !cards_.empty()) {
+        cursor_ = 0;
+        cards_.front()->setCurrent(true);
+    }
+}
+
 bool ItemCanvas::isTyping(const QKeyEvent* e)
 {
     if (e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) return false;
     const QString t = e->text();
     return !t.isEmpty() && t.at(0).isPrint();
+}
+
+void ItemCanvas::refreshTimestamps()
+{
+    for (auto* card : cards_) card->refreshTimestamp();
 }
 
 bool ItemCanvas::startsNoteOnTyping() const
@@ -462,6 +485,24 @@ bool ItemCanvas::startsNoteOnTyping() const
     for (auto* card : textCards_)
         if (card->isComposer()) return true;
     return false;
+}
+
+void ItemCanvas::discardComposer()
+{
+    TextItemCard* composer = nullptr;
+    for (auto* card : textCards_)
+        if (card->isComposer()) composer = card;
+    if (!composer || !composer->text().trimmed().isEmpty()) return;
+
+    std::erase_if(items_, [](const Item& i) { return i.id == kNoItem; });
+    std::erase(cards_, static_cast<ItemCard*>(composer));
+    std::erase(textCards_, composer);
+    live_.remove(kNoItem);
+    composer->hide();
+    composer->deleteLater();
+
+    if (items_.empty() && allItems_.empty()) { showEmptyBuffer(); return; }
+    relayout();
 }
 
 void ItemCanvas::startNote(const QString& firstText)
@@ -474,11 +515,43 @@ void ItemCanvas::startNote(const QString& firstText)
 // Double-clicking empty board space writes a note. It is what people try on an
 // empty napkin (the usability test: click, type, double-click, then give up),
 // and on a full one it is the mouse's Ctrl+T.
+ItemCard* ItemCanvas::cardAt(const QPoint& viewportPos) const
+{
+    const QPoint inBody = body_->mapFrom(viewport(), viewportPos);
+    for (QWidget* w = body_->childAt(inBody); w && w != body_; w = w->parentWidget())
+        if (auto* card = qobject_cast<ItemCard*>(w)) return card;
+    return nullptr;
+}
+
+// Right-clicking an item offered nothing: napkins in the list had a menu, the
+// things on them did not, and Cut/Copy/Delete were only in the shortcut sheet
+// (usability test, 2026-09-19). A card being edited keeps its editor's own
+// menu, which reaches here only if the editor declines it.
+void ItemCanvas::contextMenuEvent(QContextMenuEvent* e)
+{
+    ItemCard* card = cardAt(viewport()->mapFromGlobal(e->globalPos()));
+    if (!card) { QScrollArea::contextMenuEvent(e); return; }
+    if (!selected_.contains(card->itemId())) applySelection(card->itemId(), Qt::NoModifier);
+
+    QMenu menu(this);
+    const bool single = selected_.size() == 1;
+    if (single) {
+        if (auto* text = qobject_cast<TextItemCard*>(card))
+            menu.addAction(tr("Edit\tEnter"), this, [text] { text->beginEditing(); });
+        else
+            menu.addAction(tr("Open\tEnter"), this, [this, id = card->itemId()] { emit imageActivated(id); });
+        menu.addSeparator();
+    }
+    menu.addAction(tr("Copy\tCtrl+C"), this, [this] { copySelection(); });
+    menu.addAction(tr("Cut\tCtrl+X"), this, [this] { cutSelection(); });
+    menu.addSeparator();
+    menu.addAction(tr("Delete\tDel"), this, [this] { deleteSelection(); });
+    menu.exec(e->globalPos());
+}
+
 void ItemCanvas::mouseDoubleClickEvent(QMouseEvent* e)
 {
-    const QPoint inBody = body_->mapFrom(viewport(), e->position().toPoint());
-    for (QWidget* w = body_->childAt(inBody); w && w != body_; w = w->parentWidget())
-        if (qobject_cast<ItemCard*>(w)) { QScrollArea::mouseDoubleClickEvent(e); return; }
+    if (cardAt(e->position().toPoint())) { QScrollArea::mouseDoubleClickEvent(e); return; }
     if (bufferShown_ && e->button() == Qt::LeftButton) { addPendingTextCard(); return; }
     QScrollArea::mouseDoubleClickEvent(e);
 }

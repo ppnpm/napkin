@@ -4,6 +4,7 @@
 #include <QScrollArea>
 
 class QKeyEvent;
+class QContextMenuEvent;
 
 #include <QHash>
 #include <QSet>
@@ -98,11 +99,20 @@ public:
     // Starts a note that already holds `firstText` — the keystroke that asked
     // for it, which must land in the note rather than be swallowed.
     void startNote(const QString& firstText);
+    // Removes the unwritten note, if there is one. Escape on an empty new note
+    // used to leave a blank "Write something…" card behind, complete with a
+    // working "Copy text" button (usability test, 2026-09-19).
+    void discardComposer();
     // Typing should go into a note: the napkin is empty, or a note has just
     // been started and not yet written. The second case catches keystrokes that
     // arrive before focus has moved into the new note, which would otherwise be
     // dropped after the first letter.
     bool startsNoteOnTyping() const;
+    // A napkin (possibly empty) is on the board, as opposed to "Select a napkin".
+    bool showingANapkin() const { return bufferShown_; }
+    // Repaints the "5 minutes ago" on every card on the board. Only the list
+    // used to tick, so a card said "just now" for as long as it was on screen.
+    void refreshTimestamps();
     // Printable text with no command modifier: what "just typing" means.
     static bool isTyping(const QKeyEvent* e);
     bool textHasFocus() const;
@@ -133,7 +143,9 @@ signals:
 protected:
     void mousePressEvent(QMouseEvent* e) override;
     void mouseDoubleClickEvent(QMouseEvent* e) override;
+    void contextMenuEvent(QContextMenuEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
+    void focusInEvent(QFocusEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
 
 protected:
@@ -151,6 +163,7 @@ private slots:
 
 private:
     void wireCard(ItemCard* card);
+    ItemCard* cardAt(const QPoint& viewportPos) const;
     void applySelection(ItemId id, Qt::KeyboardModifiers modifiers);
     void relayout();
     int  stableWidth() const;

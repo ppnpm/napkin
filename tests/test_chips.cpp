@@ -2,6 +2,7 @@
 #include "GuiFixture.h"
 
 #include <QPushButton>
+#include <QLabel>
 #include <QtTest>
 
 using namespace napkin;
@@ -127,6 +128,24 @@ private slots:
         f.select(id);
         QVERIFY(!onlyTextCard(f)->showingChip());
     }
+
+    void aLongHostIsElidedNotCutMidLetter()
+    {
+        // Usability test: "www.example.c", clipped by its label.
+        LinkChip chip;
+        chip.setUrl(QStringLiteral("https://www.build-artifacts.ci.eu-west-2.internal.example.com/a/b"));
+        chip.resize(250, chip.sizeHint().height());   // the narrowest a card makes it
+        chip.show();
+        QCoreApplication::processEvents();
+        auto* host = chip.findChildren<QLabel*>().first();
+        const QString shown = host->text();
+        QVERIFY2(!shown.startsWith(QStringLiteral("www.")), qPrintable(shown));
+        QVERIFY2(shown.startsWith(QChar(0x2026)) || shown == QStringLiteral("build-artifacts.ci.eu-west-2.internal.example.com"),
+                 qPrintable(shown));
+        QVERIFY2(QFontMetrics(host->font()).horizontalAdvance(shown) <= host->width(), qPrintable(shown));
+        QVERIFY2(shown.endsWith(QStringLiteral(".example.com")) || shown == QStringLiteral("\u2026example.com"), qPrintable(shown));   // whose site it is survives, whole
+    }
+
 };
 
 QTEST_MAIN(TestChips)

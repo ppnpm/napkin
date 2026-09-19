@@ -83,6 +83,7 @@ protected:
     void changeEvent(QEvent* e) override;
 
 private:
+    void updateEmptyTrashButton();
     void styleMenuBar();
     void buildUi();
     QWidget* buildHeaderWidget();

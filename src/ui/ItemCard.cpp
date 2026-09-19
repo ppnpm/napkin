@@ -29,6 +29,11 @@
 #include <functional>
 
 namespace napkin {
+
+void ItemCard::refreshTimestamp()
+{
+    if (footer_) footer_->refreshTimestamp();
+}
 namespace {
 
 using namespace tokens;
@@ -203,7 +208,8 @@ void ItemCard::paintEvent(QPaintEvent*)
     // as a rendering artefact rather than as one confident selection. The
     // ring's job is to show where the keyboard is when the selection is not
     // already saying so.
-    if (current_ && !selected_ && !editing) {
+    // A card that has the keyboard itself (Tab lands on cards) is current too.
+    if ((current_ || hasFocus()) && !selected_ && !editing) {
         QPainterPath ring;
         ring.addRoundedRect(box.adjusted(3, 3, -3, -3), kCardRadius - 3, kCardRadius - 3);
         QPen focusPen(readableAccent(pal, 1.0), 2.0, Qt::DotLine);
@@ -212,6 +218,9 @@ void ItemCard::paintEvent(QPaintEvent*)
     }
 
 }
+
+void ItemCard::focusInEvent(QFocusEvent* e)  { QWidget::focusInEvent(e);  update(); }
+void ItemCard::focusOutEvent(QFocusEvent* e) { QWidget::focusOutEvent(e); update(); }
 
 void ItemCard::enterEvent(QEnterEvent* e)
 {
@@ -498,6 +507,11 @@ void TextItemCard::selectAllText()
 bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
 {
     if (event->type() == QEvent::MouseButtonDblClick) {
+        // Already editing: a double-click means what it means in any editor —
+        // select the word. Intercepting it here placed a caret instead, so
+        // double-clicking "Tuesday" to replace it produced "TuesWednesdayday"
+        // (usability test, 2026-09-19).
+        if (hasEditFocus()) return false;
         // Enable interaction, then place the caret ourselves from the click
         // position. Letting the editor handle the event did not work: the press
         // that began the double-click arrived while the widget was still
@@ -507,10 +521,13 @@ bool TextItemCard::eventFilter(QObject* watched, QEvent* event)
         const QPoint pos = edit_->viewport()->mapFrom(
             qobject_cast<QWidget*>(watched), mouse->position().toPoint());
         beginEditing(/*moveToEnd=*/false);
-        // Place the caret where the click landed. Deliberately not selecting the
-        // word: a caret is the signal that the card is editable, and a selection
-        // hides it.
-        edit_->setTextCursor(edit_->cursorForPosition(pos));
+        // Select the word that was double-clicked, as an editor would. This
+        // once deliberately placed a bare caret, reasoning that a selection
+        // hides it; but the highlighted word says "editable" just as plainly,
+        // and replacing a word is what a double-click on one is for.
+        QTextCursor cursor = edit_->cursorForPosition(pos);
+        cursor.select(QTextCursor::WordUnderCursor);
+        edit_->setTextCursor(cursor);
         edit_->ensureCursorVisible();
         return true;
     }
@@ -637,6 +654,7 @@ void ImageItemCard::applyPalette()
     QPalette pal = caption_->palette();
     pal.setColor(QPalette::WindowText, text(palette(), kTextTertiary));
     caption_->setPalette(pal);
+    rescale();   // the image's edge is drawn in the theme's colour
 }
 
 void ImageItemCard::rescale()
@@ -650,7 +668,17 @@ void ImageItemCard::rescale()
 
     const QSize target = source_.size().scaled(available, room, Qt::KeepAspectRatio)
                              .boundedTo(source_.size());
-    view_->setPixmap(source_.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    QPixmap shown = source_.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    // The same hairline edge the list's thumbnails carry, for the same reason:
+    // a picture the colour of the card read as empty space.
+    {
+        QPainter edge(&shown);
+        QColor c = palette().color(QPalette::Text);
+        c.setAlpha(60);
+        edge.setPen(QPen(c, 1));
+        edge.drawRect(QRectF(shown.rect()).adjusted(0.5, 0.5, -0.5, -0.5));
+    }
+    view_->setPixmap(shown);
 }
 
 void ImageItemCard::resizeEvent(QResizeEvent* e)

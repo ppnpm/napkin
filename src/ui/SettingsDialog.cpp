@@ -231,6 +231,13 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->setSpacing(14);
+    // Wide enough that the wrapped notes below are a few lines, not a column,
+    // and exactly as tall as the content. Qt under-reported this layout's
+    // minimum (539px for 607px of content), so the dialog opened squeezed and
+    // clipped both the preview and the Lifecycle notes — usability test,
+    // 2026-09-19. A settings dialog has nothing to gain from being resizable.
+    setMinimumWidth(480);
+    layout->setSizeConstraint(QLayout::SetFixedSize);
 
     // --- appearance ---------------------------------------------------------
     auto* look = new QGroupBox(tr("Appearance"));
@@ -282,8 +289,8 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
     preview_ = new QLabel;
     preview_->setFrameShape(QFrame::StyledPanel);
     preview_->setAlignment(Qt::AlignCenter);
-    preview_->setMinimumHeight(56);
-    preview_->setWordWrap(true);
+    preview_->setAutoFillBackground(true);   // it shows the chosen theme's surface
+    preview_->setMinimumWidth(260);           // Breeze keeps form fields at their hint
     lookForm->addRow(tr("Preview"), preview_);
 
     // Live, so the choice is made by looking rather than by guessing and
@@ -291,13 +298,19 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
     connect(font_, &QFontComboBox::currentFontChanged, this, &SettingsDialog::updatePreview);
     connect(scale_, &QComboBox::currentIndexChanged, this, &SettingsDialog::updatePreview);
     connect(accent_, &QComboBox::currentIndexChanged, this, &SettingsDialog::updatePreview);
+    connect(theme_, &QComboBox::currentIndexChanged, this, &SettingsDialog::updatePreview);
     updatePreview();
 
     layout->addWidget(look);
 
     // --- lifecycle ----------------------------------------------------------
     auto* life = new QGroupBox(tr("Lifecycle"));
-    auto* lifeForm = new QFormLayout(life);
+    // A column holding the form and, under it, the notes: QFormLayout does not
+    // report a wrapped label's height upward, so notes placed in the form were
+    // clipped top and bottom (usability test, 2026-09-19). A plain column does.
+    auto* lifeColumn = new QVBoxLayout(life);
+    auto* lifeForm = new QFormLayout;
+    lifeColumn->addLayout(lifeForm);
     lifeForm->setSpacing(10);
 
     older_ = new QSpinBox;
@@ -324,15 +337,15 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
         tr("Closing the window then hides Napkin instead of quitting it, so it is "
            "already running the next time you have something to put somewhere."));
     trayNote->setWordWrap(true);
-    lifeForm->addRow(trayNote);
 
     auto* note = new QLabel(
         tr("Nothing is deleted on your behalf. “Older” only changes where "
            "a napkin sits in the list; the trash is the only thing that empties, "
            "and only what you have already deleted."));
     note->setWordWrap(true);
-    lifeForm->addRow(note);
 
+    lifeColumn->addWidget(trayNote);
+    lifeColumn->addWidget(note);
     layout->addWidget(life);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
@@ -352,16 +365,28 @@ void SettingsDialog::updatePreview()
     sample.setPointSizeF(std::max(5.0, systemFont().pointSizeF() * percent / 100.0));
     preview_->setFont(sample);
     preview_->setText(tr("The quick brown fox\n0123456789"));
+    // Two explicit lines, never wrapped: it was word-wrapped inside a fixed
+    // 56px box, so at larger sizes the second line was cut off.
+    const QFontMetrics fm(sample);
+    preview_->setMinimumHeight(fm.lineSpacing() * 2 + 24);
 
+    // The chosen theme, in the preview only. The dialog itself still does not
+    // restyle as you choose (a dialog reflowing under the pointer moves the
+    // control you are using), but a preview that ignored the theme left
+    // "Dark" untestable until after Save.
+    const int theme = theme_->currentIndex();
+    const QPalette themed = theme == int(Theme::Light) ? buildPalette(false, systemPalette())
+                          : theme == int(Theme::Dark)  ? buildPalette(true, systemPalette())
+                                                       : systemPalette();
     const int index = accent_->currentIndex();
     QPalette p = preview_->palette();
+    p.setColor(preview_->backgroundRole(), themed.color(QPalette::Base));
     if (index > 0) {
-        QPalette probe = QApplication::palette();
+        QPalette probe = themed;
         probe.setColor(QPalette::Highlight, QColor::fromRgba(kAccents[index].rgb));
         p.setColor(preview_->foregroundRole(), tokens::readableAccent(probe, 1.0));
     } else {
-        p.setColor(preview_->foregroundRole(),
-                   tokens::text(QApplication::palette(), tokens::kTextPrimary));
+        p.setColor(preview_->foregroundRole(), tokens::text(themed, tokens::kTextPrimary));
     }
     preview_->setPalette(p);
 }

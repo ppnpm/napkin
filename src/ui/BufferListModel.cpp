@@ -305,7 +305,14 @@ void BufferListModel::invalidatePreview(BufferId id)
 {
     previewCache_.remove(id);
     const int row = rowForId(id);
-    if (row >= 0) emit dataChanged(index(row), index(row));
+    if (row < 0) return;
+    // Re-read the row itself, not only its preview. While a napkin is being
+    // worked on the list does not re-sort (freezeOrder), so its row kept the
+    // modified time from the last reload: edit a note and the list still said
+    // "23 minutes ago". The time updates here; the position waits, as before.
+    if (id != kNoBuffer)
+        if (const auto fresh = buffers_.find(id)) rows_[size_t(row)] = *fresh;
+    emit dataChanged(index(row), index(row));
 }
 
 void BufferListModel::refreshTimestamps()

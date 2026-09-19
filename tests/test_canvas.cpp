@@ -1,5 +1,6 @@
 #include "../src/ui/BoardLayout.h"
 #include "GuiFixture.h"
+#include "../src/domain/Clock.h"
 #include "../src/media/BlobGc.h"
 #include "../src/ui/Tokens.h"
 #include "../src/ui/CardFooter.h"
@@ -10,6 +11,9 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QPushButton>
+#include <QAbstractButton>
+#include <QTimer>
+#include <QMessageBox>
 #include <QLineEdit>
 #include <QPushButton>
 #include "../src/ui/WelcomeView.h"
@@ -1375,6 +1379,147 @@ private slots:
         QCOMPARE(f.model()->idAt(0), newer);   // held while typing
         QVERIFY(f.model()->orderFrozen());
     }
+
+    // Usability test, 2026-09-19: after "Clear search" a napkin was highlighted
+    // in the list while the board said "Select a napkin", and clicking it did
+    // nothing — the board only followed *changes* of the current row.
+    void clearingASearchReopensTheHighlightedNapkin()
+    {
+        GuiFixture f;
+        const auto pinned = f.seed("Dr. Rao 555-0142");
+        f.seed("something else");
+        f.service.setPinned(pinned, true);
+        f.model()->reload();
+        f.select(pinned);
+
+        auto* field = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        field->setText(QStringLiteral("zzz"));
+        QTRY_VERIFY_WITH_TIMEOUT(f.model()->isSearching() && f.model()->rowCount() == 0, 2000);
+
+        QPushButton* clear = nullptr;
+        for (auto* b : f.window.findChildren<QPushButton*>())
+            if (b->text() == QStringLiteral("Clear search") && b->isVisible()) clear = b;
+        QVERIFY(clear);
+        clear->click();
+
+        // Whatever is highlighted is what the board shows.
+        QVERIFY(f.view()->currentIndex().isValid());
+        const BufferId highlighted = f.model()->idAt(f.view()->currentIndex().row());
+        QCOMPARE(f.canvas()->itemOrder(), [&] {
+            QList<ItemId> ids;
+            for (const auto& i : f.items.listForBuffer(highlighted)) ids << i.id;
+            return ids;
+        }());
+    }
+
+    void leavingTheTrashLeavesNothingHighlightedThatIsNotShown()
+    {
+        GuiFixture f;
+        const auto id = f.seed("a note");
+        f.select(id);
+        f.window.showTrash(true);
+        f.window.showTrash(false);
+        // Either nothing is current, or the current row is on the board.
+        if (f.view()->currentIndex().isValid())
+            QVERIFY(!f.canvas()->itemOrder().isEmpty());
+    }
+
+    void clickingTheCurrentRowOpensItWhenTheBoardIsBlank()
+    {
+        GuiFixture f;
+        const auto id = f.seed("a note");
+        f.select(id);
+        f.canvas()->showNothingSelected();          // however it came to be blank
+        const QRect r = f.view()->visualRect(f.model()->index(f.model()->rowForId(id), 0));
+        QTest::mouseClick(f.view()->viewport(), Qt::LeftButton, {}, r.center());
+        QVERIFY(!f.canvas()->itemOrder().isEmpty());
+    }
+
+
+    void emptyingTheTrashFromTheMenuLeavesNoTrashButtonOnTheList()
+    {
+        GuiFixture f;
+        f.seed("keep me");
+        const auto doomed = f.seed("throw me away");
+        f.service.trash(doomed);
+        f.model()->reload();
+        auto* button = f.window.findChild<QPushButton*>(QStringLiteral("emptyTrashButton"));
+        QVERIFY(button);
+
+        QTimer::singleShot(50, [] {
+            for (QWidget* w : QApplication::topLevelWidgets())
+                if (auto* box = qobject_cast<QMessageBox*>(w))
+                    for (auto* b : box->buttons())
+                        if (b->text() == QStringLiteral("Delete permanently")) b->click();
+        });
+        f.window.emptyTrash();               // from the menu, on the napkin list
+        QCOMPARE(f.buffers.countTrash(), 0);
+        QVERIFY(button->isHidden());
+
+        f.window.showTrash(true);            // and in the trash, with nothing in it
+        QVERIFY(button->isHidden());
+    }
+
+
+    void editingANoteRefreshesItsTimeInTheList()
+    {
+        // Usability test: after editing, the list still said "23 minutes ago" —
+        // the row kept the time from the last reload while its order was frozen.
+        GuiFixture f;
+        const auto id = f.seed("Call the dentist");
+        const Timestamp dayAgo = nowMs() - kMsPerDay;
+        f.buffers.setModifiedAt(id, dayAgo);
+        f.model()->reload();
+        f.select(id);
+        const int row = f.model()->rowForId(id);
+        QCOMPARE(f.model()->index(row, 0).data(BufferListModel::ModifiedAtRole).toLongLong(), dayAgo);
+
+        auto* card = f.window.findChildren<TextItemCard*>().first();
+        card->beginEditing();
+        QTest::keyClicks(card->findChild<QPlainTextEdit*>(), " today");
+        QTRY_VERIFY_WITH_TIMEOUT(
+            f.model()->index(f.model()->rowForId(id), 0).data(BufferListModel::ModifiedAtRole)
+                .toLongLong() > dayAgo, 4000);
+    }
+
+
+    void tabbingOntoTheBoardShowsWhereTheKeyboardIs()
+    {
+        // Usability test: after Tab reached the board nothing marked where
+        // the keyboard was, because no card was current.
+        GuiFixture f;
+        const auto id = f.seed("one");
+        f.service.appendTo(id, Item::makeText(QStringLiteral("two")));
+        f.model()->reload();
+        f.select(id);
+        QFocusEvent in(QEvent::FocusIn, Qt::TabFocusReason);
+        QApplication::sendEvent(f.canvas(), &in);
+        int current = 0;
+        for (auto* card : f.canvas()->findChildren<ItemCard*>()) current += card->isCurrent();
+        QCOMPARE(current, 1);
+        QVERIFY(f.canvas()->selection().isEmpty());   // marked, not selected
+    }
+
+
+    void escapeOnAnEmptyNewNoteLeavesNoBlankCard()
+    {
+        GuiFixture f;
+        const auto id = f.seed("existing note");
+        f.select(id);
+        f.canvas()->addPendingTextCard();
+        QCOMPARE(f.window.findChildren<TextItemCard*>().size(), 2);
+        QTest::keyClick(f.editor(), Qt::Key_Escape);
+        QTRY_COMPARE_WITH_TIMEOUT(f.canvas()->findChildren<TextItemCard*>().size(), 1, 2000);
+        QCOMPARE(int(f.items.listForBuffer(id).size()), 1);
+
+        // And on a brand-new napkin the board goes back to "Nothing here yet".
+        f.trigger("newBufferAction");
+        f.canvas()->addPendingTextCard();
+        QTest::keyClick(f.editor(), Qt::Key_Escape);
+        QTRY_VERIFY_WITH_TIMEOUT(f.canvas()->findChildren<TextItemCard*>().isEmpty(), 2000);
+        QVERIFY(f.canvas()->startsNoteOnTyping());
+    }
+
 };
 
 QTEST_MAIN(TestCanvas)

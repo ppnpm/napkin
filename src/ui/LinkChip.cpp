@@ -32,6 +32,9 @@ LinkChip::LinkChip(QWidget* parent) : QWidget(parent)
     column->setSpacing(1);
     host_ = new QLabel;
     host_->setFont(scaledBy(font(), kTypeLead, QFont::DemiBold));
+    // Elided like the path below, so it must be allowed narrower than its text.
+    host_->setMinimumWidth(1);
+    host_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     rest_ = new QLabel;
     rest_->setFont(scaledBy(font(), kTypeCaption));
     column->addWidget(host_);
@@ -52,7 +55,9 @@ void LinkChip::setUrl(const QString& url)
 {
     url_ = url;
     const QString host = links::hostOf(url);
-    host_->setText(host);
+    // "www." says nothing about whose site it is and costs the room that does;
+    // the tooltip and the accessible name keep the address whole.
+    hostText_ = host.startsWith(QLatin1String("www.")) ? host.mid(4) : host;
 
     // The path, not the whole URL again: the host is already above it, and
     // repeating it wastes the only line that distinguishes two links to the
@@ -77,6 +82,24 @@ void LinkChip::elidePath()
 {
     const int available = std::max(40, rest_->width());
     rest_->setText(QFontMetrics(rest_->font()).elidedText(path_, Qt::ElideMiddle, available));
+    // The host was set whole and clipped by the label: "www.example.c", cut
+    // mid-letter beside a neatly elided path (usability test, 2026-09-19).
+    // Elided from the left, so the part that says whose site it is survives.
+    const int hostRoom = std::max(40, host_->width());
+    const QFontMetrics hostMetrics(host_->font());
+    QString shown = hostText_;
+    if (hostMetrics.horizontalAdvance(shown) > hostRoom) {
+        // Drop whole labels from the left — "…example.com", never "…mple.com" —
+        // and cut inside a label only if even the last two do not fit.
+        const QStringList labels = hostText_.split(QLatin1Char('.'));
+        shown.clear();
+        for (int keep = int(labels.size()) - 1; keep >= 2 && shown.isEmpty(); --keep) {
+            const QString candidate = QChar(0x2026) + labels.mid(labels.size() - keep).join(QLatin1Char('.'));
+            if (hostMetrics.horizontalAdvance(candidate) <= hostRoom) shown = candidate;
+        }
+        if (shown.isEmpty()) shown = hostMetrics.elidedText(hostText_, Qt::ElideLeft, hostRoom);
+    }
+    host_->setText(shown);
 }
 
 void LinkChip::resizeEvent(QResizeEvent* e)

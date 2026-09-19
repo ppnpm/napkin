@@ -200,6 +200,29 @@ private slots:
         QCOMPARE(f.buffers.countLive(), 2);
         QCOMPARE(f.buffers.countTrash(), 0);
     }
+
+    void moveToTrashIsOnlyAvailableWhenSomethingIsTicked()
+    {
+        // Usability test: with nothing to clean, the dialog opened an empty
+        // list with "Move to trash" highlighted as the default.
+        GuiFixture f;
+        aged(f, "recent thing", 2);
+        f.model()->reload();
+        QCOMPARE(SweepDialog(f.buffers, f.items).candidates(), 0);
+
+        aged(f, "old thing", 60);
+        f.model()->reload();
+        SweepDialog dialog(f.buffers, f.items);
+        QCOMPARE(dialog.candidates(), 1);
+        QPushButton* sweep = nullptr;
+        for (auto* b : dialog.findChildren<QPushButton*>())
+            if (b->text() == QStringLiteral("Move to trash")) sweep = b;
+        QVERIFY(sweep);
+        QVERIFY(sweep->isEnabled());
+        dialog.findChild<QListWidget*>()->item(0)->setCheckState(Qt::Unchecked);
+        QVERIFY(!sweep->isEnabled());
+    }
+
 };
 
 QTEST_MAIN(TestSweep)
