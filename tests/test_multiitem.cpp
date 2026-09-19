@@ -6,6 +6,8 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QClipboard>
+#include <QLineEdit>
+#include <QMimeData>
 #include <QtTest>
 
 using namespace napkin;
@@ -508,6 +510,56 @@ private slots:
         f.trigger("pasteAction");
         QCOMPARE(f.model()->mode(), BufferListModel::Mode::Live);
         QCOMPARE(f.buffers.countLive(), 1);
+    }
+
+
+    // --- Ctrl+V with the search box focused ----------------------------------
+    void pastingTextIntoAnEmptySearchBoxPutsItOnTheNapkin()
+    {
+        GuiFixture f;
+        auto* search = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        QApplication::clipboard()->setText(QStringLiteral("Remember the milk"));
+        QTest::keyClick(search, Qt::Key_V, Qt::ControlModifier);
+        QVERIFY(search->text().isEmpty());                        // not a search for it
+        QCOMPARE(f.buffers.countLive(), 1);
+        const auto id = f.buffers.listLive(5).front().id;
+        QCOMPARE(f.items.listForBuffer(id).front().text, QStringLiteral("Remember the milk"));
+    }
+
+    void pastingAnImageWithTheSearchBoxFocusedPutsItOnTheNapkin()
+    {
+        GuiFixture f;
+        auto* search = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        auto* mime = new QMimeData;
+        mime->setData(QStringLiteral("image/png"), png(40, 30, Qt::red));
+        QApplication::clipboard()->setMimeData(mime);
+        QTest::keyClick(search, Qt::Key_V, Qt::ControlModifier);
+        QCOMPARE(f.buffers.countLive(), 1);                       // it used to vanish
+        QCOMPARE(f.items.listForBuffer(f.buffers.listLive(5).front().id).front().type, ItemType::Image);
+    }
+
+    void pastingIntoAQueryBeingEditedStillEditsTheQuery()
+    {
+        GuiFixture f;
+        f.seed("something");
+        auto* search = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        search->setText(QStringLiteral("some"));
+        QApplication::clipboard()->setText(QStringLiteral("thing"));
+        QTest::keyClick(search, Qt::Key_V, Qt::ControlModifier);
+        QCOMPARE(search->text(), QStringLiteral("something"));
+        QCOMPARE(f.buffers.countLive(), 1);                       // nothing new was made
+    }
+
+
+    void ctrlShiftVPastesIntoTheSearchBox()
+    {
+        GuiFixture f;
+        f.seed("buy more milk");
+        auto* search = f.window.findChild<QLineEdit*>(QStringLiteral("searchField"));
+        QApplication::clipboard()->setText(QStringLiteral("more\nmilk"));
+        QTest::keyClick(search, Qt::Key_V, Qt::ControlModifier | Qt::ShiftModifier);
+        QCOMPARE(search->text(), QStringLiteral("more milk"));    // one line
+        QCOMPARE(f.buffers.countLive(), 1);                       // nothing was pasted as an item
     }
 
 };

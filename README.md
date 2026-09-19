@@ -90,6 +90,7 @@ The test suites need no display: the GUI tests run on Qt's offscreen platform.
 | `Ctrl+T` | New note on this napkin |
 | `Ctrl+Shift+I` | Add an image from a file |
 | `Ctrl+F` / `Ctrl+K` | Search |
+| `Ctrl+Shift+V` | Paste into the search box (plain `Ctrl+V` there pastes onto the napkin) |
 | `Ctrl+P` / `Ctrl+D` | Pin or keep the selected napkin |
 | `Ctrl+Z` | Undo the last delete, pin or keep |
 | `Delete` | Move the selected napkin to the trash (list focused) |

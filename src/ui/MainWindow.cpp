@@ -381,7 +381,10 @@ QWidget* MainWindow::buildHeaderWidget()
     search_->setPlaceholderText(tr("Search"));
     search_->setClearButtonEnabled(true);
     search_->setObjectName(QStringLiteral("searchField"));
+    search_->installEventFilter(this);   // Ctrl+V here; see eventFilter
     search_->setAccessibleName(tr("Search your napkins"));
+    search_->setToolTip(tr("Search your napkins (Ctrl+F)\n"
+                           "Ctrl+V pastes onto the napkin; Ctrl+Shift+V pastes here."));
     search_->setMaximumWidth(280);
     // Over the pane it filters, which is the only place it means anything.
     layout->addWidget(search_);
@@ -681,6 +684,7 @@ void MainWindow::showShortcuts()
         tr("<table cellpadding='4'>"
            "<tr><td><b>Ctrl+N</b></td><td>New napkin</td></tr>"
            "<tr><td><b>Ctrl+F</b></td><td>Search</td></tr>"
+           "<tr><td><b>Ctrl+Shift+V</b></td><td>Paste into the search box</td></tr>"
            "<tr><td><b>Ctrl+T</b></td><td>New note on this napkin</td></tr>"
            "<tr><td><b>Ctrl+V</b></td><td>Paste onto this napkin</td></tr>"
            "<tr><td><b>Ctrl+Shift+I</b></td><td>Add an image from a file</td></tr>"
@@ -1342,6 +1346,32 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
     // commands and type-ahead search: "P" pinned, "K" kept, anything else
     // jumped to another napkin. None of that is what someone typing on an
     // empty napkin means, so the text goes to a note instead.
+    // Ctrl+V in the search box pastes onto the napkin unless the box can and
+    // should take it. An image vanished — a line edit cannot hold one — and
+    // text became a search for the whole pasted note, hiding every napkin
+    // ("Nothing matches"). The box keeps a paste only while a query is being
+    // edited; right-click ▸ Paste still puts text into an empty box.
+    // Ctrl+Shift+V is the deliberate "paste into the search box". Line breaks
+    // collapse to spaces: the box is one line, and a query with newlines in it
+    // matches nothing a person would expect.
+    if (watched == search_ && event->type() == QEvent::KeyPress) {
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (key->key() == Qt::Key_V
+            && key->modifiers() == (Qt::ControlModifier | Qt::ShiftModifier)) {
+            search_->insert(QApplication::clipboard()->text().simplified());
+            return true;
+        }
+    }
+    if (watched == search_ && event->type() == QEvent::KeyPress
+        && static_cast<QKeyEvent*>(event)->matches(QKeySequence::Paste)) {
+        const QMimeData* clip = QApplication::clipboard()->mimeData();
+        const bool textOnly = clip && clip->hasText() && !clip->hasImage();
+        if (!textOnly || search_->text().isEmpty()) {
+            pasteFromClipboard();
+            canvas_->setFocus(Qt::OtherFocusReason);   // so the next Ctrl+V pastes again
+            return true;
+        }
+    }
     if (watched == view_ && event->type() == QEvent::KeyPress) {
         auto* key = static_cast<QKeyEvent*>(event);
         const int row = view_->currentIndex().row();
