@@ -1724,8 +1724,13 @@ not fail.**
 
 - The lightbox does not page across a buffer's images with ←/→; each image is
   opened individually from the expanded card.
-- No undo for Pin or Keep, and no confirmation that they happened beyond the
-  glyph appearing.
+- Opening a napkin grows with the size of its notes: a card's editor holds
+  the whole text, so it can be edited, and `setPlainText` is linear — measured
+  at 3 ms for 36 KB, 37 ms for 400 KB and 135 ms for 1.2 MB. The board's
+  *measuring* is capped and flat (1–2 ms at any size); it is the editor.
+  Loading only what a clipped card shows, and the rest on first edit, would fix
+  it. Found by a test that used to time the whole of opening against a fixed
+  250 ms: flaky under load, and too loose to notice the growth.
 - `reconcileBlobs()` runs synchronously on the UI thread, so a very large blob
   store will stall the window during *Empty trash*.
 - The multi-instance guard is still best-effort; a real `flock` on the data

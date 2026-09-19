@@ -1295,32 +1295,52 @@ private slots:
 
     void aHugePasteIsNotFullyMeasuredJustToFindItsHeight()
     {
+        // A card caps at kCardMaxHeight, so laying out the rest of a 140 KB
+        // paste to find its height is work whose result is already known.
+        //
+        // This used to time the whole of opening the napkin against a fixed
+        // 250 ms and failed intermittently on a busy machine (254 and 303 ms
+        // with every core loaded — why it only showed up straight after
+        // builds). Timing opening as a ratio then showed it does grow with the
+        // text: not because of the measuring, which is capped, but because the
+        // card's editor holds the whole note. That is recorded in SPEC §12. The
+        // measuring is what this test is about, so it times the board alone,
+        // as a ratio, which load cannot fake.
+        auto measure = [](int lines) {
+            QString text;
+            for (int i = 0; i < lines; ++i) text += QStringLiteral("line %1\n").arg(i);
+            Item item = Item::makeText(text);
+            item.id = lines;
+            BoardLayout board;
+            board.setViewport(320);
+            QElapsedTimer t;
+            t.start();
+            for (int k = 0; k < 5; ++k) { board.invalidate(item.id); board.rebuild({item}); }
+            return t.nsecsElapsed();
+        };
+        measure(2000);                                   // first-use costs land here
+        const qint64 small = measure(2000);
+        const qint64 huge = measure(20000);
+        QVERIFY2(huge <= small * 3 + 20'000'000,
+                 qPrintable(QString("measuring 10x the text took %1 ms against %2 ms")
+                                .arg(huge / 1e6).arg(small / 1e6)));
+
+        // And the card itself is capped.
         GuiFixture f;
         const auto id = f.buffers.create();
-        QString huge;
-        for (int i = 0; i < 20000; ++i) huge += QStringLiteral("line %1\n").arg(i);
-        f.service.appendTo(id, Item::makeText(huge));
+        QString text;
+        for (int i = 0; i < 20000; ++i) text += QStringLiteral("line %1\n").arg(i);
+        f.service.appendTo(id, Item::makeText(text));
         f.model()->reload();
-
-        QElapsedTimer t;
-        t.start();
         f.select(id);
-        const qint64 ms = t.elapsed();
-
-        // A card caps at kCardMaxHeight, so laying out the rest of a 140 KB
-        // paste is work whose result is already known.
         auto* card = f.canvas()->findChildren<TextItemCard*>().first();
         QVERIFY(card->isClipped());
-        // At the cap, give or take one line. A clipped card is trimmed to a
-        // whole number of lines so the cut lands in the leading rather than
-        // through the middle of a row of glyphs; what matters here is that a
-        // 140 KB paste does not grow the card, not that it hits the cap to the
-        // pixel.
+        // At the cap, give or take one line: a clipped card is trimmed to a
+        // whole number of lines so the cut lands in the leading.
         QVERIFY2(card->height() <= tokens::kCardMaxHeight
                      && card->height() > tokens::kCardMaxHeight - card->fontMetrics().lineSpacing(),
                  qPrintable(QString("card is %1px, cap is %2px")
                                 .arg(card->height()).arg(tokens::kCardMaxHeight)));
-        QVERIFY2(ms < 250, qPrintable(QString("opening took %1 ms").arg(ms)));
     }
 
     void aVeryLongTextCardIsCappedRatherThanOwningTheBoard()
