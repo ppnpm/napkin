@@ -47,8 +47,10 @@ qt_standard_project_setup()
 # reported "Command line error D8021: invalid numeric argument '/Wextra'" — the
 # first real portability problem the informational Windows job found, and in the
 # build system rather than in the code.
+# /utf-8: the sources are UTF-8, and without it MSVC reads them in the system
+# code page, so a literal like "日本語" in a test compiles to something else.
 if(MSVC)
-  add_compile_options(/W4 /permissive-)
+  add_compile_options(/W4 /permissive- /utf-8)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -208,4 +210,15 @@ foreach(t test_editing test_sweep test_lifecycle test_images test_multiitem test
   target_link_libraries(${t} PRIVATE napkin_ui Qt6::Test)
   add_test(NAME ${t} COMMAND ${t})
   set_tests_properties(${t} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endforeach()
+
+# qt_add_executable can make a GUI-subsystem program on Windows, which has no
+# stdout: the first Windows run reported two failing suites and not one line of
+# why. Tests and tools are console programs; only napkin itself is a GUI one.
+get_directory_property(_targets BUILDSYSTEM_TARGETS)
+foreach(_t IN LISTS _targets)
+  get_target_property(_type ${_t} TYPE)
+  if(_type STREQUAL "EXECUTABLE" AND NOT _t STREQUAL "napkin")
+    set_target_properties(${_t} PROPERTIES WIN32_EXECUTABLE OFF)
+  endif()
 endforeach()

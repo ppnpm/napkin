@@ -130,7 +130,10 @@ bool Exporter::writeBuffer(BufferId id, const QString& parentDir, Result& result
                                      .arg(index, 3, 10, QChar(u'0'))
                                      .arg(slug(item.text, 32));
             QSaveFile file(QDir(dir).filePath(name));
-            if (!file.open(QIODevice::WriteOnly | QIODevice::Text)
+            // Not QIODevice::Text: that turns every \n into \r\n on Windows,
+            // so the file would no longer be the text that was typed, and an
+            // export made there would differ from the same export made here.
+            if (!file.open(QIODevice::WriteOnly)
                 || file.write(item.text.toUtf8()) < 0 || !file.commit()) {
                 result.problems << QObject::tr("Could not write %1.").arg(name);
                 continue;
