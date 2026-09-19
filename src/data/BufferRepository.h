@@ -53,6 +53,10 @@ public:
     // Escape hatch for a future "delete permanently" path. Raises the
     // transaction-scoped guard flag so the trigger permits the delete.
     void hardDeleteEvenIfKept(BufferId id);
+    // Deletes the buffer only if it holds no items and is not kept. Used to
+    // take back the napkin an item delete put in the trash, once undo has
+    // moved its items home. Returns whether it deleted.
+    bool removeIfEmpty(BufferId id);
 
 private:
     Database& db_;

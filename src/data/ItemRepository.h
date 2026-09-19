@@ -34,6 +34,9 @@ public:
 
     void updateText(ItemId id, const QString& text);
     void remove(ItemId id);
+    // Re-homes an item without touching its content or timestamps: deleting
+    // items moves them into the trash this way, and undo moves them back.
+    void moveTo(ItemId id, BufferId buffer, int position);
 
     // SPEC.md §5: a blob is unlinked only when no item references it any more.
     // A query, not a refcount — so no drift is possible.

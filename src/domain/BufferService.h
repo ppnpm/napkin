@@ -47,6 +47,21 @@ public:
     void updateTextItem(BufferId bufferId, ItemId itemId, const QString& text);
     void removeItem(BufferId bufferId, ItemId itemId);
 
+    // Deleting items puts them in the trash, like deleting a napkin does, so a
+    // missed undo toast no longer means they are gone. Deleting every item of
+    // a napkin trashes that napkin; deleting some moves them into a new napkin
+    // that goes straight to the trash, where it can be restored or emptied like
+    // any other. The trash stays a list of napkins, so there is one place to
+    // look and one retention rule.
+    struct TrashedItems {
+        BufferId holder = kNoBuffer;   // the napkin now in the trash
+        bool wholeNapkin = false;      // holder is the original napkin
+    };
+    TrashedItems trashItems(BufferId from, const std::vector<ItemId>& ids);
+    // Undo of trashItems: every item goes back to `from` where it was.
+    void untrashItems(BufferId from, const TrashedItems& trashed,
+                      const std::vector<Item>& originals);
+
     void setPinned(BufferId id, bool pinned);
     void setKept(BufferId id, bool kept);
 

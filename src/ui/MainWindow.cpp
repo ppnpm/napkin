@@ -35,6 +35,7 @@
 #include <QClipboard>
 #include <QFileDialog>
 #include <QMenu>
+#include <QKeyEvent>
 #include <QMenuBar>
 #include <QToolButton>
 #include <QMimeData>
@@ -64,6 +65,7 @@ void MainWindow::buildUi()
 {
     model_ = new BufferListModel(db_, buffers_, items_, this);
     view_  = new BufferListView(thumbs_, blobs_);
+    view_->installEventFilter(this);   // typing on an empty napkin; see eventFilter
     view_->setModel(model_);
 
     // --- the start page ------------------------------------------------------
@@ -75,6 +77,12 @@ void MainWindow::buildUi()
         canvas_->addPendingTextCard();
     });
     connect(welcome_, &WelcomeView::addImageRequested, this, &MainWindow::addImageFromFile);
+    connect(welcome_, &WelcomeView::textTyped, this, [this](const QString& text) {
+        // Only the first keystroke makes the napkin; a second one that arrives
+        // before focus has moved must join the note, not replace it.
+        if (!(model_->hasDraft() && canvas_->startsNoteOnTyping())) newDraft();
+        canvas_->startNote(text);
+    });
     connect(welcome_, &WelcomeView::searchRequested, this, [this] {
         search_->setFocus(Qt::ShortcutFocusReason);
     });
@@ -201,11 +209,14 @@ void MainWindow::buildUi()
                 // empty card should go.
                 flushAndReportFailure();
                 if (!leftEmpty || id == kNoItem) return;
-                QMetaObject::invokeMethod(this, [this, id] { removeItems({id}); },
+                QMetaObject::invokeMethod(this, [this, id] { discardItems({id}); },
                                           Qt::QueuedConnection);
             });
     connect(canvas_, &ItemCanvas::imageActivated, this, &MainWindow::openImageItem);
-    connect(canvas_, &ItemCanvas::removeRequested, this, &MainWindow::removeItems);
+    connect(canvas_, &ItemCanvas::removeRequested, this,
+            [this](const QList<ItemId>& ids) { removeItems(ids, false); });
+    connect(canvas_, &ItemCanvas::cutRequested, this,
+            [this](const QList<ItemId>& ids) { removeItems(ids, true); });
     connect(canvas_, &ItemCanvas::imagePasted, this,
             [this](const QByteArray& bytes, const QString& mime) {
                 addImageToCurrent(bytes, mime, QString());
@@ -1098,8 +1109,28 @@ void MainWindow::newDraft()
     editingBuffer_ = kNoBuffer;
     editingItem_   = kNoItem;
     view_->setCurrentIndex(model_->index(row, 0));
-    // An empty buffer is waiting to be pasted into, not a blank page to write on.
+    // An empty napkin is waiting to be pasted into — or typed on. The keyboard
+    // goes to the board, so "Ctrl+N, then type" (SPEC.md §18, criterion 1)
+    // lands in a note instead of in the list, where letters are commands.
     canvas_->showEmptyBuffer();
+    canvas_->setFocus(Qt::OtherFocusReason);
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    // With the list focused on an empty napkin, typed letters were list
+    // commands and type-ahead search: "P" pinned, "K" kept, anything else
+    // jumped to another napkin. None of that is what someone typing on an
+    // empty napkin means, so the text goes to a note instead.
+    if (watched == view_ && event->type() == QEvent::KeyPress) {
+        auto* key = static_cast<QKeyEvent*>(event);
+        const bool onDraft = model_->hasDraft() && view_->currentIndex().row() == model_->draftRow();
+        if (onDraft && canvas_->startsNoteOnTyping() && ItemCanvas::isTyping(key)) {
+            canvas_->startNote(key->text());
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 // Selecting a buffer in the list shows it in the canvas. There is no expand
@@ -1145,7 +1176,68 @@ void MainWindow::openRow(int row)
     canvas_->setFocus(Qt::OtherFocusReason);
 }
 
-void MainWindow::removeItems(const QList<ItemId>& ids)
+void MainWindow::removeItems(const QList<ItemId>& ids, bool cut)
+{
+    if (ids.isEmpty() || !currentBufferIsLive()) return;
+
+    // Captured first: undo needs each item's original position.
+    std::vector<Item> removed;
+    std::vector<ItemId> removedIds;
+    for (ItemId id : ids)
+        if (const auto item = items_.find(id)) { removed.push_back(*item); removedIds.push_back(id); }
+    if (removed.empty()) return;
+
+    const BufferId buffer = editingBuffer_;
+    const int firstRemovedIndex = canvas_->indexOf(ids.first());
+    const std::optional<Buffer> before = buffers_.find(buffer);
+
+    // Into the trash, never straight to nothing. A delete used to be recoverable
+    // only while the 8-second toast was up; a new user who missed it lost the
+    // item for good, while a deleted napkin sat in the trash for 30 days.
+    BufferService::TrashedItems trashed;
+    if (!guarded(cut ? tr("Could not cut those items") : tr("Could not delete those items"),
+                 [&] { trashed = service_.trashItems(buffer, removedIds); }))
+        return;
+
+    if (trashed.wholeNapkin) {
+        editingBuffer_ = kNoBuffer;
+        canvas_->showNothingSelected();
+        reloadPreservingSelection();
+    } else {
+        // Keep working where you were: land on whatever now occupies the first
+        // removed slot, or the last item if you deleted off the end.
+        canvas_->setItems(items_.listForBuffer(buffer), firstRemovedIndex);
+        model_->invalidatePreview(buffer);
+    }
+
+    const int n = int(removed.size());
+    // Cut is not a deletion from the user's point of view — the item is on its
+    // way somewhere — so it must not announce itself as one.
+    const QString message =
+        cut                 ? (n == 1 ? tr("Item cut") : tr("%1 items cut").arg(n))
+        : trashed.wholeNapkin ? tr("Napkin moved to trash")
+        : n == 1            ? tr("Item moved to trash")
+                            : tr("%1 items moved to trash").arg(n);
+
+    toast_->offer(message, [this, buffer, removed, before, trashed] {
+        if (!guarded(tr("Could not undo that"), [&] {
+                service_.untrashItems(buffer, trashed, removed);
+                if (trashed.wholeNapkin && before) {
+                    if (before->kept) service_.setKept(buffer, true);
+                    buffers_.setModifiedAt(buffer, before->modifiedAt);
+                }
+            }))
+            return;
+        model_->invalidatePreview(buffer);
+        reloadPreservingSelection();
+        if (const int row = model_->rowForId(buffer); row >= 0) {
+            view_->setCurrentIndex(model_->index(row, 0));
+            if (editingBuffer_ == buffer) canvas_->setItems(items_.listForBuffer(buffer), -1);
+        }
+    });
+}
+
+void MainWindow::discardItems(const QList<ItemId>& ids)
 {
     if (ids.isEmpty() || !currentBufferIsLive()) return;
 

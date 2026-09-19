@@ -1,7 +1,10 @@
 #include "GuiFixture.h"
+#include "../src/ui/WelcomeView.h"
 #include "../src/media/BlobGc.h"
 
 #include <QBuffer>
+#include <QLabel>
+#include <QPushButton>
 #include <QtTest>
 
 using namespace napkin;
@@ -170,6 +173,12 @@ private slots:
         f.window.removeItems({item.id});
         QVERIFY(f.blobs.exists(item.blobHash, item.mime));   // undo may still need it
 
+        // A deleted item is in the trash, so a sweep must leave its image alone.
+        reconcileBlobs(f.items, f.blobs, f.thumbsDir());
+        QVERIFY(f.blobs.exists(item.blobHash, item.mime));
+
+        // Emptying the trash is what finally lets it go.
+        f.service.emptyTrash();
         reconcileBlobs(f.items, f.blobs, f.thumbsDir());
         QVERIFY(!f.blobs.exists(item.blobHash, item.mime));
     }
@@ -222,6 +231,154 @@ private slots:
         QCOMPARE(f.items.listForBuffer(id).front().text, QStringLiteral("first and second"));
         QCOMPARE(f.items.countForBuffer(id), 1);
     }
+
+    // --- deleting items goes to the trash (usability test, 2026-09-19) -------
+    // A new user deleted a note, missed the 8-second undo toast, and lost it:
+    // napkins went to the trash but items went nowhere.
+    QString toastText(GuiFixture& f)
+    {
+        for (auto* label : f.toast()->findChildren<QLabel*>())
+            if (!label->text().isEmpty()) return label->text();
+        return {};
+    }
+
+    void aDeletedItemIsInTheTrashAfterTheToastIsGone()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 2);
+        f.select(id);
+        const auto before = f.items.listForBuffer(id);
+        const ItemId gone = before[1].id;
+
+        f.window.removeItems({gone});
+        QCOMPARE(int(f.items.listForBuffer(id).size()), 2);
+        QCOMPARE(toastText(f), QStringLiteral("Item moved to trash"));
+
+        // The toast expiring must not matter: the item is in a trashed napkin.
+        const auto trash = f.buffers.listTrash();
+        QCOMPARE(int(trash.size()), 1);
+        const auto held = f.items.listForBuffer(trash.front().id);
+        QCOMPARE(int(held.size()), 1);
+        QCOMPARE(held.front().id, gone);
+
+        // And restoring that napkin gives it back.
+        f.service.restore(trash.front().id);
+        QCOMPARE(f.buffers.countTrash(), 0);
+        QCOMPARE(f.items.find(gone)->bufferId, trash.front().id);
+    }
+
+    void undoPutsTheItemBackWhereItWasAndLeavesNothingInTheTrash()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 2);
+        f.select(id);
+        const auto before = f.items.listForBuffer(id);
+
+        f.window.removeItems({before[1].id});
+        f.toast()->findChild<QPushButton*>()->click();
+
+        const auto after = f.items.listForBuffer(id);
+        QCOMPARE(int(after.size()), 3);
+        for (size_t i = 0; i < before.size(); ++i) {
+            QCOMPARE(after[i].id, before[i].id);             // same order
+            QCOMPARE(after[i].position, before[i].position);
+        }
+        QCOMPARE(f.buffers.countTrash(), 0);                  // no stray holder
+        QCOMPARE(f.buffers.countLive(), 1);
+    }
+
+    void deletingEveryItemTrashesTheNapkinWithItsContent()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        f.select(id);
+        QList<ItemId> all;
+        for (const auto& i : f.items.listForBuffer(id)) all << i.id;
+
+        f.window.removeItems(all);
+        QCOMPARE(toastText(f), QStringLiteral("Napkin moved to trash"));
+        QCOMPARE(f.buffers.countTrash(), 1);
+        QCOMPARE(f.buffers.listTrash().front().id, id);          // the napkin itself
+        QCOMPARE(int(f.items.listForBuffer(id).size()), 2);      // not an empty shell
+    }
+
+    void cutDoesNotAnnounceItselfAsADeletion()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 1);
+        f.select(id);
+        f.window.removeItems({f.items.listForBuffer(id)[1].id}, /*cut=*/true);
+        QCOMPARE(toastText(f), QStringLiteral("Item cut"));
+    }
+
+    // --- typing on an empty napkin starts a note --------------------------------
+    void typingAfterCtrlNStartsANote()
+    {
+        GuiFixture f;
+        f.trigger("newBufferAction");
+        QTest::keyClicks(f.canvas(), "Call the dentist");
+        QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 3000);
+        const auto items = f.items.listForBuffer(f.buffers.listLive(5).front().id);
+        QCOMPARE(int(items.size()), 1);
+        QCOMPARE(items.front().text, QStringLiteral("Call the dentist"));
+    }
+
+    void typingWithTheListFocusedOnAnEmptyNapkinIsNotAListCommand()
+    {
+        // "P" and "K" are list commands; on an empty napkin they are letters.
+        GuiFixture f;
+        f.trigger("newBufferAction");
+        QTest::keyClicks(f.view(), "Pack keys");
+        QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 3000);
+        const auto napkin = f.buffers.listLive(5).front();
+        QVERIFY(!napkin.pinned);
+        QVERIFY(!napkin.kept);
+        QCOMPARE(f.items.listForBuffer(napkin.id).front().text, QStringLiteral("Pack keys"));
+    }
+
+    void pAndKStillPinAndKeepAFullNapkin()
+    {
+        GuiFixture f;
+        const auto id = seedMixed(f, 0);
+        f.select(id);
+        QTest::keyClick(f.view(), Qt::Key_P);
+        QVERIFY(f.buffers.find(id)->pinned);
+    }
+
+    void doubleClickingAnEmptyBoardStartsANote()
+    {
+        GuiFixture f;
+        f.trigger("newBufferAction");
+        auto* viewport = f.canvas()->viewport();
+        QTest::mouseDClick(viewport, Qt::LeftButton, {}, QPoint(viewport->width() / 2, viewport->height() - 20));
+        auto* edit = f.editor();
+        QVERIFY(edit);
+        QTest::keyClicks(edit, "hello");
+        QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 3000);
+    }
+
+
+    void typingOnTheWelcomeScreenStartsANote()
+    {
+        // The start page says "dump text here". Its first row is a focused
+        // button, so letters vanished until a Space "clicked" it.
+        GuiFixture f;
+        auto* welcome = f.window.findChild<WelcomeView*>();
+        QVERIFY(welcome);
+        auto* row = welcome->findChild<QPushButton*>();
+        QVERIFY(row);
+        // The first letter is what reaches the start page; after it the
+        // keyboard is in the new note, which is where the rest must land.
+        QTest::keyClick(row, 'C', Qt::ShiftModifier);
+        auto* note = f.editor();
+        QVERIFY2(note, "the first letter did not start a note");
+        QTest::keyClicks(note, "all the dentist");
+        QTRY_COMPARE_WITH_TIMEOUT(f.buffers.countLive(), 1, 3000);
+        const auto items = f.items.listForBuffer(f.buffers.listLive(5).front().id);
+        QCOMPARE(int(items.size()), 1);
+        QCOMPARE(items.front().text, QStringLiteral("Call the dentist"));
+    }
+
 };
 
 QTEST_MAIN(TestMultiItem)

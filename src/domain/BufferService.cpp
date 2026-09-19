@@ -62,6 +62,43 @@ void BufferService::removeItem(BufferId bufferId, ItemId itemId)
     tx.commit();
 }
 
+BufferService::TrashedItems BufferService::trashItems(BufferId from,
+                                                     const std::vector<ItemId>& ids)
+{
+    TrashedItems out;
+    if (ids.empty()) return out;
+    Transaction tx(db_);
+    if (int(ids.size()) >= items_.countForBuffer(from)) {
+        // Everything is going: that is deleting the napkin, and a kept napkin
+        // asked for this item by item, so the keep is released rather than
+        // refused (the undo path puts it back).
+        if (!buffers_.moveToTrash(from)) buffers_.moveToTrashConfirmed(from);
+        out = {from, true};
+    } else {
+        const BufferId holder = buffers_.create();
+        for (ItemId id : ids)
+            if (const auto item = items_.find(id)) items_.moveTo(id, holder, item->position);
+        buffers_.moveToTrash(holder);
+        buffers_.touch(from);
+        out = {holder, false};
+    }
+    tx.commit();
+    return out;
+}
+
+void BufferService::untrashItems(BufferId from, const TrashedItems& trashed,
+                                 const std::vector<Item>& originals)
+{
+    Transaction tx(db_);
+    if (trashed.wholeNapkin) {
+        buffers_.restore(from);
+    } else {
+        for (const Item& item : originals) items_.moveTo(item.id, from, item.position);
+        buffers_.removeIfEmpty(trashed.holder);
+    }
+    tx.commit();
+}
+
 // Pin and Keep are metadata about the buffer, not edits to it, so neither
 // bumps modified_at — flipping a pin must not reshuffle the list (SPEC.md §7).
 void BufferService::setPinned(BufferId id, bool pinned) { buffers_.setPinned(id, pinned); }

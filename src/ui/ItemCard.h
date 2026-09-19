@@ -105,6 +105,7 @@ public:
     void focusText();
     void beginEditing(bool moveToEnd = true);
     void selectAllText();
+    void insertText(const QString& text);
     void focusTextInteraction();
     void endEditing();
     bool textHasFocus() const;

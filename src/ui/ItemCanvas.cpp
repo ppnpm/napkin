@@ -127,6 +127,7 @@ void ItemCanvas::wireCard(ItemCard* card)
 void ItemCanvas::showEmptyBuffer()
 {
     clearItems();
+    bufferShown_ = emptyBufferShown_ = true;
     // Napkin is temporary storage, not an editor. An empty buffer is waiting to
     // be pasted into, so it says that rather than offering a blank page.
     placeholder_->setText(tr("Nothing here yet.\n\nPaste with Ctrl+V, or press Ctrl+T "
@@ -143,6 +144,7 @@ void ItemCanvas::showEmptyBuffer()
 void ItemCanvas::showNothingSelected()
 {
     clearItems();
+    bufferShown_ = emptyBufferShown_ = false;
     placeholder_->setText(tr("Select a napkin to see what is on it."));
     QPalette pal = placeholder_->palette();
     pal.setColor(QPalette::WindowText, text(pal, kTextTertiary));
@@ -178,6 +180,7 @@ void ItemCanvas::addPendingTextCard()
 {
     for (auto* existing : textCards_)
         if (existing->isComposer()) { existing->focusText(); return; }
+    emptyBufferShown_ = false;
 
     Item blank;
     blank.type = ItemType::Text;
@@ -323,6 +326,8 @@ void ItemCanvas::setItems(const std::vector<Item>& items, int selectIndex)
 {
     clearItems();
     if (items.empty()) { showEmptyBuffer(); return; }
+    bufferShown_ = true;
+    emptyBufferShown_ = false;
     placeholder_->hide();
 
     allItems_ = items;
@@ -444,6 +449,40 @@ void ItemCanvas::applySelection(ItemId id, Qt::KeyboardModifiers modifiers)
     emit selectionChanged();
 }
 
+bool ItemCanvas::isTyping(const QKeyEvent* e)
+{
+    if (e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) return false;
+    const QString t = e->text();
+    return !t.isEmpty() && t.at(0).isPrint();
+}
+
+bool ItemCanvas::startsNoteOnTyping() const
+{
+    if (emptyBufferShown_) return true;
+    for (auto* card : textCards_)
+        if (card->isComposer()) return true;
+    return false;
+}
+
+void ItemCanvas::startNote(const QString& firstText)
+{
+    addPendingTextCard();
+    for (auto* card : textCards_)
+        if (card->isComposer()) { card->insertText(firstText); return; }
+}
+
+// Double-clicking empty board space writes a note. It is what people try on an
+// empty napkin (the usability test: click, type, double-click, then give up),
+// and on a full one it is the mouse's Ctrl+T.
+void ItemCanvas::mouseDoubleClickEvent(QMouseEvent* e)
+{
+    const QPoint inBody = body_->mapFrom(viewport(), e->position().toPoint());
+    for (QWidget* w = body_->childAt(inBody); w && w != body_; w = w->parentWidget())
+        if (qobject_cast<ItemCard*>(w)) { QScrollArea::mouseDoubleClickEvent(e); return; }
+    if (bufferShown_ && e->button() == Qt::LeftButton) { addPendingTextCard(); return; }
+    QScrollArea::mouseDoubleClickEvent(e);
+}
+
 void ItemCanvas::mousePressEvent(QMouseEvent* e)
 {
     // Clicking away from a card is a commit. Anything else makes the user
@@ -513,7 +552,8 @@ void ItemCanvas::cutSelection()
 {
     if (selected_.isEmpty()) return;
     copySelection();
-    deleteSelection();
+    const auto ids = selection();
+    if (!ids.isEmpty()) emit cutRequested(ids);
 }
 
 void ItemCanvas::deleteSelection()
@@ -547,6 +587,11 @@ void ItemCanvas::moveCursor(int delta, Qt::KeyboardModifiers modifiers)
 
 void ItemCanvas::keyPressEvent(QKeyEvent* e)
 {
+    // An empty napkin used to swallow typing without a trace: the board had
+    // focus, nothing on it could take the text, and "Ctrl+T" was the only way
+    // in. Typing on an empty napkin now starts a note with what was typed.
+    if (isTyping(e) && startsNoteOnTyping()) { startNote(e->text()); return; }
+
     // Arrow keys walk the board in document order — down/right forward,
     // up/left back. Deliberately not spatial: masonry puts item 2 top-middle,
     // so a spatial walk would be unpredictable, while document order is the

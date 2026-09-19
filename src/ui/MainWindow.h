@@ -65,13 +65,21 @@ public slots:
     void openImageItem(ItemId id);
     void openRow(int row);
     void selectBuffer(int row);
-    void removeItems(const QList<ItemId>& ids);
+    // What Delete and Cut do: the items go to the trash (see
+    // BufferService::trashItems), with Undo offered on the toast.
+    void removeItems(const QList<ItemId>& ids, bool cut = false);
+    // A text card the user emptied: there is nothing left to recover, so the
+    // item goes for good rather than into the trash as a blank napkin.
+    void discardItems(const QList<ItemId>& ids);
     void appendTextBlock(const QString& text = {});
 
 protected:
     void closeEvent(QCloseEvent* e) override;
     bool event(QEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void buildUi();

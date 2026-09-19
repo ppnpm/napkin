@@ -23,9 +23,13 @@ signals:
     void newTextRequested();
     void addImageRequested();
     void searchRequested();
+    // Someone started typing on the start page, which says "dump text here":
+    // the text should become a note in a new napkin, not vanish.
+    void textTyped(const QString& text);
 
 protected:
     void changeEvent(QEvent* e) override;
+    void keyPressEvent(QKeyEvent* e) override;
 
 private:
     QWidget* buildShortcutRow(const QString& keys, const QString& what, const char* slot);

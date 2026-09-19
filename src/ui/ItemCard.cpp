@@ -484,6 +484,12 @@ void TextItemCard::mouseDoubleClickEvent(QMouseEvent* e)
     e->accept();
 }
 
+void TextItemCard::insertText(const QString& text)
+{
+    focusText();
+    edit_->insertPlainText(text);
+}
+
 void TextItemCard::selectAllText()
 {
     edit_->selectAll();

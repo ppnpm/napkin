@@ -1,4 +1,7 @@
 #include "WelcomeView.h"
+#include "ItemCanvas.h"
+
+#include <QKeyEvent>
 #include "Tokens.h"
 
 #include <QEvent>
@@ -182,6 +185,16 @@ void WelcomeView::changeEvent(QEvent* e)
             row->setFixedWidth(row->layout() ? row->layout()->sizeHint().width() : row->width());
     }
     QWidget::changeEvent(e);
+}
+
+// Letters reach here from whichever row button has focus, since a button only
+// takes Space and Enter. Before this they vanished — until the first Space
+// "clicked" the focused New napkin row and made an empty napkin, which is what
+// a first-time user saw when trying to type on this page.
+void WelcomeView::keyPressEvent(QKeyEvent* e)
+{
+    if (ItemCanvas::isTyping(e)) { emit textTyped(e->text()); return; }
+    QWidget::keyPressEvent(e);
 }
 
 }  // namespace napkin

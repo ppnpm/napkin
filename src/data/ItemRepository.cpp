@@ -141,6 +141,13 @@ void ItemRepository::updateText(ItemId id, const QString& text)
     s.exec();
 }
 
+void ItemRepository::moveTo(ItemId id, BufferId buffer, int position)
+{
+    Statement s(db_, "UPDATE items SET buffer_id = ?, position = ? WHERE id = ?");
+    s.bind(1, buffer).bind(2, position).bind(3, id);
+    s.exec();
+}
+
 void ItemRepository::remove(ItemId id)
 {
     Statement s(db_, "DELETE FROM items WHERE id = ?");

@@ -161,6 +161,15 @@ int BufferRepository::purgeAllTrash()
     return db_.changes();
 }
 
+bool BufferRepository::removeIfEmpty(BufferId id)
+{
+    Statement s(db_, "DELETE FROM buffers WHERE id = ? AND kept = 0"
+                     " AND NOT EXISTS (SELECT 1 FROM items WHERE buffer_id = ?)");
+    s.bind(1, id).bind(2, id);
+    s.exec();
+    return db_.changes() > 0;
+}
+
 void BufferRepository::hardDeleteEvenIfKept(BufferId id)
 {
     Transaction tx(db_);

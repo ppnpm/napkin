@@ -3,6 +3,8 @@
 #include "BoardLayout.h"
 #include <QScrollArea>
 
+class QKeyEvent;
+
 #include <QHash>
 #include <QSet>
 #include <vector>
@@ -93,6 +95,16 @@ public:
     // Adds an unwritten text card at the top and puts the caret in it. It
     // becomes a real item when it has content, and evaporates if it does not.
     void addPendingTextCard();
+    // Starts a note that already holds `firstText` — the keystroke that asked
+    // for it, which must land in the note rather than be swallowed.
+    void startNote(const QString& firstText);
+    // Typing should go into a note: the napkin is empty, or a note has just
+    // been started and not yet written. The second case catches keystrokes that
+    // arrive before focus has moved into the new note, which would otherwise be
+    // dropped after the first letter.
+    bool startsNoteOnTyping() const;
+    // Printable text with no command modifier: what "just typing" means.
+    static bool isTyping(const QKeyEvent* e);
     bool textHasFocus() const;
 
     // True when the keyboard is anywhere inside the board. Not hasFocus(),
@@ -114,11 +126,13 @@ signals:
     void imagePasted(const QByteArray& bytes, const QString& mime);
     void imageActivated(ItemId id);
     void removeRequested(const QList<ItemId>& ids);
+    void cutRequested(const QList<ItemId>& ids);   // copied first, then removed
     void selectionChanged();
     void filterChanged();
 
 protected:
     void mousePressEvent(QMouseEvent* e) override;
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void resizeEvent(QResizeEvent* e) override;
 
@@ -151,6 +165,8 @@ private:
 
     Thumbnailer& thumbs_;
     BlobStore&   blobs_;
+    bool bufferShown_      = false;   // a napkin (possibly empty) is on the board
+    bool emptyBufferShown_ = false;   // ...and it has nothing on it yet
     QWidget*     body_ = nullptr;
     BoardLayout    board_;
     std::vector<Item> allItems_;              // everything in the buffer

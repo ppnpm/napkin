@@ -244,8 +244,11 @@ private slots:
         // what made undo restore rows pointing at deleted files.
         QVERIFY(f.blobs.exists(image.blobHash, image.mime));
 
-        // It is the startup sweep that reclaims it, once undo is no longer on
-        // offer.
+        // Nor does the startup sweep take it: the item is in the trash now, and
+        // the trash is still a promise. Only emptying it lets the file go.
+        reconcileBlobs(f.items, f.blobs, f.thumbsDir());
+        QVERIFY(f.blobs.exists(image.blobHash, image.mime));
+        f.service.emptyTrash();
         reconcileBlobs(f.items, f.blobs, f.thumbsDir());
         QVERIFY(!f.blobs.exists(image.blobHash, image.mime));
     }

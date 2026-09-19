@@ -463,7 +463,19 @@ v1 had no undo anywhere, while also declaring "never silently discard user
 content." For an app whose premise is *throw things in without thinking*,
 accidental deletion is the single fastest way to lose a user forever.
 
-- Delete is a soft delete (`deleted_at`), always, for every path.
+- Delete is a soft delete (`deleted_at`), always, for every path — items too:
+  deleting items inside a napkin moves them into a napkin of their own, which
+  goes straight to the trash (`BufferService::trashItems`). Deleting *every*
+  item trashes the napkin itself, content and all.
+
+> **Corrected.** "For every path" was false until 2026-09-19. Napkins were
+> soft-deleted; items were hard-deleted, recoverable only from the 8-second
+> toast. A first-time user in a usability test deleted their edited reminder,
+> missed the toast, found the trash held only napkins ("Deleted napkins stay
+> here for 30 days") and lost it. Items now go to the trash the same way, as a
+> napkin rather than as a second kind of trash entry, so there is still one
+> place to look and one retention rule. The exception is a text card the user
+> *emptied*: nothing is left to recover, so it is discarded as before.
 - An **Undo** toast appears for ~8 seconds after any delete or sweep.
 - Trash is browsable and restorable, and can be emptied on demand — a confirmed,
   irreversible action, which then reclaims the blobs those buffers held.
@@ -531,7 +543,7 @@ uniform column width, each card its own height, newest first.
 
 | Decision | Why |
 |---|---|
-| **No composer.** | A trailing "write something" box assumed writing is the primary act. It is not — pasting is. `Ctrl+T` summons a card when you do want to type. |
+| **No composer.** | A trailing "write something" box assumed writing is the primary act. It is not — pasting is. `Ctrl+T` summons a card when you do want to type — and so does simply typing on an empty napkin, or on the start page, or double-clicking empty board space. |
 | **`Ctrl+N` shows an empty board**, not a blank page | A new buffer is somewhere to paste into. Saying "Nothing here yet · Ctrl+V" is what it is for. |
 | **Emptying a text card deletes the item** | An item holding nothing is not a thing, and a blank card is litter. If it was the last item, the buffer goes too. |
 | **Newest first** (schema v4, `items.modified_at`) | On a scratch surface the thing you just put down is the thing you want. "Newest" has to mean edited as well as added, or amending an old note leaves it buried. |
@@ -756,8 +768,10 @@ mean. A single selected image copies as an **image**, so it pastes into anything
 any other selection copies as text, joined in document order.
 
 Deleting every item in a buffer trashes the buffer itself: an item-level delete
-that leaves an empty husk behind is just litter. That goes through the ordinary
-undo toast.
+that leaves an empty husk behind is just litter. Deleting some of them trashes
+them as a napkin of their own (§6). Both go through the ordinary undo toast,
+which puts items back in their original positions; Cut says "Item cut" rather
+than announcing a deletion, though it goes the same way.
 
 **A delete leaves the next item selected**, clamping to the new last item when
 you delete off the end — so a run of deletes does not require re-aiming the
@@ -773,7 +787,9 @@ you are looking at nothing. This holds for text and images alike.
 > what you had copied. `Ctrl+T` adds an empty text block to the current buffer
 > by the same rule, and is the keyboard route to what pasting text does.
 
-> **Item removal does not unlink blobs, deliberately.** An earlier version
+> **Item removal does not unlink blobs, deliberately.** (Since the trash change
+> above, removed items are rows in a trashed napkin, so their blobs are simply
+> still referenced until the trash is emptied.) An earlier version
 > deleted the rows and reclaimed the files in one step, so undoing inside the
 > 8-second window restored a buffer whose items no longer existed — measured at
 > **0 items recovered out of 4**. Removal now captures the items, restores them
@@ -1682,6 +1698,8 @@ not fail.**
 | Test counts in this document were inflated | — | corrected (`PASS` lines counted init/cleanup) |
 | Every search with a hit threw on SQLite < 3.39 (Ubuntu 22.04, the release host); v0.1.0's release run failed on it | **critical** | fixed — `LIMIT -1` replaces `AS MATERIALIZED`; CI tests SQLite 3.31.1 and 3.37.2 |
 | A query that threw inside `beginResetModel()` left the list model mid-reset, rows cleared, query already changed | high | fixed — query first, reset second; query and mode roll back on failure |
+| *Usability test, 2026-09-19:* a deleted item was gone for good once the undo toast expired | **critical**, data | fixed — items go to the trash as a napkin (§6) |
+| *Usability test:* typing on an empty napkin or the start page vanished; with the list focused, letters were list commands (P pinned, K kept) | high | fixed — typing starts a note from all three places; criterion 1 of §18 now holds |
 
 **Known and not yet fixed**, carried forward honestly:
 
