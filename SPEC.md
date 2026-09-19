@@ -313,7 +313,7 @@ it several times over and add generation loss for nothing. Schema v2 therefore
 carries a `mime` column, and the blob keeps its own extension.
 
 ```
-~/.local/share/napkin/
+~/.local/share/napkin/napkin/
 ├── napkin.db
 ├── napkin.db-wal
 ├── blobs/
@@ -970,12 +970,28 @@ existing window.
 ### Data locations
 
 ```
-Linux    ~/.local/share/napkin/    ~/.config/napkin/     (XDG)
-Windows  %LOCALAPPDATA%\Napkin\
-macOS    ~/Library/Application Support/Napkin/
+Linux    data     ~/.local/share/napkin/napkin/      (XDG)
+         settings ~/.config/napkin/napkin.conf
+Windows  data     %APPDATA%\napkin\napkin\           (not yet observed)
+macOS    data     ~/Library/Application Support/napkin/napkin/   (not yet observed)
 ```
 
 Never beside the executable. Never requires root.
+
+> **Corrected.** This table used to say `~/.local/share/napkin/` and
+> `%LOCALAPPDATA%\Napkin\`. Neither was ever true once settings arrived: Qt
+> builds `AppDataLocation` from the organisation *and* the application name,
+> and `setOrganizationName("napkin")` — needed so a bare `QSettings()` has
+> somewhere to write — doubles the folder. Data written before that commit
+> (5376a74) was left at the old path and silently stopped being read.
+>
+> The doubled path is kept deliberately: it is conventional for Qt, nobody
+> types it, and moving a user's only copy of their data to tidy a path is a
+> migration with real failure modes and no benefit. The Windows and macOS rows
+> are what Qt documents for `AppDataLocation`, not observed. On Windows that is
+> the *roaming* profile, which is a questionable home for a live SQLite file —
+> Phase 9 should decide between it and `AppLocalDataLocation` before anyone has
+> data there.
 
 ---
 
