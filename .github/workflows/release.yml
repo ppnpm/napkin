@@ -160,6 +160,14 @@ jobs:
           $out | Write-Host
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error title=Windows release tests failed::$(($out | Select-String -Pattern 'FAIL!|tests passed|\*\*\*|Exception|Failed' | Select-Object -First 30) -join ' ')"
+            # ctest's summary names the suite but not the failing check, and the
+            # job log is not public; re-run each failed suite and annotate it whole.
+            $env:QT_QPA_PLATFORM = 'offscreen'
+            Get-Content build\Testing\Temporary\LastTestsFailed.log -ErrorAction SilentlyContinue | ForEach-Object {
+              $t = ($_ -split ':')[1]
+              $detail = (& "build\$t.exe" 2>&1 | Select-String -Pattern 'FAIL!|Loc:|Actual|Expected|exception|QWARN|QDEBUG|Totals' | Select-Object -First 40) -join ' | '
+              Write-Host "::error title=$t::$detail"
+            }
             exit 1
           }
 
