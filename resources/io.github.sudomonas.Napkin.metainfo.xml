@@ -73,6 +73,11 @@
   </requires>
 
   <releases>
+    <release version="0.1.2" date="2026-09-19" type="development">
+      <description>
+        <p>The Linux AppImage now starts on Wayland desktops; 0.1.1's crashed on KDE Plasma under Wayland.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-09-19" type="development">
       <description>
         <p>First published release, and the first for Windows.</p>
