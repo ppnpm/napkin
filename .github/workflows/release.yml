@@ -103,7 +103,12 @@ jobs:
           echo "$OUT"
           # The version it reports must be the tag it was built from, or the
           # release is shipping a binary from somewhere else.
-          echo "$OUT" | grep -q "napkin ${GITHUB_REF_NAME#v}"
+          # On a manual run from a branch there is no tag, so the version the
+          # source declares is the one to expect.
+          if [ "$GITHUB_REF_TYPE" = tag ]; then WANT="${GITHUB_REF_NAME#v}"
+          else WANT=$(sed -nE 's/^project\(napkin VERSION ([0-9.]+).*/\1/p' CMakeLists.txt); fi
+          test -n "$WANT"
+          echo "$OUT" | grep -q "napkin $WANT"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -226,7 +231,11 @@ jobs:
           if (-not $p.WaitForExit(120000)) { $p.Kill(); Write-Host "::error title=Smoke test hung::--version did not return"; exit 1 }
           $out = (Get-Content version.txt -Raw) + (Get-Content stderr.txt -Raw)
           Write-Host "exit $($p.ExitCode): $out"
-          $want = "napkin $($env:GITHUB_REF_NAME -replace '^v','')"
+          # As on Linux: the tag, or on a manual branch run what CMakeLists declares.
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $ver = $env:GITHUB_REF_NAME -replace '^v','' }
+          else { $ver = (Select-String -Path CMakeLists.txt -Pattern '^project\(napkin VERSION ([0-9.]+)').Matches[0].Groups[1].Value }
+          if (-not $ver) { Write-Host '::error title=No version::could not read the expected version'; exit 1 }
+          $want = "napkin $ver"
           if ($p.ExitCode -ne 0 -or $out -notmatch [regex]::Escape($want)) {
             Write-Host "::error title=Smoke test failed::exit $($p.ExitCode), wanted '$want', got: $out"
             exit 1
