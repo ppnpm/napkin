@@ -168,8 +168,10 @@ jobs:
           modules: qtimageformats
           cache: true
 
+      # fts5 explicitly: search is built on it, and a port whose default
+      # feature set changed would otherwise fail only at the first query.
       - name: Install SQLite
-        run: vcpkg install sqlite3:x64-windows
+        run: vcpkg install "sqlite3[fts5]:x64-windows"
 
       - uses: ilammy/msvc-dev-cmd@v1
 
@@ -196,13 +198,23 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          $out = cmake --build build --parallel 2>&1
+          # -k 0: every failing file in one run, not only the first. Each
+          # round trip through CI is the only way this port gets compiled.
+          $out = cmake --build build --parallel -- -k 0 2>&1
           $out | Write-Host
           if ($LASTEXITCODE -ne 0) {
-            $msg = ($out | Select-String -Pattern 'error' | Select-Object -First 25) -join ' '
+            $msg = ($out | Select-String -Pattern 'error C[0-9]+|error LNK|fatal error' | Select-Object -First 25) -join ' '
             Write-Host "::error title=Windows build failed::$msg"
             exit 1
           }
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure --parallel 2
+        shell: pwsh
+        run: |
+          $out = ctest --test-dir build --output-on-failure --parallel 2 2>&1
+          $out | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            $msg = ($out | Select-String -Pattern 'FAIL!|tests passed|\*\*\*|Exception|Failed' | Select-Object -First 30) -join ' '
+            Write-Host "::error title=Windows tests failed::$msg"
+            exit 1
+          }

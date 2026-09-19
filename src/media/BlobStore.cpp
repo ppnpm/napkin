@@ -5,14 +5,59 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QBuffer>
 #include <QImageReader>
 
-#include <fcntl.h>
-#include <unistd.h>
+#ifdef Q_OS_WIN
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <io.h>
+#  include <windows.h>
+#else
+#  include <fcntl.h>
+#  include <unistd.h>
+#endif
 
 namespace napkin {
+namespace {
+
+// Invariant 6 needs the bytes on disk before the rename, and the rename on disk
+// before the row is committed. POSIX spells that fsync(file), rename,
+// fsync(directory). Windows has no directory handle to sync; the equivalent is
+// FlushFileBuffers on the file (which _commit is) and a rename issued with
+// MOVEFILE_WRITE_THROUGH, which does not return until the move is on disk.
+bool syncFile(QFile& f)
+{
+#ifdef Q_OS_WIN
+    return ::_commit(f.handle()) == 0;
+#else
+    return ::fsync(f.handle()) == 0;
+#endif
+}
+
+bool durableRename(const QString& from, const QString& to)
+{
+#ifdef Q_OS_WIN
+    return ::MoveFileExW(reinterpret_cast<const wchar_t*>(QDir::toNativeSeparators(from).utf16()),
+                         reinterpret_cast<const wchar_t*>(QDir::toNativeSeparators(to).utf16()),
+                         MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    if (!QFile::rename(from, to)) return false;
+    // The rename itself is only durable once the directory is synced.
+    const QString dir = QFileInfo(to).absolutePath();
+    if (int dfd = ::open(dir.toLocal8Bit().constData(), O_RDONLY | O_DIRECTORY); dfd >= 0) {
+        ::fsync(dfd);
+        ::close(dfd);
+    }
+    return true;
+#endif
+}
+
+}  // namespace
+
 BlobStore::BlobStore(QString rootDir) : root_(std::move(rootDir)) {}
 
 QString BlobStore::pathFor(const QString& hash, const QString& mime) const
@@ -115,7 +160,7 @@ BlobStore::Stored BlobStore::store(const QByteArray& bytes, const QString& mimeH
             out.error = QObject::tr("The image could not be saved. The napkin was not changed.");
             return out;
         }
-        if (f.write(payload) != payload.size() || !f.flush() || ::fsync(f.handle()) != 0) {
+        if (f.write(payload) != payload.size() || !f.flush() || !syncFile(f)) {
             f.close();
             QFile::remove(tmpPath);
             out.error = QObject::tr("Napkin could not finish saving the image — the disk may be full.");
@@ -125,16 +170,15 @@ BlobStore::Stored BlobStore::store(const QByteArray& bytes, const QString& mimeH
         QFile::setPermissions(tmpPath, QFile::ReadOwner | QFile::WriteOwner);
     }
 
-    if (!QFile::rename(tmpPath, finalPath)) {
+    // Neither QFile::rename nor MoveFileEx without REPLACE_EXISTING will move
+    // onto an existing file. The name is the content's hash, so if another
+    // store of the same bytes got there between the exists() check above and
+    // here, what is on disk is already exactly this image.
+    if (!durableRename(tmpPath, finalPath)) {
         QFile::remove(tmpPath);
+        if (QFile::exists(finalPath)) { out.ok = true; return out; }
         out.error = QObject::tr("Napkin could not store the image.");
         return out;
-    }
-
-    // The rename itself is only durable once the directory is synced.
-    if (int dfd = ::open(dir.toLocal8Bit().constData(), O_RDONLY | O_DIRECTORY); dfd >= 0) {
-        ::fsync(dfd);
-        ::close(dfd);
     }
 
     out.ok = true;

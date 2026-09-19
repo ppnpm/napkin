@@ -19,7 +19,12 @@ void mkdirOrThrow(const QString& path)
 
 }  // namespace
 
-QString dataDir()      { return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation); }
+// AppLocalDataLocation, not AppDataLocation. They are the same directory on
+// Linux and macOS; on Windows AppDataLocation is the *roaming* profile, which
+// can be synced to a server at logon and logoff — no place for a live SQLite
+// database and its WAL. This was decided before any Windows build shipped, so
+// nobody's data is at the other path.
+QString dataDir()      { return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation); }
 QString configDir()    { return QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation); }
 QString databaseFile() { return dataDir() + QStringLiteral("/napkin.db"); }
 QString blobsDir()     { return dataDir() + QStringLiteral("/blobs"); }

@@ -990,7 +990,8 @@ existing window.
 ```
 Linux    data     ~/.local/share/napkin/napkin/      (XDG)
          settings ~/.config/napkin/napkin.conf
-Windows  data     %APPDATA%\napkin\napkin\           (not yet observed)
+Windows  data     %LOCALAPPDATA%\napkin\napkin\      (AppLocalDataLocation; not yet observed)
+         settings registry, HKCU\Software\napkin\napkin
 macOS    data     ~/Library/Application Support/napkin/napkin/   (not yet observed)
 ```
 
@@ -1010,6 +1011,11 @@ Never beside the executable. Never requires root.
 > the *roaming* profile, which is a questionable home for a live SQLite file —
 > Phase 9 should decide between it and `AppLocalDataLocation` before anyone has
 > data there.
+>
+> **Decided (Phase 9):** `AppLocalDataLocation`. It is the same directory as
+> `AppDataLocation` on Linux and macOS, so nothing moves there; on Windows it
+> keeps the database out of the roaming profile. Decided before the first
+> Windows build shipped, so no data exists at the other path.
 
 ---
 

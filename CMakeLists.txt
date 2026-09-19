@@ -139,6 +139,12 @@ target_link_libraries(napkin_ui PUBLIC napkin_core napkin_media Qt6::Widgets Qt6
 # --- application --------------------------------------------------------------
 qt_add_executable(napkin src/main.cpp)
 target_link_libraries(napkin PRIVATE napkin_ui)
+if(WIN32)
+  # A GUI-subsystem executable, so launching Napkin does not also open a
+  # console window, and the icon Explorer and shortcuts show.
+  target_sources(napkin PRIVATE resources/windows/napkin.rc)
+  set_target_properties(napkin PROPERTIES WIN32_EXECUTABLE ON)
+endif()
 
 # --- installation -------------------------------------------------------------
 # SPEC's phase plan claimed packaging was wired up in Phase 0 and kept green. It
@@ -150,16 +156,20 @@ install(TARGETS napkin RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # and Flathub both treat the id, the .desktop basename and the icon name as one
 # identity, and a mismatch means the listing and the launcher are unrelated
 # objects as far as the system is concerned.
+# Freedesktop only: on Windows the icon is compiled into the executable and
+# nothing reads a .desktop file.
 set(NAPKIN_APPID io.github.sudomonas.Napkin)
-install(FILES resources/${NAPKIN_APPID}.desktop
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES resources/${NAPKIN_APPID}.metainfo.xml
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
-foreach(size 16 22 24 32 48 64 128 256 512)
-  install(FILES resources/icons/${size}x${size}/${NAPKIN_APPID}.png
-          DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps)
-endforeach()
-set_target_properties(napkin PROPERTIES WIN32_EXECUTABLE OFF MACOSX_BUNDLE OFF)
+if(UNIX AND NOT APPLE)
+  install(FILES resources/${NAPKIN_APPID}.desktop
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  install(FILES resources/${NAPKIN_APPID}.metainfo.xml
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+  foreach(size 16 22 24 32 48 64 128 256 512)
+    install(FILES resources/icons/${size}x${size}/${NAPKIN_APPID}.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps)
+  endforeach()
+endif()
+set_target_properties(napkin PROPERTIES MACOSX_BUNDLE OFF)
 
 # --- Phase 0 spike (disposable) -----------------------------------------------
 qt_add_executable(napkin_spike EXCLUDE_FROM_ALL src/spike/main.cpp)

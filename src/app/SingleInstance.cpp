@@ -3,8 +3,8 @@
 
 #include <QDir>
 #include <QFile>
+#include <QCryptographicHash>
 #include <QLocalSocket>
-#include <unistd.h>
 
 namespace napkin {
 
@@ -14,7 +14,19 @@ SingleInstance::SingleInstance(QObject* parent) : QObject(parent)
     // XDG_RUNTIME_DIR is unset, world-connectable, where any local user can
     // create it first and stop Napkin starting at all. Under the 0700 data
     // directory it is ours alone.
+#ifdef Q_OS_WIN
+    // On Windows a local server is a named pipe, which lives in a flat,
+    // machine-wide namespace rather than in a directory. The pipe is named after
+    // the data directory, which contains the user's profile path, so two users
+    // (or a test profile) get different pipes; UserAccessOption puts an ACL on
+    // it so only this user can connect.
+    key_ = QStringLiteral("io.github.sudomonas.Napkin-")
+         + QString::fromLatin1(QCryptographicHash::hash(paths::dataDir().toUtf8(),
+                                                        QCryptographicHash::Sha256)
+                                   .toHex().left(32));
+#else
     key_ = paths::dataDir() + QStringLiteral("/napkin.sock");
+#endif
     server_.setSocketOptions(QLocalServer::UserAccessOption);
 
     connect(&server_, &QLocalServer::newConnection, this, [this] {

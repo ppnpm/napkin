@@ -1,0 +1,4 @@
+// The executable's own icon, which Explorer, the taskbar before Qt has drawn a
+// window, and shortcuts all read from the file. Qt's setWindowIcon cannot
+// reach any of those. napkin.ico holds the PNGs from resources/icons.
+IDI_ICON1 ICON "napkin.ico"
