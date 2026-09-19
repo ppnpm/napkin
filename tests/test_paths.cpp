@@ -44,9 +44,10 @@ private slots:
         napkin::paths::ensureDirs();
         NAPKIN_READ_ACLS;
         const auto p = QFile::permissions(napkin::paths::dataDir());
-        QVERIFY(p.testFlag(QFile::ReadOwner));
-        QVERIFY(!p.testFlag(QFile::ReadGroup));
-        QVERIFY(!p.testFlag(QFile::ReadOther));
+        const QByteArray bits = QByteArray::number(int(p), 16);
+        QVERIFY2(p.testFlag(QFile::ReadOwner), bits);
+        QVERIFY2(!p.testFlag(QFile::ReadGroup), bits);
+        QVERIFY2(!p.testFlag(QFile::ReadOther), bits);
     }
 
     void databaseAndWalAreOwnerOnlyOnAFirstRun()
@@ -63,8 +64,8 @@ private slots:
             const QString path = napkin::paths::databaseFile() + suffix;
             if (!QFile::exists(path)) continue;
             const auto p = QFile::permissions(path);
-            QVERIFY2(!p.testFlag(QFile::ReadGroup), qPrintable("group-readable: " + path));
-            QVERIFY2(!p.testFlag(QFile::ReadOther), qPrintable("world-readable: " + path));
+            QVERIFY2(!p.testFlag(QFile::ReadGroup), qPrintable("group-readable: " + path + " " + QString::number(int(p), 16)));
+            QVERIFY2(!p.testFlag(QFile::ReadOther), qPrintable("world-readable: " + path + " " + QString::number(int(p), 16)));
         }
     }
 

@@ -222,7 +222,8 @@ jobs:
             if (-not (Test-Path build\Testing\Temporary\LastTestsFailed.log)) { Write-Host '::error title=No LastTestsFailed.log::ctest left no list of failures' }
             Get-Content build\Testing\Temporary\LastTestsFailed.log -ErrorAction SilentlyContinue | ForEach-Object {
               $t = ($_ -split ':')[1]
-              $raw = (& "build\$t.exe" 2>&1 | Out-String)
+              & "build\$t.exe" -o "$t.txt,txt" | Out-Null
+              $raw = Get-Content "$t.txt" -Raw -ErrorAction SilentlyContinue
               $detail = "exit $LASTEXITCODE | " + (($raw -split "`r?`n" | Where-Object { $_ -notmatch '^PASS ' }) -join ' | ')
               Write-Host "::error title=$t::$detail"
             }
