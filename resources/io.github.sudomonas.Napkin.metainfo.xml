@@ -73,6 +73,19 @@
   </requires>
 
   <releases>
+    <release version="0.1.1" date="2026-09-19" type="development">
+      <description>
+        <p>First published release, and the first for Windows.</p>
+        <ul>
+          <li>A Windows build: a zip that runs without installing anything.</li>
+          <li>Search works on older SQLite; the v0.1.0 build failed there and was never published.</li>
+          <li>Deleted items go to the trash and can be restored; Ctrl+Z undoes the last action.</li>
+          <li>Typing anywhere starts a note; Pin and Keep are Ctrl+P and Ctrl+D.</li>
+          <li>A new icon, toolbar icons, and a Settings button.</li>
+          <li>Exported notes keep their line endings exactly as typed.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-09-19" type="development">
       <description>
         <p>First development release.</p>
