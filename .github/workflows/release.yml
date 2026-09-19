@@ -110,10 +110,140 @@ jobs:
           name: napkin-appimage
           path: napkin-*.AppImage
 
-      - name: Publish
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+  # The same build CI's Windows job runs, then made self-contained: windeployqt
+  # for Qt, SQLite from vcpkg, and the MSVC runtime copied beside the executable
+  # so nobody has to install a redistributable first. A zip, not an installer:
+  # it runs from wherever it is unpacked and leaves nothing behind but its data
+  # in %LOCALAPPDATA%\napkin.
+  windows:
+    name: Windows
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
         with:
-          files: napkin-*.AppImage
+          version: 6.8.2
+          modules: qtimageformats
+          cache: true
+
+      - name: Install SQLite
+        run: vcpkg install "sqlite3[fts5]:x64-windows"
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build
+        run: |
+          $out = cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" 2>&1
+          $out | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error title=Windows configure failed::$(($out | Select-Object -Last 25) -join ' ')"
+            exit 1
+          }
+          $out = cmake --build build --parallel -- -k 0 2>&1
+          $out | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error title=Windows build failed::$(($out | Select-String -Pattern 'error C[0-9]+|error LNK|fatal error' | Select-Object -First 25) -join ' ')"
+            exit 1
+          }
+
+      # Before packaging, for the same reason as on Linux.
+      - name: Test
+        run: |
+          $out = ctest --test-dir build --output-on-failure --parallel 2 2>&1
+          $out | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error title=Windows release tests failed::$(($out | Select-String -Pattern 'FAIL!|tests passed|\*\*\*|Exception|Failed' | Select-Object -First 30) -join ' ')"
+            exit 1
+          }
+
+      - name: Bundle
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = "napkin-$env:GITHUB_REF_NAME-windows-x64"
+          $dist = "dist\$name"
+          New-Item -ItemType Directory -Force $dist | Out-Null
+          Copy-Item build\napkin.exe $dist
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\sqlite3.dll" $dist
+          # The runtime is copied by hand rather than by --compiler-runtime,
+          # which ships vc_redist.x64.exe for the user to run instead of the
+          # DLLs themselves.
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-translations `
+            --no-compiler-runtime --no-system-d3d-compiler --no-opengl-sw "$dist\napkin.exe"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=windeployqt failed::exit $LASTEXITCODE"; exit 1 }
+          $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1
+          if (-not $crt) { Write-Host "::error title=No MSVC runtime::VCToolsRedistDir=$env:VCToolsRedistDir"; exit 1 }
+          Copy-Item "$($crt.FullName)\*.dll" $dist
+          Copy-Item LICENSE "$dist\LICENSE.txt"
+          Copy-Item resources\icons\lucide\LICENSE "$dist\LICENSE-lucide.txt"
+
+          # Image formats and SVG icons are plugins, loaded by name at runtime.
+          # A bundle without them still starts, and then silently cannot show a
+          # WebP or draw a toolbar button — so their absence fails the build.
+          $missing = @(
+            'platforms\qwindows.dll', 'imageformats\qjpeg.dll', 'imageformats\qgif.dll',
+            'imageformats\qwebp.dll', 'imageformats\qsvg.dll', 'iconengines\qsvgicon.dll',
+            'Qt6Svg.dll', 'sqlite3.dll', 'vcruntime140.dll', 'msvcp140.dll'
+          ) | Where-Object { -not (Test-Path "$dist\$_") }
+          if ($missing) {
+            Write-Host "::error title=Bundle incomplete::missing $($missing -join ', ')"
+            Get-ChildItem -Recurse $dist | ForEach-Object { $_.FullName } | Write-Host
+            exit 1
+          }
+          "BUNDLE=$dist" >> $env:GITHUB_ENV
+          "ZIPNAME=$name.zip" >> $env:GITHUB_ENV
+
+      # Runs the bundle with Qt, vcpkg and the compiler off PATH, so a DLL the
+      # bundle forgot cannot be quietly found on the build machine instead.
+      # Constructing the application loads the Windows platform plugin before
+      # --version is answered, so this proves the bundle's Qt actually starts.
+      # A GUI-subsystem program shows --version in a message box unless its
+      # output is redirected; Start-Process redirects it.
+      - name: Smoke-test the bundle
+        run: |
+          $env:PATH = "C:\Windows\system32;C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0"
+          Remove-Item Env:QT_PLUGIN_PATH, Env:QT_ROOT_DIR, Env:Qt6_DIR, Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+          $env:QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES = '1'
+          $p = Start-Process -FilePath "$env:BUNDLE\napkin.exe" -ArgumentList '--version' `
+                 -RedirectStandardOutput version.txt -RedirectStandardError stderr.txt -NoNewWindow -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); Write-Host "::error title=Smoke test hung::--version did not return"; exit 1 }
+          $out = (Get-Content version.txt -Raw) + (Get-Content stderr.txt -Raw)
+          Write-Host "exit $($p.ExitCode): $out"
+          $want = "napkin $($env:GITHUB_REF_NAME -replace '^v','')"
+          if ($p.ExitCode -ne 0 -or $out -notmatch [regex]::Escape($want)) {
+            Write-Host "::error title=Smoke test failed::exit $($p.ExitCode), wanted '$want', got: $out"
+            exit 1
+          }
+
+      - name: Zip
+        run: Compress-Archive -Path $env:BUNDLE -DestinationPath $env:ZIPNAME
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: napkin-windows
+          path: napkin-*-windows-x64.zip
+
+  # One job attaches everything, so the two platforms land on one draft release
+  # rather than racing to create two.
+  publish:
+    name: Publish
+    needs: [appimage, windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artefacts/*
           draft: true
           generate_release_notes: true

@@ -26,7 +26,9 @@
 #include <QTimer>
 #include <QPixmapCache>
 #include <cstdio>
-#include <malloc.h>
+#ifdef __GLIBC__
+#  include <malloc.h>
+#endif
 
 using namespace napkin;
 
@@ -220,8 +222,11 @@ int main(int argc, char** argv)
     QPixmapCache::clear();
     settle(60);
     row("RSS after clearing the pixmap cache", (rssKb() - rssStart) / 1024, "MB");
+#ifdef __GLIBC__
+    // glibc only; the question it answers is about glibc's arenas.
     malloc_trim(0);
     row("RSS after malloc_trim", (rssKb() - rssStart) / 1024, "MB", 120);
+#endif
     printf("\n");
     return 0;
 }
