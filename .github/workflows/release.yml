@@ -163,9 +163,11 @@ jobs:
             # ctest's summary names the suite but not the failing check, and the
             # job log is not public; re-run each failed suite and annotate it whole.
             $env:QT_QPA_PLATFORM = 'offscreen'
+            if (-not (Test-Path build\Testing\Temporary\LastTestsFailed.log)) { Write-Host '::error title=No LastTestsFailed.log::ctest left no list of failures' }
             Get-Content build\Testing\Temporary\LastTestsFailed.log -ErrorAction SilentlyContinue | ForEach-Object {
               $t = ($_ -split ':')[1]
-              $detail = (& "build\$t.exe" 2>&1 | Select-String -Pattern 'FAIL!|Loc:|Actual|Expected|exception|QWARN|QDEBUG|Totals' | Select-Object -First 40) -join ' | '
+              $raw = (& "build\$t.exe" 2>&1 | Out-String)
+              $detail = "exit $LASTEXITCODE | " + (($raw -split "`r?`n" | Where-Object { $_ -notmatch '^PASS ' }) -join ' | ')
               Write-Host "::error title=$t::$detail"
             }
             exit 1
